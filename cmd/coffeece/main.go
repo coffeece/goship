@@ -96,6 +96,11 @@ func buildManager(stdout, stderr io.Writer) *cmd.ManagerV2 {
 	m.Register(&client.AppDeployList{})
 	m.Register(&client.AppDeployRollback{})
 
+	m.RegisterTopic("app-link", "Conecte apps da mesma organização via variáveis de ambiente.")
+	m.Register(&appLinkCreate{})
+	m.Register(&appLinkList{})
+	m.Register(&appLinkDelete{})
+
 	m.RegisterTopic("unit", "Uma unit é um container da sua app.")
 	m.Register(&client.UnitAdd{})
 	m.Register(&client.UnitRemove{})
