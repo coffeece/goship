@@ -45,7 +45,7 @@ func main() {
 func initAuthorization() {
 	roundTripper, tokenProvider, err := goTsuruClient.RoundTripperAndTokenProvider()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "não foi possível ler o token de autenticação: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "não foi possível ler o token de autenticação: %v\n", err)
 		os.Exit(1)
 	}
 	tsuruHTTP.AuthenticatedClient = tsuruHTTP.NewTerminalClient(tsuruHTTP.TerminalClientOptions{
@@ -179,6 +179,6 @@ func (c *coffeeceVersion) Info() *cmd.Info {
 }
 
 func (c *coffeeceVersion) Run(ctx *cmd.Context) error {
-	fmt.Fprintf(ctx.Stdout, "coffeece %s\n", version)
+	_, _ = fmt.Fprintf(ctx.Stdout, "coffeece %s\n", version)
 	return nil
 }

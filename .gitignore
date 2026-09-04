@@ -3,3 +3,4 @@
 /coffeece
 *.test
 *.out
+dist/

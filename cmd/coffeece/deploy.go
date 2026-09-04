@@ -114,7 +114,7 @@ func (c *coffeeceDeploy) Run(ctx *cmd.Context) error {
 		if platform == "" {
 			return fmt.Errorf("a app %q não existe e nenhuma plataforma foi informada — use --platform ou `platform:` no coffeece.yaml", app)
 		}
-		fmt.Fprintf(ctx.Stdout, "→ criando app %q (%s)\n", app, platform)
+		_, _ = fmt.Fprintf(ctx.Stdout, "→ criando app %q (%s)\n", app, platform)
 		if err := runAppCreate(ctx, app, platform, plan, pool, team); err != nil {
 			return fmt.Errorf("criando a app: %w", err)
 		}
@@ -122,29 +122,29 @@ func (c *coffeeceDeploy) Run(ctx *cmd.Context) error {
 
 	// 4. Apply env vars without restarting — the deploy in step 5 restarts.
 	if len(publicEnv) > 0 {
-		fmt.Fprintf(ctx.Stdout, "→ aplicando %d variável(is) de ambiente\n", len(publicEnv))
+		_, _ = fmt.Fprintf(ctx.Stdout, "→ aplicando %d variável(is) de ambiente\n", len(publicEnv))
 		if err := runEnvSet(ctx, app, publicEnv, false); err != nil {
 			return fmt.Errorf("definindo variáveis: %w", err)
 		}
 	}
 	if len(privateEnv) > 0 {
-		fmt.Fprintf(ctx.Stdout, "→ aplicando %d variável(is) privada(s)\n", len(privateEnv))
+		_, _ = fmt.Fprintf(ctx.Stdout, "→ aplicando %d variável(is) privada(s)\n", len(privateEnv))
 		if err := runEnvSet(ctx, app, privateEnv, true); err != nil {
 			return fmt.Errorf("definindo variáveis privadas: %w", err)
 		}
 	}
 
 	// 5. Deploy.
-	fmt.Fprintf(ctx.Stdout, "→ deploy de %q\n", app)
+	_, _ = fmt.Fprintf(ctx.Stdout, "→ deploy de %q\n", app)
 	if err := runAppDeploy(ctx, app, dir, c.message); err != nil {
 		return err
 	}
 
 	// 6. Report the live URL (best-effort).
 	if url := appURL(app); url != "" {
-		fmt.Fprintf(ctx.Stdout, "\n✓ no ar: %s\n", url)
+		_, _ = fmt.Fprintf(ctx.Stdout, "\n✓ no ar: %s\n", url)
 	} else {
-		fmt.Fprintf(ctx.Stdout, "\n✓ deploy de %q concluído\n", app)
+		_, _ = fmt.Fprintf(ctx.Stdout, "\n✓ deploy de %q concluído\n", app)
 	}
 	return nil
 }

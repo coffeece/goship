@@ -246,12 +246,12 @@ func (c *appLinkList) Run(ctx *cmd.Context) error {
 	if dir == "inbound" {
 		_, _ = fmt.Fprintf(ctx.Stdout, "Apps que consomem %q:\n", c.app)
 		for _, l := range links {
-			fmt.Fprintf(ctx.Stdout, "  %s  (alias %s)\n", l.SourceApp, l.Alias)
+			_, _ = fmt.Fprintf(ctx.Stdout, "  %s  (alias %s)\n", l.SourceApp, l.Alias)
 		}
 	} else {
-		fmt.Fprintf(ctx.Stdout, "Apps consumidos por %q:\n", c.app)
+		_, _ = fmt.Fprintf(ctx.Stdout, "Apps consumidos por %q:\n", c.app)
 		for _, l := range links {
-			fmt.Fprintf(ctx.Stdout, "  %s → %s  (alias %s)\n", c.app, l.TargetApp, l.Alias)
+			_, _ = fmt.Fprintf(ctx.Stdout, "  %s → %s  (alias %s)\n", c.app, l.TargetApp, l.Alias)
 		}
 	}
 	return nil
@@ -307,7 +307,7 @@ func (c *appLinkDelete) Run(ctx *cmd.Context) error {
 	if err := portalRequest(http.MethodDelete, path, nil, nil); err != nil {
 		return err
 	}
-	fmt.Fprintf(ctx.Stdout, "✓ link %s removido de %s\n", alias, c.from)
+	_, _ = fmt.Fprintf(ctx.Stdout, "✓ link %s removido de %s\n", alias, c.from)
 	return nil
 }
 
