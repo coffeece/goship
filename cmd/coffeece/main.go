@@ -30,7 +30,7 @@ const defaultTarget = "https://api.coffeece.com"
 
 func main() {
 	if os.Getenv("TSURU_TARGET") == "" {
-		os.Setenv("TSURU_TARGET", defaultTarget)
+		_ = os.Setenv("TSURU_TARGET", defaultTarget)
 	}
 	defer config.SaveChangesWithTimeout()
 

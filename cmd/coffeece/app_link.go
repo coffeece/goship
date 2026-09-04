@@ -85,7 +85,7 @@ func portalRequest(method, path string, body, out any) error {
 	if err != nil {
 		return fmt.Errorf("calling portal: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
@@ -165,13 +165,13 @@ func (c *appLinkCreate) Run(ctx *cmd.Context) error {
 		return err
 	}
 
-	fmt.Fprintf(ctx.Stdout, "✓ link criado: %s → %s (alias %s)\n",
+	_, _ = fmt.Fprintf(ctx.Stdout, "✓ link criado: %s → %s (alias %s)\n",
 		c.from, c.to, resp.Link.Alias)
-	fmt.Fprintf(ctx.Stdout, "\nVariáveis injetadas em %q:\n", c.from)
+	_, _ = fmt.Fprintf(ctx.Stdout, "\nVariáveis injetadas em %q:\n", c.from)
 	for _, e := range resp.Envs {
-		fmt.Fprintf(ctx.Stdout, "  %s=%s\n", e.Name, e.Value)
+		_, _ = fmt.Fprintf(ctx.Stdout, "  %s=%s\n", e.Name, e.Value)
 	}
-	fmt.Fprintln(ctx.Stdout, "\nO app foi reiniciado para aplicar as novas variáveis.")
+	_, _ = fmt.Fprintln(ctx.Stdout, "\nO app foi reiniciado para aplicar as novas variáveis.")
 	return nil
 }
 

@@ -45,7 +45,7 @@ func parseEnvFile(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("lendo env-file %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	env := map[string]string{}
 	sc := bufio.NewScanner(f)

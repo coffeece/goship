@@ -229,7 +229,7 @@ func appExists(app string) (bool, error) {
 	}
 	resp, err := tsuruHTTP.AuthenticatedClient.Do(req)
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return true, nil
 	}
 	switch httpStatus(err) {
@@ -264,7 +264,7 @@ func appURL(app string) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var info struct {
 		Routers []struct {
 			Address   string   `json:"address"`
