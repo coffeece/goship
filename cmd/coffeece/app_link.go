@@ -236,15 +236,15 @@ func (c *appLinkList) Run(ctx *cmd.Context) error {
 
 	if len(links) == 0 {
 		if dir == "inbound" {
-			fmt.Fprintf(ctx.Stdout, "nenhum app consome %q.\n", c.app)
+			_, _ = fmt.Fprintf(ctx.Stdout, "nenhum app consome %q.\n", c.app)
 		} else {
-			fmt.Fprintf(ctx.Stdout, "%q não consome nenhum app ainda.\n", c.app)
+			_, _ = fmt.Fprintf(ctx.Stdout, "%q não consome nenhum app ainda.\n", c.app)
 		}
 		return nil
 	}
 
 	if dir == "inbound" {
-		fmt.Fprintf(ctx.Stdout, "Apps que consomem %q:\n", c.app)
+		_, _ = fmt.Fprintf(ctx.Stdout, "Apps que consomem %q:\n", c.app)
 		for _, l := range links {
 			fmt.Fprintf(ctx.Stdout, "  %s  (alias %s)\n", l.SourceApp, l.Alias)
 		}
