@@ -3,6 +3,7 @@ module github.com/coffeece/cli
 go 1.25.6
 
 require (
+	github.com/hashicorp/go-version v1.2.0
 	github.com/spf13/pflag v1.0.10
 	github.com/tsuru/go-tsuruclient v0.2.0
 	github.com/tsuru/tsuru v0.0.0-20260130133143-90d830519bd3
@@ -33,7 +34,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/hashicorp/go-version v1.2.0 // indirect
 	github.com/howeyc/fsnotify v0.9.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

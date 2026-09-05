@@ -21,8 +21,17 @@ import (
 	tsuruHTTP "github.com/tsuru/tsuru-client/tsuru/http"
 )
 
-// version is overridden at build time via -ldflags.
+// version is overridden at build time via -ldflags. It is coffeece's own
+// release number and is only shown to people (`coffeece version`).
 var version = "dev"
+
+// protocolVersion is what the Tsuru API's client check sees. The API answers
+// every request with a Supported-Tsuru floor (1.0.1 today) and tsuru-client
+// prints "unsupported version, download the latest tsuru" whenever the client
+// reports something below it — so coffeece's own 0.x number must never be the
+// one compared. This is the tsuru-client compatibility level the CLI is built
+// on; bump it when the vendored tsuru-client moves to a new major/minor.
+const protocolVersion = "1.31.0"
 
 // defaultTarget is the Coffeece API. Pinning it via TSURU_TARGET means users
 // never have to run `tsuru target-add`. An explicit TSURU_TARGET still wins.
@@ -51,7 +60,7 @@ func initAuthorization() {
 	tsuruHTTP.AuthenticatedClient = tsuruHTTP.NewTerminalClient(tsuruHTTP.TerminalClientOptions{
 		RoundTripper:  roundTripper,
 		ClientName:    "coffeece",
-		ClientVersion: version,
+		ClientVersion: protocolVersion,
 		Stdout:        os.Stdout,
 		Stderr:        os.Stderr,
 	})
