@@ -110,6 +110,14 @@ func buildManager(stdout, stderr io.Writer) *cmd.ManagerV2 {
 	m.Register(&appLinkList{})
 	m.Register(&appLinkDelete{})
 
+	m.RegisterTopic("volume", "Volumes são disco persistente nos seus nós (BYON).")
+	m.Register(&volumeCreate{})
+	m.Register(&volumeList{})
+	m.Register(&volumeInfo{})
+	m.Register(&volumeBind{})
+	m.Register(&volumeUnbind{})
+	m.Register(&volumeDelete{})
+
 	m.RegisterTopic("unit", "Uma unit é um container da sua app.")
 	m.Register(&client.UnitAdd{})
 	m.Register(&client.UnitRemove{})
