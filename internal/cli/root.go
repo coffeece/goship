@@ -80,7 +80,13 @@ func NewRoot(version string) *cobra.Command {
 	f.BoolVarP(&app.Global.Yes, "yes", "y", false, "answer yes to confirmations")
 	f.BoolVar(&app.Global.Verbose, "verbose", false, "log HTTP requests to stderr")
 
-	root.AddCommand(newVersionCmd(app))
+	root.AddCommand(
+		newVersionCmd(app),
+		newLoginCmd(app),
+		newLogoutCmd(app),
+		newWhoamiCmd(app),
+		newOrgCmd(app),
+	)
 
 	return root
 }
