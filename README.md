@@ -21,7 +21,7 @@ go install github.com/coffeece/goship/cmd/goship@latest
 ## Getting started
 
 ```sh
-goship login                 # authenticate
+goship login                 # opens the browser; one login covers every command
 goship org use acme          # pick the organization to work in
 goship deploy                # create + configure + deploy the current directory
 ```

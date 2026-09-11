@@ -7,7 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/coffeece/goship/internal/tsuru"
 	"github.com/spf13/cobra"
+	tsuruauth "github.com/tsuru/tsuru-client/tsuru/auth"
 	"golang.org/x/term"
 )
 
@@ -22,15 +24,12 @@ func newLoginCmd(app *App) *cobra.Command {
 			if os.Getenv("GOSHIP_TOKEN") != "" {
 				return fmt.Errorf("GOSHIP_TOKEN is set and takes precedence over a stored login; unset it first")
 			}
+			if email == "" {
+				return browserLogin(cmd, app)
+			}
 
 			in, errOut := cmd.InOrStdin(), cmd.ErrOrStderr()
 			reader := bufio.NewReader(in)
-			if email == "" {
-				var err error
-				if email, err = prompt(reader, errOut, "Email: "); err != nil {
-					return err
-				}
-			}
 			password, err := promptPassword(reader, in, errOut)
 			if err != nil {
 				return err
@@ -48,9 +47,39 @@ func newLoginCmd(app *App) *cobra.Command {
 			return app.Renderer().Message("Logged in as %s.", email)
 		},
 	}
-	cmd.Flags().StringVar(&email, "email", "", "email to authenticate with (prompted when omitted)")
+	cmd.Flags().StringVar(&email, "email", "", "sign in with a password instead of the browser")
 
 	return cmd
+}
+
+// browserLogin runs the platform's OpenID Connect flow. The access token it
+// returns was issued by the GoShip portal, so storing it here authenticates
+// both the GoShip API and the streaming commands, which read tsuru-client's
+// own credentials. One login, both surfaces.
+func browserLogin(cmd *cobra.Command, app *App) error {
+	if err := tsuru.Setup(app.Config.Tsuru, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		return err
+	}
+	defer tsuru.Flush()
+
+	if err := tsuru.Run(&tsuruauth.Login{}, nil, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		return err
+	}
+
+	token, err := tsuru.Token()
+	if err != nil {
+		return err
+	}
+	app.Config.Token = token
+	if err := app.Config.Save(); err != nil {
+		return err
+	}
+
+	me, err := app.Portal().Me(cmd.Context())
+	if err != nil {
+		return err
+	}
+	return app.Renderer().Message("Logged in as %s.", me.Email)
 }
 
 func newLogoutCmd(app *App) *cobra.Command {

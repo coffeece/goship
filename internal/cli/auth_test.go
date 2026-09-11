@@ -56,16 +56,16 @@ func TestLoginStoresTheToken(t *testing.T) {
 	}
 }
 
-// Both prompts read from one buffered reader; a reader per prompt would
-// swallow the password line when credentials are piped in.
-func TestLoginReadsBothPromptsFromAPipe(t *testing.T) {
+// --email takes the password path. The password is read from the same buffered
+// reader every prompt uses, so piping it in has to work.
+func TestLoginWithEmailReadsThePipedPassword(t *testing.T) {
 	var got map[string]string
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&got) //nolint:errcheck
 		w.Write([]byte(`{"token":"t"}`))     //nolint:errcheck
 	})
 
-	if _, err := run(t, "gui@example.com\nhunter2\n", "login"); err != nil {
+	if _, err := run(t, "hunter2\n", "login", "--email", "gui@example.com"); err != nil {
 		t.Fatal(err)
 	}
 	if got["email"] != "gui@example.com" || got["password"] != "hunter2" {

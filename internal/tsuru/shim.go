@@ -58,3 +58,15 @@ func Flush() { goconfig.SaveChangesWithTimeout() }
 func Run(c tsurucmd.Command, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	return c.Run(&tsurucmd.Context{Args: args, Stdin: stdin, Stdout: stdout, Stderr: stderr})
 }
+
+// Token returns the credential tsuru-client holds after a login. It is the
+// access token the platform received from the GoShip portal, so it also
+// authenticates against the GoShip API.
+func Token() (string, error) {
+	if v2, err := goconfig.ReadTokenV2(); err == nil && v2 != nil && v2.OAuth2Token != nil {
+		if v2.OAuth2Token.AccessToken != "" {
+			return v2.OAuth2Token.AccessToken, nil
+		}
+	}
+	return goconfig.ReadTokenV1()
+}
