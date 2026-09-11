@@ -1,11 +1,18 @@
 package cli
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+// Keep tests off the developer's real ~/.config/goship/config.json.
+func isolateConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("GOSHIP_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+}
 
 // v0.1.0 shipped `app link list` as a childless command with nothing to run: it
 // printed its parent topic's blurb and exited 0. The tree was derived from
@@ -29,6 +36,7 @@ func TestEveryLeafCommandRuns(t *testing.T) {
 }
 
 func TestOutputFlagRejectsUnknownFormats(t *testing.T) {
+	isolateConfig(t)
 	root := NewRoot("test")
 	root.SetArgs([]string{"version", "--output", "xml"})
 	root.SetOut(&strings.Builder{})
@@ -38,6 +46,7 @@ func TestOutputFlagRejectsUnknownFormats(t *testing.T) {
 }
 
 func TestVersionPrintsTheBuildVersion(t *testing.T) {
+	isolateConfig(t)
 	var out strings.Builder
 	root := NewRoot("v1.2.3")
 	root.SetArgs([]string{"version"})

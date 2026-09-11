@@ -2,13 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
+	"github.com/coffeece/goship/internal/config"
+	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
-)
-
-const (
-	OutputTable = "table"
-	OutputJSON  = "json"
 )
 
 // Global carries the flags every command may read.
@@ -21,10 +19,10 @@ type Global struct {
 
 func (g *Global) validate() error {
 	switch g.Output {
-	case OutputTable, OutputJSON:
+	case render.Table, render.JSON:
 		return nil
 	default:
-		return fmt.Errorf("unknown --output %q: use %q or %q", g.Output, OutputTable, OutputJSON)
+		return fmt.Errorf("unknown --output %q: use %q or %q", g.Output, render.Table, render.JSON)
 	}
 }
 
@@ -32,6 +30,16 @@ func (g *Global) validate() error {
 type App struct {
 	Version string
 	Global  Global
+	Config  *config.Config
+	Out     io.Writer
+}
+
+func (a *App) Renderer() *render.Renderer {
+	return render.New(a.Out, a.Global.Output)
+}
+
+func (a *App) Org() (string, error) {
+	return a.Config.OrgOrError(a.Global.Org)
 }
 
 func NewRoot(version string) *cobra.Command {
@@ -42,14 +50,23 @@ func NewRoot(version string) *cobra.Command {
 		Short:         "Deploy and operate apps on GoShip",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(*cobra.Command, []string) error {
-			return app.Global.validate()
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if err := app.Global.validate(); err != nil {
+				return err
+			}
+			app.Out = cmd.OutOrStdout()
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			app.Config = cfg
+			return nil
 		},
 	}
 
 	f := root.PersistentFlags()
 	f.StringVar(&app.Global.Org, "org", "", "organization slug (overrides the current org)")
-	f.StringVarP(&app.Global.Output, "output", "o", OutputTable, "output format: table or json")
+	f.StringVarP(&app.Global.Output, "output", "o", render.Table, "output format: table or json")
 	f.BoolVarP(&app.Global.Yes, "yes", "y", false, "answer yes to confirmations")
 	f.BoolVar(&app.Global.Verbose, "verbose", false, "log HTTP requests to stderr")
 
