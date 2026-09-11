@@ -3,8 +3,10 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/coffeece/goship/internal/config"
+	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
 )
@@ -40,6 +42,14 @@ func (a *App) Renderer() *render.Renderer {
 
 func (a *App) Org() (string, error) {
 	return a.Config.OrgOrError(a.Global.Org)
+}
+
+func (a *App) Portal() *portal.Client {
+	var opts []portal.Option
+	if a.Global.Verbose {
+		opts = append(opts, portal.WithTrace(os.Stderr))
+	}
+	return portal.New(a.Config.API, a.Config.Token, opts...)
 }
 
 func NewRoot(version string) *cobra.Command {
