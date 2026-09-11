@@ -1,6 +1,6 @@
 /bin/
 /dist/
-/coffeece
+/goship
 *.test
 *.out
 dist/
