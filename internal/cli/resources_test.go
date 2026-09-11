@@ -1,0 +1,109 @@
+package cli
+
+import (
+	"encoding/json"
+	"net/http"
+	"testing"
+)
+
+func TestDatabaseCommandsUseTheServiceInstanceEndpoints(t *testing.T) {
+	for _, tc := range []struct {
+		name, method, path string
+		args               []string
+	}{
+		{"create", http.MethodPost, "/api/v1/orgs/acme/services/postgresql/instances",
+			[]string{"db", "create", "main", "--plan", "starter"}},
+		{"delete", http.MethodDelete, "/api/v1/orgs/acme/services/postgresql/instances/main",
+			[]string{"db", "rm", "main", "--yes"}},
+		{"bind", http.MethodPost, "/api/v1/orgs/acme/services/postgresql/instances/main/bind",
+			[]string{"db", "bind", "main", "-a", "api"}},
+		{"unbind", http.MethodDelete, "/api/v1/orgs/acme/services/postgresql/instances/main/bind/api",
+			[]string{"db", "unbind", "main", "-a", "api"}},
+		{"list", http.MethodGet, "/api/v1/orgs/acme/databases",
+			[]string{"db", "list"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotPath, gotMethod string
+			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotMethod = r.URL.Path, r.Method
+				w.Write([]byte(`[]`)) //nolint:errcheck
+			})
+
+			if _, err := run(t, "", tc.args...); err != nil {
+				t.Fatal(err)
+			}
+			if gotPath != tc.path {
+				t.Errorf("path = %q, want %q", gotPath, tc.path)
+			}
+			if gotMethod != tc.method {
+				t.Errorf("method = %q, want %q", gotMethod, tc.method)
+			}
+		})
+	}
+}
+
+func TestVolumeBindSendsTheMountPoint(t *testing.T) {
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+	})
+
+	if _, err := run(t, "", "volume", "bind", "uploads", "-a", "api", "--mount", "/data", "--read-only"); err != nil {
+		t.Fatal(err)
+	}
+	if body["app"] != "api" || body["mount_point"] != "/data" || body["read_only"] != true {
+		t.Errorf("body = %v", body)
+	}
+}
+
+// Unbind is a POST, not a DELETE — the portal restarts the app as part of it.
+func TestVolumeUnbindIsAPost(t *testing.T) {
+	var gotMethod, gotPath string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+	})
+
+	if _, err := run(t, "", "volume", "unbind", "uploads", "-a", "api", "--mount", "/data"); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/volumes/uploads/unbind" {
+		t.Errorf("%s %s", gotMethod, gotPath)
+	}
+}
+
+func TestDomainAddTargetsTheApp(t *testing.T) {
+	var gotPath string
+	var body map[string]string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+	})
+
+	if _, err := run(t, "", "domain", "add", "shop.example.com", "-a", "api"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/orgs/acme/apps/api/domains" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if body["domain"] != "shop.example.com" {
+		t.Errorf("body = %v", body)
+	}
+}
+
+func TestDestructiveCommandsAllConfirm(t *testing.T) {
+	for _, args := range [][]string{
+		{"app", "rm", "api"},
+		{"db", "rm", "main"},
+		{"volume", "rm", "uploads"},
+		{"node", "rm", "n1"},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			stubAPIWithOrg(t, func(http.ResponseWriter, *http.Request) {
+				t.Errorf("%v reached the API without confirmation", args)
+			})
+			if _, err := run(t, "n\n", args...); err == nil {
+				t.Errorf("%v should abort when the answer is no", args)
+			}
+		})
+	}
+}
