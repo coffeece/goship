@@ -82,6 +82,7 @@ func NewRoot(version string) *cobra.Command {
 
 	root.AddCommand(
 		newVersionCmd(app),
+		newDeployCmd(app),
 		newLoginCmd(app),
 		newLogoutCmd(app),
 		newWhoamiCmd(app),
@@ -94,6 +95,7 @@ func NewRoot(version string) *cobra.Command {
 		newVolumeCmd(app),
 		newNodeCmd(app),
 	)
+	root.AddCommand(newStreamCmds(app)...)
 
 	return root
 }
