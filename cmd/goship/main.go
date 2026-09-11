@@ -10,7 +10,10 @@ import (
 var version = "dev"
 
 func main() {
-	if err := cli.NewRoot(version).Execute(); err != nil {
+	root := cli.NewRoot(version)
+	root.SetArgs(cli.Rewrite(os.Args[1:]))
+
+	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
