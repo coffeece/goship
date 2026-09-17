@@ -28,10 +28,13 @@ type project struct {
 	App string `yaml:"app"`
 	// Org pins the organization for the project, so a repo that belongs to one
 	// org does not depend on whatever `goship org use` was last pointed at.
-	Org      string            `yaml:"org"`
-	Platform string            `yaml:"platform"`
-	Plan     string            `yaml:"plan"`
-	Env      map[string]string `yaml:"env"`
+	Org      string `yaml:"org"`
+	Platform string `yaml:"platform"`
+	Plan     string `yaml:"plan"`
+	// Node places the app on one of the organization's own machines. A
+	// node-placed app is never billed, so it needs no plan.
+	Node string            `yaml:"node"`
+	Env  map[string]string `yaml:"env"`
 	// Dockerfile names a container file to build from instead of letting a
 	// platform build the source. Mutually exclusive with platform.
 	Dockerfile string `yaml:"dockerfile"`
@@ -92,7 +95,7 @@ func unquote(s string) string {
 }
 
 func newDeployCmd(app *App) *cobra.Command {
-	var appName, platform, plan, envFile, message, dockerfile string
+	var appName, platform, plan, envFile, message, dockerfile, node string
 
 	cmd := &cobra.Command{
 		Use:   "deploy [dir]",
@@ -118,6 +121,7 @@ func newDeployCmd(app *App) *cobra.Command {
 
 			name := firstNonEmpty(appName, proj.App, filepath.Base(mustAbs(dir)))
 			plan = firstNonEmpty(plan, proj.Plan)
+			node = firstNonEmpty(node, proj.Node)
 
 			r := app.Renderer()
 			client := app.Portal()
@@ -194,7 +198,13 @@ func newDeployCmd(app *App) *cobra.Command {
 				if platformSource != "" {
 					origin += ", " + platformSource
 				}
-				if plan == "" {
+				// On your own hardware there is nothing to bill, so the API
+				// applies the free plan itself when none is named. Asking the
+				// user to pick from the paid catalogue would be wrong.
+				switch {
+				case node != "":
+					origin += ", on your node"
+				case plan == "":
 					chosen, err := choosePlan(cmd.Context(), client, org)
 					if err != nil {
 						return err
@@ -205,9 +215,11 @@ func newDeployCmd(app *App) *cobra.Command {
 				if err := r.Message("Creating app %s (%s)...", name, origin); err != nil {
 					return err
 				}
-				if _, err := client.CreateApp(cmd.Context(), org, portal.CreateAppRequest{
-					Name: name, Platform: platform, Plan: plan,
-				}); err != nil {
+				req := portal.CreateAppRequest{Name: name, Platform: platform, Plan: plan}
+				if node != "" {
+					req.NodeID = &node
+				}
+				if _, err := client.CreateApp(cmd.Context(), org, req); err != nil {
 					return err
 				}
 			}
@@ -285,6 +297,7 @@ func newDeployCmd(app *App) *cobra.Command {
 	f.StringVarP(&appName, "app", "a", "", "app name (default: the directory name)")
 	f.StringVar(&platform, "platform", "", "platform for a new app (default: inferred from the files present)")
 	f.StringVar(&dockerfile, "dockerfile", "", "build from this container file instead of a platform")
+	f.StringVar(&node, "node", "", "place a new app on one of your own machines (never billed)")
 	f.StringVar(&plan, "plan", "", "plan, used when creating the app")
 	f.StringVar(&envFile, "env-file", "", "dotenv file applied as private variables")
 	f.StringVarP(&message, "message", "m", "", "deploy message")

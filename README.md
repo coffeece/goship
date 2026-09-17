@@ -70,6 +70,13 @@ env:
   LOG_LEVEL: info
 ```
 
+To run it on a machine you own, name the node instead of a plan — `goship node
+list` has the ids. A node-placed app is never billed, so it needs no plan:
+
+```sh
+goship deploy --node 25b640dc-…
+```
+
 `org` pins the organization for the whole project, so a repo always deploys to
 the same place regardless of what `goship org use` last selected. It applies to
 every command run inside the directory, not only `deploy`. `--org` still wins.

@@ -543,3 +543,67 @@ func TestDeployHonoursTheDockerfileFromConfig(t *testing.T) {
 		t.Errorf("the config's dockerfile should win over the go.mod, got %q", out)
 	}
 }
+
+// On the customer's own hardware there is nothing to bill, so the API applies
+// the free plan itself when none is named. Offering the paid catalogue here
+// would be asking someone to pay for a machine they already own.
+func TestDeployOnANodeDoesNotAskForAPlan(t *testing.T) {
+	var created map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			t.Error("the paid catalogue must not be consulted for a node-placed app")
+		case r.Method == http.MethodPost:
+			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
+			w.Write([]byte(`{"name":"quake"}`))      //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "quake")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
+
+	out, _ := run(t, "", "deploy", dir, "--node", "do-server1")
+
+	if created == nil {
+		t.Fatal("the app was never created")
+	}
+	if created["node_id"] != "do-server1" {
+		t.Errorf("node_id = %v, want the node", created["node_id"])
+	}
+	if p, ok := created["plan"]; ok && p != "" {
+		t.Errorf("plan = %v, want none — the API applies the free plan on a node", p)
+	}
+	if !strings.Contains(out, "on your node") {
+		t.Errorf("the placement should be visible, got %q", out)
+	}
+}
+
+// The same placement can live in the project file.
+func TestDeployReadsTheNodeFromConfig(t *testing.T) {
+	var created map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
+			w.Write([]byte(`{"name":"quake"}`))      //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	dir := filepath.Join(t.TempDir(), "quake")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
+	write(t, filepath.Join(dir, "goship.yml"), "app: quake\nnode: do-server1\n")
+
+	run(t, "", "deploy", dir) //nolint:errcheck
+	if created["node_id"] != "do-server1" {
+		t.Errorf("node_id = %v, want the one from the config", created["node_id"])
+	}
+}

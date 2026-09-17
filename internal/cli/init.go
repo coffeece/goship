@@ -134,6 +134,10 @@ app: %s
 # one and asks otherwise.
 plan:
 
+# Place the app on one of your own machines ("goship node list" for the ids).
+# A node-placed app is never billed and needs no plan.
+node:
+
 # Environment variables applied on every deploy. Secrets do not belong in a file
 # you commit — pass those with --env-file instead.
 env:
