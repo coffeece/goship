@@ -45,8 +45,9 @@ Flags override that:
 goship deploy --platform python --plan app-small-sandboxed
 ```
 
-A `goship.yaml` (or `.goship.yaml`) in the directory is an optional shortcut
-for the same values, so you stop retyping them:
+A `goship.yml` in the directory is an optional shortcut for the same values, so
+you stop retyping them. `goship init` writes one, filling in what it can work
+out from the directory and leaving the rest for you:
 
 ```yaml
 app: api
@@ -69,6 +70,7 @@ goship deploy --env-file .env
 |---|---|
 | `goship apps` | list your apps |
 | `goship app create\|info\|rm\|start\|stop\|restart\|scale\|plan` | manage one app |
+| `goship init [dir]` | write a `goship.yml` with what it can work out |
 | `goship deploy [dir]` | create if needed, apply env, deploy |
 | `goship logs -a api [-f]` | stream logs |
 | `goship run -a api -- <cmd>` | run a command in the app's containers |

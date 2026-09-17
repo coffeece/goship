@@ -96,6 +96,7 @@ func NewRoot(version string) *cobra.Command {
 	root.AddCommand(
 		newVersionCmd(app),
 		newDeployCmd(app),
+		newInitCmd(app),
 		newLoginCmd(app),
 		newLogoutCmd(app),
 		newWhoamiCmd(app),
