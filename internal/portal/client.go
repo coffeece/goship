@@ -62,6 +62,11 @@ func IsUnauthorized(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized
 }
 
+func IsForbidden(err error) bool {
+	var apiErr *Error
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	return c.do(ctx, http.MethodGet, path, nil, out)
 }
