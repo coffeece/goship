@@ -175,21 +175,18 @@ func newDeployCmd(app *App) *cobra.Command {
 				if portal.IsForbidden(lookupErr) {
 					return lookupErr
 				}
-				if platform == "" && dockerfile != "" {
-					return fmt.Errorf(
-						"%q does not exist yet, and an app built from a container file cannot be created from here:\n"+
-							"the API still requires a platform. Create it once with --platform (%s) — the %s\n"+
-							"is what builds the image from then on — or create it in the dashboard",
-						name, knownPlatforms(), dockerfile)
-				}
-				if platform == "" {
+				if platform == "" && dockerfile == "" {
 					return fmt.Errorf(
 						"cannot tell what %q is built with: none of %s or a Dockerfile found in %s.\nPass --platform (%s)",
 						name, signalFiles(), dir, knownPlatforms())
 				}
+				// An app with no platform is built by its container file.
 				origin := platform
+				if origin == "" {
+					origin = "built from " + dockerfile
+				}
 				if platformSource != "" {
-					origin = platform + ", " + platformSource
+					origin += ", " + platformSource
 				}
 				if plan == "" {
 					chosen, err := choosePlan(cmd.Context(), client, org)

@@ -488,14 +488,21 @@ func TestDeployBuildsFromADockerfile(t *testing.T) {
 	}
 }
 
-// Creating an app has to state a platform, so a container-only project cannot
-// be created from here. Saying that beats a validation error from the API.
-func TestDeployExplainsWhyADockerfileAppCannotBeCreated(t *testing.T) {
+// A container-only project creates an app with no platform at all — Tsuru
+// resolves a platform only when one is given, so the image the Dockerfile
+// builds is the whole definition.
+func TestDeployCreatesAPlatformlessAppForADockerfile(t *testing.T) {
+	var created map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			t.Error("tried to create an app with no platform")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
+			w.Write([]byte(`{"name":"widget"}`))     //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.WriteHeader(http.StatusNotFound)
 	})
 
 	dir := filepath.Join(t.TempDir(), "widget")
@@ -504,14 +511,16 @@ func TestDeployExplainsWhyADockerfileAppCannotBeCreated(t *testing.T) {
 	}
 	write(t, filepath.Join(dir, "Dockerfile"), "FROM alpine\n")
 
-	_, err := run(t, "", "deploy", dir)
-	if err == nil {
-		t.Fatal("expected the command to stop")
+	out, _ := run(t, "", "deploy", dir)
+
+	if created == nil {
+		t.Fatal("the app was never created")
 	}
-	for _, want := range []string{"requires a platform", "--platform", "Dockerfile"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should mention %q, got:\n%v", want, err)
-		}
+	if p, ok := created["platform"]; ok && p != "" {
+		t.Errorf("platform = %v, want it absent for a container build", p)
+	}
+	if !strings.Contains(out, "built from Dockerfile") {
+		t.Errorf("the creation line should say what builds it, got %q", out)
 	}
 }
 

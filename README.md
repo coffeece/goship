@@ -46,8 +46,10 @@ container file builds the image instead:
 Building widget from Dockerfile.
 ```
 
-A project with both is built by its platform — a Go service that ships a
-Dockerfile is still a Go service. Pass `--dockerfile` to override that.
+Such an app is created with no platform at all; the image the container file
+builds is the whole definition. A project with both a marker and a Dockerfile is
+built by its platform — a Go service that ships a Dockerfile is still a Go
+service. Pass `--dockerfile` to override that.
 
 Flags override the rest too:
 
