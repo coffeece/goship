@@ -242,3 +242,72 @@ func TestDeployHonoursAnExplicitPlan(t *testing.T) {
 		t.Errorf("plan = %v, want app-large", created["plan"])
 	}
 }
+
+// Deploy creates whatever it cannot find. Without this check, a wrong --org
+// silently makes a second app of the same name somewhere else rather than
+// deploying the one the user meant.
+func TestDeployStopsWhenTheAppLivesInAnotherOrg(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"acme"},{"id":"2","slug":"other"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/other/apps/widget":
+			w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			t.Error("a duplicate app was created in the wrong org")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+
+	_, err := run(t, "", "deploy", dir)
+	if err == nil {
+		t.Fatal("expected the command to stop")
+	}
+	for _, want := range []string{`"widget"`, "--org other", "--app"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got:\n%v", want, err)
+		}
+	}
+}
+
+// A single-org account pays nothing for the check, and a genuinely new app
+// still gets created.
+func TestDeployStillCreatesWhenTheNameIsFreeEverywhere(t *testing.T) {
+	var created map[string]any
+	orgsListed := 0
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/orgs":
+			orgsListed++
+			w.Write([]byte(`[{"id":"1","slug":"acme"}]`)) //nolint:errcheck
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
+			w.Write([]byte(`{"name":"widget"}`))     //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+
+	run(t, "", "deploy", dir) //nolint:errcheck
+	if created == nil {
+		t.Fatal("a genuinely new app must still be created")
+	}
+	if orgsListed != 1 {
+		t.Errorf("orgs listed %d times, want exactly one lookup", orgsListed)
+	}
+}

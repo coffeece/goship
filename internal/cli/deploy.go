@@ -139,6 +139,9 @@ func newDeployCmd(app *App) *cobra.Command {
 				if !portal.IsNotFound(err) {
 					return err
 				}
+				if others := appInOtherOrgs(cmd.Context(), client, org, name); len(others) > 0 {
+					return elsewhereError(name, org, others)
+				}
 				if platform == "" {
 					return fmt.Errorf(
 						"cannot tell what %q is built with: none of %s found in %s.\nPass --platform (%s)",
