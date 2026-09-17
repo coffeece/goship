@@ -101,7 +101,7 @@ func newDeployCmd(app *App) *cobra.Command {
 			if app.Global.Output == render.JSON {
 				return fmt.Errorf("deploy streams its output; --output json is not supported")
 			}
-			org, err := app.Org()
+			org, err := app.Org(cmd.Context())
 			if err != nil {
 				return err
 			}

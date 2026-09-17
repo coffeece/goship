@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -40,8 +41,20 @@ func (a *App) Renderer() *render.Renderer {
 	return render.New(a.Out, a.Global.Output)
 }
 
-func (a *App) Org() (string, error) {
-	return a.Config.OrgOrError(a.Global.Org)
+// Org resolves the organization a command runs against: --org, then whatever
+// `org use` persisted. With neither, an account that belongs to exactly one
+// organization has nothing to choose, so pick it rather than demand a step.
+func (a *App) Org(ctx context.Context) (string, error) {
+	if a.Global.Org != "" {
+		return a.Global.Org, nil
+	}
+	if a.Config.Org != "" {
+		return a.Config.Org, nil
+	}
+	if orgs, err := a.Portal().Orgs(ctx); err == nil && len(orgs) == 1 {
+		return orgs[0].Slug, nil
+	}
+	return a.Config.OrgOrError("")
 }
 
 func (a *App) Portal() *portal.Client {

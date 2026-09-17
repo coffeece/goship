@@ -85,3 +85,29 @@ func TestOrgResolution(t *testing.T) {
 		}
 	})
 }
+
+// The selected org lives in the config, not in the session, so signing in as
+// someone else leaves a pin they may have no access to — and every org-scoped
+// call then answers "forbidden" for no visible reason.
+func TestForgetOrgUnlessMember(t *testing.T) {
+	t.Run("keeps an org the identity belongs to", func(t *testing.T) {
+		c := &Config{Org: "acme"}
+		if dropped := c.ForgetOrgUnlessMember([]string{"acme", "other"}); dropped != "" || c.Org != "acme" {
+			t.Errorf("dropped %q, org now %q", dropped, c.Org)
+		}
+	})
+
+	t.Run("clears one they do not", func(t *testing.T) {
+		c := &Config{Org: "acme"}
+		if dropped := c.ForgetOrgUnlessMember([]string{"other"}); dropped != "acme" || c.Org != "" {
+			t.Errorf("dropped %q, org now %q", dropped, c.Org)
+		}
+	})
+
+	t.Run("no pin is nothing to drop", func(t *testing.T) {
+		c := &Config{}
+		if dropped := c.ForgetOrgUnlessMember(nil); dropped != "" {
+			t.Errorf("dropped %q", dropped)
+		}
+	})
+}

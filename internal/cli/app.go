@@ -15,7 +15,7 @@ func newAppsCmd(app *App) *cobra.Command {
 		Short: "List your apps",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			org, err := app.Org()
+			org, err := app.Org(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -55,7 +55,7 @@ func appCreateCmd(app *App) *cobra.Command {
 		Short: "Create an app",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org()
+			org, err := app.Org(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -86,7 +86,7 @@ func appInfoCmd(app *App) *cobra.Command {
 		Short: "Show an app and its units",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org()
+			org, err := app.Org(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -116,7 +116,7 @@ func appRemoveCmd(app *App) *cobra.Command {
 		Short:   "Delete an app and everything it runs",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org()
+			org, err := app.Org(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -137,7 +137,7 @@ func appLifecycleCmd(app *App, action, short string) *cobra.Command {
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org()
+			org, err := app.Org(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -157,7 +157,7 @@ func appScaleCmd(app *App) *cobra.Command {
 		Short: "Set how many units the app runs",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org()
+			org, err := app.Org(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -179,7 +179,7 @@ func appPlanCmd(app *App) *cobra.Command {
 		Short: "Move the app to another plan",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org()
+			org, err := app.Org(cmd.Context())
 			if err != nil {
 				return err
 			}

@@ -108,3 +108,20 @@ func (c *Config) OrgOrError(flag string) (string, error) {
 	}
 	return "", errors.New("no organization selected: run `goship org use <slug>` or pass --org")
 }
+
+// ForgetOrgUnlessMember clears the selected organization when the signed-in
+// identity does not belong to it, returning what was dropped. A pin set under
+// one account is meaningless under another.
+func (c *Config) ForgetOrgUnlessMember(orgs []string) string {
+	if c.Org == "" {
+		return ""
+	}
+	for _, o := range orgs {
+		if o == c.Org {
+			return ""
+		}
+	}
+	dropped := c.Org
+	c.Org = ""
+	return dropped
+}

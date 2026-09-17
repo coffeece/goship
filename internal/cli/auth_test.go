@@ -148,3 +148,38 @@ func TestCommandsFailWithoutAnOrg(t *testing.T) {
 		t.Fatal("expected an error naming `goship org use`")
 	}
 }
+
+// An account that belongs to exactly one organization has nothing to choose,
+// so requiring `org use` before the first command is pure friction.
+func TestSingleOrgAccountsNeedNoSelection(t *testing.T) {
+	var gotPath string
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/orgs" {
+			w.Write([]byte(`[{"id":"1","slug":"onlyone"}]`)) //nolint:errcheck
+			return
+		}
+		gotPath = r.URL.Path
+		w.Write([]byte(`[]`)) //nolint:errcheck
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	if _, err := run(t, "", "apps"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/orgs/onlyone/apps" {
+		t.Errorf("path = %q, want the sole org selected automatically", gotPath)
+	}
+}
+
+// With several, guessing would be wrong, so it still asks.
+func TestMultipleOrgsStillRequireAChoice(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	_, err := run(t, "", "apps")
+	if err == nil || !strings.Contains(err.Error(), "goship org use") {
+		t.Fatalf("got %v", err)
+	}
+}

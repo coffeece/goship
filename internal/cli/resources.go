@@ -10,7 +10,7 @@ import (
 // orgRunE adapts a command body that needs the resolved organization.
 func orgRunE(app *App, fn func(cmd *cobra.Command, org string, args []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		org, err := app.Org()
+		org, err := app.Org(cmd.Context())
 		if err != nil {
 			return err
 		}

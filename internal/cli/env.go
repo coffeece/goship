@@ -19,8 +19,10 @@ func newEnvCmd(app *App) *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&appName, "app", "a", "", "app name (required)")
 	cmd.PersistentFlags().BoolVar(&noRestart, "no-restart", false, "apply without restarting the app")
 
-	resolve := func() (string, string, error) {
-		org, err := app.Org()
+	// Takes the running subcommand, not the parent: cobra sets the context on
+	// the command it executes, and the parent's would be a different one.
+	resolve := func(cmd *cobra.Command) (string, string, error) {
+		org, err := app.Org(cmd.Context())
 		if err != nil {
 			return "", "", err
 		}
@@ -36,7 +38,7 @@ func newEnvCmd(app *App) *cobra.Command {
 			Short: "List environment variables",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error {
-				org, name, err := resolve()
+				org, name, err := resolve(cmd)
 				if err != nil {
 					return err
 				}
@@ -52,7 +54,7 @@ func newEnvCmd(app *App) *cobra.Command {
 			Short: "Set environment variables",
 			Args:  cobra.MinimumNArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				org, name, err := resolve()
+				org, name, err := resolve(cmd)
 				if err != nil {
 					return err
 				}
@@ -75,7 +77,7 @@ func newEnvCmd(app *App) *cobra.Command {
 			Short: "Remove environment variables",
 			Args:  cobra.MinimumNArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				org, name, err := resolve()
+				org, name, err := resolve(cmd)
 				if err != nil {
 					return err
 				}

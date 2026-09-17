@@ -79,6 +79,21 @@ func browserLogin(cmd *cobra.Command, app *App) error {
 	if err != nil {
 		return err
 	}
+
+	// The selected org is stored per config, not per identity, so signing in as
+	// someone else leaves a pin they may have no access to — and every
+	// org-scoped command then answers "forbidden" for no visible reason.
+	if dropped := app.Config.ForgetOrgUnlessMember(me.Groups); dropped != "" {
+		if err := app.Config.Save(); err != nil {
+			return err
+		}
+		if err := app.Renderer().Message(
+			"Logged in as %s. You are not a member of %q, so it is no longer selected — pick one with `goship org use`.",
+			me.Email, dropped); err != nil {
+			return err
+		}
+		return nil
+	}
 	return app.Renderer().Message("Logged in as %s.", me.Email)
 }
 
