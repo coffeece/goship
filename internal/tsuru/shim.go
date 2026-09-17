@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	goclient "github.com/tsuru/go-tsuruclient/pkg/client"
 	goconfig "github.com/tsuru/go-tsuruclient/pkg/config"
@@ -55,8 +57,38 @@ func Setup(target string, stdout, stderr io.Writer) error {
 func Flush() { goconfig.SaveChangesWithTimeout() }
 
 // Run executes a tsuru-client command against the given streams.
+//
+// Interrupting is forwarded to the command when it supports cancellation.
+// Without this, Ctrl-C only kills the client: the platform keeps building and
+// holds the app's event lock, so the next deploy fails with "event locked" and
+// the user has no way to clear it.
 func Run(c tsurucmd.Command, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	return c.Run(&tsurucmd.Context{Args: args, Stdin: stdin, Stdout: stdout, Stderr: stderr})
+	ctx := &tsurucmd.Context{Args: args, Stdin: stdin, Stdout: stdout, Stderr: stderr}
+
+	if cancelable, ok := c.(tsurucmd.Cancelable); ok {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+		defer signal.Stop(signals)
+
+		done := make(chan struct{})
+		defer close(done)
+
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				case <-signals:
+					fmt.Fprintln(stderr, "\nCancelling on the server — do not kill this process, or the app stays locked.")
+					if err := cancelable.Cancel(*ctx); err != nil {
+						fmt.Fprintf(stderr, "Could not cancel: %v\n", err)
+					}
+				}
+			}
+		}()
+	}
+
+	return c.Run(ctx)
 }
 
 // Token returns the credential tsuru-client holds after a login. It is the
