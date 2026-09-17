@@ -49,7 +49,7 @@ func (a *App) Portal() *portal.Client {
 	if a.Global.Verbose {
 		opts = append(opts, portal.WithTrace(os.Stderr))
 	}
-	return portal.New(a.Config.API, a.Config.Token, opts...)
+	return portal.New(a.Config.API, resolveToken(a.Config.Token), opts...)
 }
 
 func NewRoot(version string) *cobra.Command {

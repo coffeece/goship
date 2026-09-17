@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/coffeece/goship/internal/cli"
+	"github.com/coffeece/goship/internal/portal"
 )
 
 var version = "dev"
@@ -15,6 +16,9 @@ func main() {
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
+		if portal.IsUnauthorized(err) {
+			fmt.Fprintln(os.Stderr, "Your session has expired or is not valid. Run `goship login`.")
+		}
 		os.Exit(1)
 	}
 }

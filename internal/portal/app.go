@@ -6,11 +6,14 @@ import (
 )
 
 type App struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name" table:"NAME"`
-	TsuruName   string    `json:"tsuru_name"`
-	OrgID       string    `json:"org_id"`
-	Platform    string    `json:"platform" table:"PLATFORM"`
+	ID        string `json:"id"`
+	Name      string `json:"name" table:"NAME"`
+	TsuruName string `json:"tsuru_name"`
+	OrgID     string `json:"org_id"`
+	// No table tag: Tsuru's list endpoint omits the platform, so a column for
+	// it would be empty on `goship apps`, the command that shows it most. It is
+	// still in the JSON, and `app info` fills it.
+	Platform    string    `json:"platform"`
 	Pool        string    `json:"pool,omitempty"`
 	NodeID      *string   `json:"node_id,omitempty"`
 	PlanSlug    string    `json:"plan_slug"`
