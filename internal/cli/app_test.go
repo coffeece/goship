@@ -3,6 +3,8 @@ package cli
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -162,5 +164,37 @@ func TestEnvRequiresAnApp(t *testing.T) {
 	})
 	if _, err := run(t, "", "env", "list"); err == nil {
 		t.Fatal("expected --app to be required")
+	}
+}
+
+// A repo that belongs to one organization should deploy there whatever
+// `goship org use` was last pointed at — the project file is the more specific
+// statement. The flag still wins over both.
+func TestProjectFileOrgBeatsTheSelectedOrg(t *testing.T) {
+	var gotPath string
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte(`[]`)) //nolint:errcheck
+	})
+	t.Setenv("GOSHIP_ORG", "selected")
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "goship.yml"), []byte("org: from-project\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	if _, err := run(t, "", "apps"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/orgs/from-project/apps" {
+		t.Errorf("path = %q, want the project's org", gotPath)
+	}
+
+	if _, err := run(t, "", "apps", "--org", "explicit"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/orgs/explicit/apps" {
+		t.Errorf("path = %q, want --org to win", gotPath)
 	}
 }

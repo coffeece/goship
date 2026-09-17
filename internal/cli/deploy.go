@@ -25,7 +25,10 @@ var projectFiles = []string{"goship.yaml", "goship.yml", ".goship.yaml", ".goshi
 
 // project is the optional config in a project root. Flags win over it.
 type project struct {
-	App      string            `yaml:"app"`
+	App string `yaml:"app"`
+	// Org pins the organization for the project, so a repo that belongs to one
+	// org does not depend on whatever `goship org use` was last pointed at.
+	Org      string            `yaml:"org"`
 	Platform string            `yaml:"platform"`
 	Plan     string            `yaml:"plan"`
 	Env      map[string]string `yaml:"env"`
@@ -122,6 +125,9 @@ func newDeployCmd(app *App) *cobra.Command {
 			// The app name is known before the organization has to be, so an
 			// unselected org is answerable: if this app exists in exactly one
 			// of the caller's organizations, that is the one they meant.
+			if proj.Org != "" {
+				app.Global.Org = firstNonEmpty(app.Global.Org, proj.Org)
+			}
 			org, err := app.Org(cmd.Context())
 			if err != nil {
 				owners := appInOtherOrgs(cmd.Context(), client, "", name)

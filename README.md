@@ -63,11 +63,16 @@ out from the directory and leaving the rest for you:
 
 ```yaml
 app: api
+org: acme
 platform: go
 plan: app-small-sandboxed
 env:
   LOG_LEVEL: info
 ```
+
+`org` pins the organization for the whole project, so a repo always deploys to
+the same place regardless of what `goship org use` last selected. It applies to
+every command run inside the directory, not only `deploy`. `--org` still wins.
 
 Flags beat the file; the file beats what is inferred. Secrets belong in a
 dotenv file instead, applied as private variables:

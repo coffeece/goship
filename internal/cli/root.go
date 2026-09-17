@@ -35,6 +35,8 @@ type App struct {
 	Global  Global
 	Config  *config.Config
 	Out     io.Writer
+	// ProjectOrg is the org named by a config file in the working directory.
+	ProjectOrg string
 }
 
 func (a *App) Renderer() *render.Renderer {
@@ -47,6 +49,12 @@ func (a *App) Renderer() *render.Renderer {
 func (a *App) Org(ctx context.Context) (string, error) {
 	if a.Global.Org != "" {
 		return a.Global.Org, nil
+	}
+	// A goship.yml in the working directory says which organization this
+	// project belongs to, which is more specific than whatever `org use` was
+	// last pointed at.
+	if a.ProjectOrg != "" {
+		return a.ProjectOrg, nil
 	}
 	if a.Config.Org != "" {
 		return a.Config.Org, nil
@@ -83,6 +91,9 @@ func NewRoot(version string) *cobra.Command {
 				return err
 			}
 			app.Config = cfg
+			if proj, _, err := loadProject("."); err == nil {
+				app.ProjectOrg = proj.Org
+			}
 			return nil
 		},
 	}

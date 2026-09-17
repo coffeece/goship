@@ -47,8 +47,11 @@ func newInitCmd(app *App) *cobra.Command {
 				dockerfile = detectDockerfile(dir)
 			}
 
+			// The selected org is local state, so init still needs no network.
+			org := app.Config.Org
+
 			path := filepath.Join(dir, initFile)
-			if err := os.WriteFile(path, []byte(renderProject(name, platform, dockerfile)), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(renderProject(name, org, platform, dockerfile)), 0o644); err != nil {
 				return err
 			}
 
@@ -57,6 +60,13 @@ func newInitCmd(app *App) *cobra.Command {
 				return err
 			}
 			if err := r.Message("  app:      %s (from the directory name)", name); err != nil {
+				return err
+			}
+			if org != "" {
+				if err := r.Message("  org:      %s (the one you have selected)", org); err != nil {
+					return err
+				}
+			} else if err := r.Message("  org:      left empty — set it, or pick one with `goship org use`"); err != nil {
 				return err
 			}
 			switch {
@@ -102,8 +112,9 @@ func appNameFor(dir string) string {
 	return strings.Trim(name, "-")
 }
 
-func renderProject(name, platform, dockerfile string) string {
-	build := "platform: " + platform
+func renderProject(name, org, platform, dockerfile string) string {
+	orgLine := strings.TrimRight("org: "+org, " ")
+	build := strings.TrimRight("platform: "+platform, " ")
 	if platform == "" && dockerfile != "" {
 		build = "# No platform: the container file below builds the image.\nplatform:\ndockerfile: " + dockerfile
 	}
@@ -111,6 +122,11 @@ func renderProject(name, platform, dockerfile string) string {
 # Flags beat this file; this file beats whatever goship works out on its own.
 
 app: %s
+
+# Organization this project belongs to. Set here, it beats whatever
+# "goship org use" last selected, so a repo always deploys to the same place.
+%s
+
 %s
 
 # Plan for the app the first time it is created. Run "goship plans" to see what
@@ -121,5 +137,5 @@ plan:
 # Environment variables applied on every deploy. Secrets do not belong in a file
 # you commit — pass those with --env-file instead.
 env:
-`, name, build)
+`, name, orgLine, build)
 }

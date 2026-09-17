@@ -163,3 +163,41 @@ func TestInitPrefersThePlatformOverADockerfile(t *testing.T) {
 		t.Errorf("got platform=%q dockerfile=%q", p.Platform, p.Dockerfile)
 	}
 }
+
+// The org is local state, so init can record it without a network call.
+func TestInitRecordsTheSelectedOrg(t *testing.T) {
+	isolateConfig(t)
+	t.Setenv("GOSHIP_ORG", "acme")
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "")
+
+	if _, err := run(t, "", "init", dir); err != nil {
+		t.Fatal(err)
+	}
+	p, _, err := loadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Org != "acme" {
+		t.Errorf("org = %q, want the selected one", p.Org)
+	}
+}
+
+// Nothing selected means nothing to record: leave it for the user rather than
+// guess, and say so.
+func TestInitLeavesTheOrgEmptyWhenNoneIsSelected(t *testing.T) {
+	dir, out, err := initIn(t, "go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _, _ := loadProject(dir)
+	if p.Org != "" {
+		t.Errorf("org = %q, want it empty", p.Org)
+	}
+	if !strings.Contains(out, "goship org use") {
+		t.Errorf("output should say how to set one, got:\n%s", out)
+	}
+}
