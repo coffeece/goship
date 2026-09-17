@@ -17,7 +17,7 @@ import (
 // return no matches rather than propagating.
 func appInOtherOrgs(ctx context.Context, client *portal.Client, current, name string) []string {
 	orgs, err := client.Orgs(ctx)
-	if err != nil || len(orgs) < 2 {
+	if err != nil {
 		return nil
 	}
 
@@ -33,15 +33,15 @@ func appInOtherOrgs(ctx context.Context, client *portal.Client, current, name st
 	return found
 }
 
-func elsewhereError(name, current string, orgs []string) error {
-	if len(orgs) == 1 {
-		return fmt.Errorf(
-			"no app %q in org %q, but one exists in org %q.\n"+
-				"Deploy that one with --org %s, or pass --app <name> to create a different app here",
-			name, current, orgs[0], orgs[0])
+func elsewhereError(name, current string, orgs []string, forbidden bool) error {
+	problem := fmt.Sprintf("no app %q in org %q", name, current)
+	if forbidden {
+		problem = fmt.Sprintf("you are not a member of org %q", current)
 	}
-	return fmt.Errorf(
-		"no app %q in org %q, but apps with that name exist in: %s.\n"+
-			"Pick one with --org, or pass --app <name> to create a different app here",
-		name, current, strings.Join(orgs, ", "))
+	if len(orgs) == 1 {
+		return fmt.Errorf("%s, but %q exists in org %q.\nDeploy that one with --org %s, or `goship org use %s`",
+			problem, name, orgs[0], orgs[0], orgs[0])
+	}
+	return fmt.Errorf("%s, but %q exists in: %s.\nPick one with --org, or `goship org use <slug>`",
+		problem, name, strings.Join(orgs, ", "))
 }

@@ -135,12 +135,19 @@ func newDeployCmd(app *App) *cobra.Command {
 			r := app.Renderer()
 			client := app.Portal()
 
-			if _, err := client.App(cmd.Context(), org, name); err != nil {
-				if !portal.IsNotFound(err) {
-					return err
-				}
+			// Not found and forbidden both mean "not usable from here", and both
+			// are worth searching the user's other organizations for: a pinned
+			// org left over from another account produces the second one.
+			_, lookupErr := client.App(cmd.Context(), org, name)
+			if lookupErr != nil && !portal.IsNotFound(lookupErr) && !portal.IsForbidden(lookupErr) {
+				return lookupErr
+			}
+			if lookupErr != nil {
 				if others := appInOtherOrgs(cmd.Context(), client, org, name); len(others) > 0 {
-					return elsewhereError(name, org, others)
+					return elsewhereError(name, org, others, portal.IsForbidden(lookupErr))
+				}
+				if portal.IsForbidden(lookupErr) {
+					return lookupErr
 				}
 				if platform == "" {
 					return fmt.Errorf(

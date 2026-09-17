@@ -270,7 +270,7 @@ func TestDeployStopsWhenTheAppLivesInAnotherOrg(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the command to stop")
 	}
-	for _, want := range []string{`"widget"`, "--org other", "--app"} {
+	for _, want := range []string{`"widget"`, "--org other", "goship org use other"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got:\n%v", want, err)
 		}
@@ -309,5 +309,66 @@ func TestDeployStillCreatesWhenTheNameIsFreeEverywhere(t *testing.T) {
 	}
 	if orgsListed != 1 {
 		t.Errorf("orgs listed %d times, want exactly one lookup", orgsListed)
+	}
+}
+
+// A pinned org left over from another account answers 403, not 404. The search
+// has to run there too, or the user is told "forbidden" while the app they
+// asked for is sitting in an org they do belong to.
+func TestDeployFindsTheAppWhenThePinnedOrgIsForbidden(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"mine"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/mine/apps/widget":
+			w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			t.Error("an app was created despite one existing in a reachable org")
+		default:
+			w.WriteHeader(http.StatusForbidden)
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+
+	_, err := run(t, "", "deploy", dir)
+	if err == nil {
+		t.Fatal("expected the command to stop")
+	}
+	for _, want := range []string{"not a member", "--org mine"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got:\n%v", want, err)
+		}
+	}
+}
+
+// Forbidden with the app nowhere reachable keeps the membership error rather
+// than trying to create into an org the caller cannot use.
+func TestDeployKeepsForbiddenWhenTheAppIsNowhere(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/orgs" {
+			w.Write([]byte(`[{"id":"1","slug":"mine"}]`)) //nolint:errcheck
+			return
+		}
+		if r.Method == http.MethodPost {
+			t.Error("tried to create into a forbidden org")
+		}
+		w.WriteHeader(http.StatusForbidden)
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+
+	_, err := run(t, "", "deploy", dir)
+	// A bare 403 renders as "Forbidden"; the API's JSON body is lowercase.
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "forbidden") {
+		t.Fatalf("got %v", err)
 	}
 }
