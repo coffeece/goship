@@ -234,7 +234,18 @@ func newDeployCmd(app *App) *cobra.Command {
 			if errors.Is(err, tsurucmd.ErrAbortCommand) {
 				return fmt.Errorf("deploy of %q failed", name)
 			}
-			return err
+			if err != nil {
+				return err
+			}
+
+			// The platform's stream ends on "OK" with no address. Close on the
+			// URL, which is the thing the user actually wanted.
+			if deployed, appErr := client.App(cmd.Context(), org, name); appErr == nil {
+				if url := publicURL(deployed); url != "" {
+					return r.Message("\n\u2713 %s", url)
+				}
+			}
+			return nil
 		},
 	}
 
@@ -272,4 +283,16 @@ func mustAbs(dir string) string {
 		return dir
 	}
 	return abs
+}
+
+// publicURL is the address to show after a deploy: a custom domain when the
+// app has one, otherwise the platform address it always has.
+func publicURL(a *portal.App) string {
+	if len(a.CNames) > 0 {
+		return "https://" + strings.TrimPrefix(strings.TrimPrefix(a.CNames[0], "https://"), "http://")
+	}
+	if len(a.Addresses) > 0 {
+		return a.Addresses[0]
+	}
+	return ""
 }

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/coffeece/goship/internal/portal"
 )
 
 func TestLoadProjectIsOptional(t *testing.T) {
@@ -434,5 +436,31 @@ func TestDeployAsksWhenTheNameIsAmbiguous(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got:\n%v", want, err)
 		}
+	}
+}
+
+// The platform's stream ends on "OK" and never says where the app is. A custom
+// domain wins over the platform address, because that is the URL people use.
+func TestPublicURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		app  portal.App
+		want string
+	}{
+		{"cname wins", portal.App{
+			CNames:    []string{"blog.com"},
+			Addresses: []string{"https://blog.apps.goship.sh"},
+		}, "https://blog.com"},
+		{"cname already absolute", portal.App{CNames: []string{"http://example.com"}}, "https://example.com"},
+		{"falls back to the platform address", portal.App{
+			Addresses: []string{"https://widget.apps.goship.sh"},
+		}, "https://widget.apps.goship.sh"},
+		{"nothing to show", portal.App{}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := publicURL(&tc.app); got != tc.want {
+				t.Errorf("publicURL = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
