@@ -32,8 +32,12 @@ its platform is inferred from the files present (`go.mod`, `pyproject.toml`,
 first deploy — the output says what it inferred:
 
 ```
-Creating app widget (go, detected from go.mod)...
+Creating app widget (go, detected from go.mod, plan Free)...
 ```
+
+A plan is only chosen for you when it is free. If your organization has no free
+grant, the command stops and shows what the options cost — `goship plans` lists
+them — rather than spending your money on a guess.
 
 Flags override that:
 
@@ -74,6 +78,7 @@ goship deploy --env-file .env
 | `goship domain add\|rm\|list\|register\|verify` | custom domains and TLS |
 | `goship volume create\|list\|info\|bind\|unbind\|rm` | persistent disks |
 | `goship node add\|list\|info\|rm` | your own machines (BYON) |
+| `goship plans` | what your organization can choose |
 | `goship releases` / `goship rollback` | deploy history |
 | `goship org list\|use` | switch organization |
 

@@ -148,6 +148,14 @@ func newDeployCmd(app *App) *cobra.Command {
 				if platformSource != "" {
 					origin = platform + ", " + platformSource
 				}
+				if plan == "" {
+					chosen, err := choosePlan(cmd.Context(), client, org)
+					if err != nil {
+						return err
+					}
+					plan = chosen.Slug
+					origin += ", plan " + chosen.DisplayName
+				}
 				if err := r.Message("Creating app %s (%s)...", name, origin); err != nil {
 					return err
 				}

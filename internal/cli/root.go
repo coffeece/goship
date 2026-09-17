@@ -94,6 +94,7 @@ func NewRoot(version string) *cobra.Command {
 		newDomainCmd(app),
 		newVolumeCmd(app),
 		newNodeCmd(app),
+		newPlansCmd(app),
 	)
 	root.AddCommand(newStreamCmds(app)...)
 

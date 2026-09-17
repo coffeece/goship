@@ -112,6 +112,8 @@ func TestDeployWithNoConfigInfersEverything(t *testing.T) {
 	var created map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
 		case r.Method == http.MethodGet:
 			w.WriteHeader(http.StatusNotFound) // the app does not exist yet
 		case r.Method == http.MethodPost:
@@ -140,6 +142,9 @@ func TestDeployWithNoConfigInfersEverything(t *testing.T) {
 	if created["platform"] != "go" {
 		t.Errorf("platform = %v, want go inferred from go.mod", created["platform"])
 	}
+	if created["plan"] != "app-free" {
+		t.Errorf("plan = %v, want the org's free plan chosen automatically", created["plan"])
+	}
 	if !strings.Contains(out, "detected from go.mod") {
 		t.Errorf("the output should say where the platform came from, got %q", out)
 	}
@@ -167,5 +172,73 @@ func TestDeployReportsWhenItCannotInferThePlatform(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got: %v", want, err)
 		}
+	}
+}
+
+const freePlanCatalog = `[
+  {"slug":"app-free","kind":"app","display_name":"Free","cpu_milli":100,"memory_mb":256,"price_cents":0,"is_free":true,"is_active":true,"sort_order":10},
+  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_free":false,"is_active":true,"sort_order":30}
+]`
+
+const paidPlanCatalog = `[
+  {"slug":"app-micro","kind":"app","display_name":"Micro","cpu_milli":200,"memory_mb":256,"price_cents":990,"is_free":false,"is_active":true,"sort_order":20},
+  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_free":false,"is_active":true,"sort_order":30}
+]`
+
+// Picking a paid plan on someone's behalf spends their money. With no free
+// grant on the org, the command stops and shows what the choices cost.
+func TestDeployWillNotPickAPaidPlanForYou(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			w.Write([]byte(paidPlanCatalog)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			t.Error("an app was created without the user choosing a plan")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+
+	_, err := run(t, "", "deploy", dir)
+	if err == nil {
+		t.Fatal("expected the command to stop")
+	}
+	for _, want := range []string{"app-micro", "R$ 9.90/mo", "app-small", "--plan"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should show %q, got:\n%v", want, err)
+		}
+	}
+}
+
+// An explicit --plan skips the catalogue lookup entirely.
+func TestDeployHonoursAnExplicitPlan(t *testing.T) {
+	var created map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			t.Error("the catalogue should not be consulted when --plan is given")
+		case r.Method == http.MethodPost:
+			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
+			w.Write([]byte(`{"name":"widget"}`))     //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+
+	run(t, "", "deploy", dir, "--plan", "app-large") //nolint:errcheck
+	if created["plan"] != "app-large" {
+		t.Errorf("plan = %v, want app-large", created["plan"])
 	}
 }
