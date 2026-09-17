@@ -35,7 +35,10 @@ func appInOtherOrgs(ctx context.Context, client *portal.Client, current, name st
 
 func elsewhereError(name, current string, orgs []string, forbidden bool) error {
 	problem := fmt.Sprintf("no app %q in org %q", name, current)
-	if forbidden {
+	switch {
+	case current == "":
+		problem = "no organization selected"
+	case forbidden:
 		problem = fmt.Sprintf("you are not a member of org %q", current)
 	}
 	if len(orgs) == 1 {

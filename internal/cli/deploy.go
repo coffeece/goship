@@ -101,11 +101,6 @@ func newDeployCmd(app *App) *cobra.Command {
 			if app.Global.Output == render.JSON {
 				return fmt.Errorf("deploy streams its output; --output json is not supported")
 			}
-			org, err := app.Org(cmd.Context())
-			if err != nil {
-				return err
-			}
-
 			dir := "."
 			if len(args) == 1 {
 				dir = args[0]
@@ -117,6 +112,27 @@ func newDeployCmd(app *App) *cobra.Command {
 
 			name := firstNonEmpty(appName, proj.App, filepath.Base(mustAbs(dir)))
 			plan = firstNonEmpty(plan, proj.Plan)
+
+			r := app.Renderer()
+			client := app.Portal()
+
+			// The app name is known before the organization has to be, so an
+			// unselected org is answerable: if this app exists in exactly one
+			// of the caller's organizations, that is the one they meant.
+			org, err := app.Org(cmd.Context())
+			if err != nil {
+				owners := appInOtherOrgs(cmd.Context(), client, "", name)
+				if len(owners) != 1 {
+					if len(owners) > 1 {
+						return elsewhereError(name, "", owners, false)
+					}
+					return err
+				}
+				org = owners[0]
+				if err := r.Message("Using org %s, where %q already exists. Run `goship org use %s` to keep it.", org, name, org); err != nil {
+					return err
+				}
+			}
 
 			// Where the platform came from, so the creation line can say so: a
 			// wrong guess should be visible in the output, not discovered later.
@@ -131,9 +147,6 @@ func newDeployCmd(app *App) *cobra.Command {
 					platformSource = "detected from " + file
 				}
 			}
-
-			r := app.Renderer()
-			client := app.Portal()
 
 			// Not found and forbidden both mean "not usable from here", and both
 			// are worth searching the user's other organizations for: a pinned

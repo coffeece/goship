@@ -372,3 +372,67 @@ func TestDeployKeepsForbiddenWhenTheAppIsNowhere(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// The app name is known before the org has to be. With none selected and the
+// app living in exactly one of the caller's orgs, there is nothing to ask.
+func TestDeployPicksTheOrgThatOwnsTheApp(t *testing.T) {
+	var deployedOrg string
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/beta/apps/widget":
+			deployedOrg = "beta"
+			w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+
+	out, _ := run(t, "", "deploy", dir)
+
+	if deployedOrg != "beta" {
+		t.Errorf("never looked the app up in beta")
+	}
+	if !strings.Contains(out, "Using org beta") {
+		t.Errorf("the choice must be visible, got %q", out)
+	}
+}
+
+// In two orgs at once, picking one would be a guess.
+func TestDeployAsksWhenTheNameIsAmbiguous(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/alpha/apps/widget", "/api/v1/orgs/beta/apps/widget":
+			w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+
+	_, err := run(t, "", "deploy", dir)
+	if err == nil {
+		t.Fatal("expected the command to stop")
+	}
+	for _, want := range []string{"alpha", "beta", "--org"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got:\n%v", want, err)
+		}
+	}
+}
