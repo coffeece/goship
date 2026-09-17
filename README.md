@@ -39,7 +39,17 @@ A plan is only chosen for you when it is free. If your organization has no free
 grant, the command stops and shows what the options cost — `goship plans` lists
 them — rather than spending your money on a guess.
 
-Flags override that:
+With no platform marker but a `Dockerfile` (or `Containerfile`) present, the
+container file builds the image instead:
+
+```
+Building widget from Dockerfile.
+```
+
+A project with both is built by its platform — a Go service that ships a
+Dockerfile is still a Go service. Pass `--dockerfile` to override that.
+
+Flags override the rest too:
 
 ```sh
 goship deploy --platform python --plan app-small-sandboxed

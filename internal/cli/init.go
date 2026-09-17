@@ -42,9 +42,13 @@ func newInitCmd(app *App) *cobra.Command {
 
 			name := appNameFor(dir)
 			platform, evidence := detectPlatform(dir)
+			var dockerfile string
+			if platform == "" {
+				dockerfile = detectDockerfile(dir)
+			}
 
 			path := filepath.Join(dir, initFile)
-			if err := os.WriteFile(path, []byte(renderProject(name, platform)), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(renderProject(name, platform, dockerfile)), 0o644); err != nil {
 				return err
 			}
 
@@ -55,10 +59,15 @@ func newInitCmd(app *App) *cobra.Command {
 			if err := r.Message("  app:      %s (from the directory name)", name); err != nil {
 				return err
 			}
-			if platform == "" {
-				return r.Message("  platform: left empty — no %s here, so set it yourself (%s)", signalFiles(), knownPlatforms())
+			switch {
+			case platform != "":
+				return r.Message("  platform: %s (detected from %s)", platform, evidence)
+			case dockerfile != "":
+				return r.Message("  build:    %s (no platform needed — your container file builds the image)", dockerfile)
+			default:
+				return r.Message("  platform: left empty — no %s or Dockerfile here, so set it yourself (%s)",
+					signalFiles(), knownPlatforms())
 			}
-			return r.Message("  platform: %s (detected from %s)", platform, evidence)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "replace an existing config file")
@@ -93,12 +102,16 @@ func appNameFor(dir string) string {
 	return strings.Trim(name, "-")
 }
 
-func renderProject(name, platform string) string {
+func renderProject(name, platform, dockerfile string) string {
+	build := "platform: " + platform
+	if platform == "" && dockerfile != "" {
+		build = "# No platform: the container file below builds the image.\nplatform:\ndockerfile: " + dockerfile
+	}
 	return fmt.Sprintf(`# goship.yml — optional. Every value here can also be passed as a flag.
 # Flags beat this file; this file beats whatever goship works out on its own.
 
 app: %s
-platform: %s
+%s
 
 # Plan for the app the first time it is created. Run "goship plans" to see what
 # your organization can choose. Left empty, goship picks a free plan if you have
@@ -108,5 +121,5 @@ plan:
 # Environment variables applied on every deploy. Secrets do not belong in a file
 # you commit — pass those with --env-file instead.
 env:
-`, name, platform)
+`, name, build)
 }

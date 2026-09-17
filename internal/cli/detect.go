@@ -50,3 +50,20 @@ func signalFiles() string {
 	}
 	return strings.Join(files, ", ")
 }
+
+// dockerfileNames are the container build recipes we recognise, in the order
+// docker itself would.
+var dockerfileNames = []string{"Dockerfile", "dockerfile", "Containerfile"}
+
+// detectDockerfile reports the container file in dir, if any. It is the
+// fallback when no platform marker matches: a project carrying both a go.mod
+// and a Dockerfile is a Go app that happens to ship one, and is built by the
+// platform unless --dockerfile says otherwise.
+func detectDockerfile(dir string) string {
+	for _, name := range dockerfileNames {
+		if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
+			return name
+		}
+	}
+	return ""
+}

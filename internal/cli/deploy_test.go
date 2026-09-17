@@ -464,3 +464,73 @@ func TestPublicURL(t *testing.T) {
 		})
 	}
 }
+
+// An existing app with a container file deploys through it. The flag reaches
+// tsuru-client as --dockerfile, which is what makes it a container build
+// rather than a platform build.
+func TestDeployBuildsFromADockerfile(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			t.Error("an app was created when one already exists")
+		}
+		w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "Dockerfile"), "FROM alpine\n")
+
+	out, _ := run(t, "", "deploy", dir)
+	if !strings.Contains(out, "Building widget from Dockerfile") {
+		t.Errorf("the container build should be announced, got %q", out)
+	}
+}
+
+// Creating an app has to state a platform, so a container-only project cannot
+// be created from here. Saying that beats a validation error from the API.
+func TestDeployExplainsWhyADockerfileAppCannotBeCreated(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			t.Error("tried to create an app with no platform")
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "Dockerfile"), "FROM alpine\n")
+
+	_, err := run(t, "", "deploy", dir)
+	if err == nil {
+		t.Fatal("expected the command to stop")
+	}
+	for _, want := range []string{"requires a platform", "--platform", "Dockerfile"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got:\n%v", want, err)
+		}
+	}
+}
+
+// The config's dockerfile survives the round trip and drives the build.
+func TestDeployHonoursTheDockerfileFromConfig(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+	})
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+	write(t, filepath.Join(dir, "Dockerfile.prod"), "FROM alpine\n")
+	write(t, filepath.Join(dir, "goship.yml"), "app: widget\ndockerfile: Dockerfile.prod\n")
+
+	out, _ := run(t, "", "deploy", dir)
+	if !strings.Contains(out, "Building widget from Dockerfile.prod") {
+		t.Errorf("the config's dockerfile should win over the go.mod, got %q", out)
+	}
+}

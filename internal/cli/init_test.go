@@ -126,3 +126,40 @@ func TestAppNameFor(t *testing.T) {
 		})
 	}
 }
+
+// No platform marker but a container file: the build is the Dockerfile's job,
+// and the config has to say so rather than leaving both blank.
+func TestInitRecordsADockerfileBuild(t *testing.T) {
+	dir, out, err := initIn(t, "Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, _, err := loadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Platform != "" {
+		t.Errorf("platform = %q, want it empty for a container build", p.Platform)
+	}
+	if p.Dockerfile != "Dockerfile" {
+		t.Errorf("dockerfile = %q, want it recorded", p.Dockerfile)
+	}
+	if !strings.Contains(out, "Dockerfile") {
+		t.Errorf("output should name the container file, got:\n%s", out)
+	}
+}
+
+// A platform marker wins: a Go service shipping a Dockerfile is still a Go
+// service unless the user says otherwise.
+func TestInitPrefersThePlatformOverADockerfile(t *testing.T) {
+	dir, _, err := initIn(t, "go.mod", "Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, _, _ := loadProject(dir)
+	if p.Platform != "go" || p.Dockerfile != "" {
+		t.Errorf("got platform=%q dockerfile=%q", p.Platform, p.Dockerfile)
+	}
+}

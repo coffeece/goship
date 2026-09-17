@@ -62,3 +62,30 @@ func TestErrorTextNamesWhatToPass(t *testing.T) {
 		t.Errorf("signalFiles() = %q", signalFiles())
 	}
 }
+
+func TestDetectDockerfile(t *testing.T) {
+	for _, tc := range []struct{ name, file, want string }{
+		{"Dockerfile", "Dockerfile", "Dockerfile"},
+		{"lowercase", "dockerfile", "dockerfile"},
+		{"podman's name", "Containerfile", "Containerfile"},
+		{"nothing", "README.md", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			write(t, filepath.Join(dir, tc.file), "")
+			if got := detectDockerfile(dir); got != tc.want {
+				t.Errorf("detectDockerfile = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDetectDockerfileIgnoresDirectories(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "Dockerfile"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := detectDockerfile(dir); got != "" {
+		t.Errorf("got %q, want no detection", got)
+	}
+}

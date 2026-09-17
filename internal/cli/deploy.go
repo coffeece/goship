@@ -29,6 +29,9 @@ type project struct {
 	Platform string            `yaml:"platform"`
 	Plan     string            `yaml:"plan"`
 	Env      map[string]string `yaml:"env"`
+	// Dockerfile names a container file to build from instead of letting a
+	// platform build the source. Mutually exclusive with platform.
+	Dockerfile string `yaml:"dockerfile"`
 }
 
 // loadProject reads the first config file that exists, returning its name so
@@ -86,7 +89,7 @@ func unquote(s string) string {
 }
 
 func newDeployCmd(app *App) *cobra.Command {
-	var appName, platform, plan, envFile, message string
+	var appName, platform, plan, envFile, message, dockerfile string
 
 	cmd := &cobra.Command{
 		Use:   "deploy [dir]",
@@ -134,8 +137,9 @@ func newDeployCmd(app *App) *cobra.Command {
 				}
 			}
 
-			// Where the platform came from, so the creation line can say so: a
-			// wrong guess should be visible in the output, not discovered later.
+			// Where the build instructions came from, so the creation line can
+			// say so: a wrong guess should be visible in the output, not
+			// discovered later.
 			var platformSource string
 			switch {
 			case platform != "":
@@ -145,6 +149,15 @@ func newDeployCmd(app *App) *cobra.Command {
 				var file string
 				if platform, file = detectPlatform(dir); file != "" {
 					platformSource = "detected from " + file
+				}
+			}
+
+			// A container file is the fallback, not a competitor: it only
+			// decides the build when no platform does.
+			dockerfile = firstNonEmpty(dockerfile, proj.Dockerfile)
+			if platform == "" && dockerfile == "" {
+				if found := detectDockerfile(dir); found != "" {
+					dockerfile, platformSource = found, "detected from "+found
 				}
 			}
 
@@ -162,9 +175,16 @@ func newDeployCmd(app *App) *cobra.Command {
 				if portal.IsForbidden(lookupErr) {
 					return lookupErr
 				}
+				if platform == "" && dockerfile != "" {
+					return fmt.Errorf(
+						"%q does not exist yet, and an app built from a container file cannot be created from here:\n"+
+							"the API still requires a platform. Create it once with --platform (%s) — the %s\n"+
+							"is what builds the image from then on — or create it in the dashboard",
+						name, knownPlatforms(), dockerfile)
+				}
 				if platform == "" {
 					return fmt.Errorf(
-						"cannot tell what %q is built with: none of %s found in %s.\nPass --platform (%s)",
+						"cannot tell what %q is built with: none of %s or a Dockerfile found in %s.\nPass --platform (%s)",
 						name, signalFiles(), dir, knownPlatforms())
 				}
 				origin := platform
@@ -217,6 +237,12 @@ func newDeployCmd(app *App) *cobra.Command {
 				}
 			}
 
+			if dockerfile != "" {
+				if err := r.Message("Building %s from %s.", name, dockerfile); err != nil {
+					return err
+				}
+			}
+
 			if err := tsuru.Setup(app.Config.Tsuru, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 				return err
 			}
@@ -226,6 +252,9 @@ func newDeployCmd(app *App) *cobra.Command {
 			flags := []string{"--app", name}
 			if message != "" {
 				flags = append(flags, "--message", message)
+			}
+			if dockerfile != "" {
+				flags = append(flags, "--dockerfile", filepath.Join(dir, dockerfile))
 			}
 			if err := deploy.Flags().Parse(flags); err != nil {
 				return err
@@ -252,6 +281,7 @@ func newDeployCmd(app *App) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVarP(&appName, "app", "a", "", "app name (default: the directory name)")
 	f.StringVar(&platform, "platform", "", "platform for a new app (default: inferred from the files present)")
+	f.StringVar(&dockerfile, "dockerfile", "", "build from this container file instead of a platform")
 	f.StringVar(&plan, "plan", "", "plan, used when creating the app")
 	f.StringVar(&envFile, "env-file", "", "dotenv file applied as private variables")
 	f.StringVarP(&message, "message", "m", "", "deploy message")
