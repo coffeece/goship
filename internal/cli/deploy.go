@@ -19,9 +19,11 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
-const projectFile = "goship.yaml"
+// projectFiles are the optional config names, in the order they are tried.
+// Nothing requires one: every value in it can be passed as a flag or inferred.
+var projectFiles = []string{"goship.yaml", "goship.yml", ".goship.yaml", ".goship.yml"}
 
-// project is the optional goship.yaml in a project root. Flags win over it.
+// project is the optional config in a project root. Flags win over it.
 type project struct {
 	App      string            `yaml:"app"`
 	Platform string            `yaml:"platform"`
@@ -29,20 +31,25 @@ type project struct {
 	Env      map[string]string `yaml:"env"`
 }
 
-func loadProject(dir string) (*project, error) {
-	path := filepath.Join(dir, projectFile)
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return &project{}, nil
+// loadProject reads the first config file that exists, returning its name so
+// messages can say which one was used. A directory with none is not an error.
+func loadProject(dir string) (*project, string, error) {
+	for _, name := range projectFiles {
+		path := filepath.Join(dir, name)
+		data, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		p := &project{}
+		if err := yaml.Unmarshal(data, p); err != nil {
+			return nil, "", fmt.Errorf("parsing %s: %w", path, err)
+		}
+		return p, name, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	p := &project{}
-	if err := yaml.Unmarshal(data, p); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
-	}
-	return p, nil
+	return &project{}, "", nil
 }
 
 // parseEnvFile reads a dotenv-style file: KEY=VALUE per line, # comments and
@@ -84,9 +91,11 @@ func newDeployCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy [dir]",
 		Short: "Create the app if needed, apply env and deploy",
-		Long: "Reads " + projectFile + " from the directory being deployed. The app is\n" +
-			"created on first deploy; environment variables come from the file's env:\n" +
-			"block and from --env-file, which is applied as private.",
+		Long: "Deploys the current directory. No configuration is required: the app is\n" +
+			"named after the directory, its platform is inferred from the files present,\n" +
+			"and it is created on first deploy.\n\n" +
+			"A goship.yaml (or .goship.yaml) is an optional shortcut for the same values.\n" +
+			"Flags beat the file, the file beats what is inferred.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if app.Global.Output == render.JSON {
@@ -101,14 +110,27 @@ func newDeployCmd(app *App) *cobra.Command {
 			if len(args) == 1 {
 				dir = args[0]
 			}
-			proj, err := loadProject(dir)
+			proj, projFile, err := loadProject(dir)
 			if err != nil {
 				return err
 			}
 
 			name := firstNonEmpty(appName, proj.App, filepath.Base(mustAbs(dir)))
-			platform = firstNonEmpty(platform, proj.Platform)
 			plan = firstNonEmpty(plan, proj.Plan)
+
+			// Where the platform came from, so the creation line can say so: a
+			// wrong guess should be visible in the output, not discovered later.
+			var platformSource string
+			switch {
+			case platform != "":
+			case proj.Platform != "":
+				platform, platformSource = proj.Platform, "from "+projFile
+			default:
+				var file string
+				if platform, file = detectPlatform(dir); file != "" {
+					platformSource = "detected from " + file
+				}
+			}
 
 			r := app.Renderer()
 			client := app.Portal()
@@ -118,9 +140,15 @@ func newDeployCmd(app *App) *cobra.Command {
 					return err
 				}
 				if platform == "" {
-					return fmt.Errorf("app %q does not exist yet: pass --platform or set it in %s", name, projectFile)
+					return fmt.Errorf(
+						"cannot tell what %q is built with: none of %s found in %s.\nPass --platform (%s)",
+						name, signalFiles(), dir, knownPlatforms())
 				}
-				if err := r.Message("Creating app %s (%s)...", name, platform); err != nil {
+				origin := platform
+				if platformSource != "" {
+					origin = platform + ", " + platformSource
+				}
+				if err := r.Message("Creating app %s (%s)...", name, origin); err != nil {
 					return err
 				}
 				if _, err := client.CreateApp(cmd.Context(), org, portal.CreateAppRequest{
@@ -180,8 +208,8 @@ func newDeployCmd(app *App) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.StringVarP(&appName, "app", "a", "", "app name (overrides "+projectFile+")")
-	f.StringVar(&platform, "platform", "", "platform, used when creating the app")
+	f.StringVarP(&appName, "app", "a", "", "app name (default: the directory name)")
+	f.StringVar(&platform, "platform", "", "platform for a new app (default: inferred from the files present)")
 	f.StringVar(&plan, "plan", "", "plan, used when creating the app")
 	f.StringVar(&envFile, "env-file", "", "dotenv file applied as private variables")
 	f.StringVarP(&message, "message", "m", "", "deploy message")

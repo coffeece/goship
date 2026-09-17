@@ -26,7 +26,23 @@ goship org use acme          # pick the organization to work in
 goship deploy                # create + configure + deploy the current directory
 ```
 
-`goship deploy` reads an optional `goship.yaml` from the directory it deploys:
+`goship deploy` needs no configuration. The app is named after the directory,
+its platform is inferred from the files present (`go.mod`, `pyproject.toml`,
+`requirements.txt`, `package.json`, `index.html`), and it is created on the
+first deploy — the output says what it inferred:
+
+```
+Creating app widget (go, detected from go.mod)...
+```
+
+Flags override that:
+
+```sh
+goship deploy --platform python --plan app-small-sandboxed
+```
+
+A `goship.yaml` (or `.goship.yaml`) in the directory is an optional shortcut
+for the same values, so you stop retyping them:
 
 ```yaml
 app: api
@@ -36,7 +52,8 @@ env:
   LOG_LEVEL: info
 ```
 
-Secrets belong in a dotenv file instead, applied as private variables:
+Flags beat the file; the file beats what is inferred. Secrets belong in a
+dotenv file instead, applied as private variables:
 
 ```sh
 goship deploy --env-file .env
