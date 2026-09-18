@@ -174,9 +174,16 @@ func newDeployCmd(app *App) *cobra.Command {
 			// Not found and forbidden both mean "not usable from here", and both
 			// are worth searching the user's other organizations for: a pinned
 			// org left over from another account produces the second one.
-			_, lookupErr := client.App(cmd.Context(), org, name)
+			// tsuruName is the mangled "<org>-<name>" the platform keys on; the
+			// portal returns it and the tsuru build step below needs it, since
+			// Tsuru does not know the display name.
+			var tsuruName string
+			existing, lookupErr := client.App(cmd.Context(), org, name)
 			if lookupErr != nil && !portal.IsNotFound(lookupErr) && !portal.IsForbidden(lookupErr) {
 				return lookupErr
+			}
+			if lookupErr == nil {
+				tsuruName = existing.TsuruName
 			}
 			if lookupErr != nil {
 				if others := appInOtherOrgs(cmd.Context(), client, org, name); len(others) > 0 {
@@ -223,9 +230,11 @@ func newDeployCmd(app *App) *cobra.Command {
 					}
 					req.NodeID = &id
 				}
-				if _, err := client.CreateApp(cmd.Context(), org, req); err != nil {
+				created, err := client.CreateApp(cmd.Context(), org, req)
+				if err != nil {
 					return err
 				}
+				tsuruName = created.TsuruName
 			}
 
 			env := map[string]string{}
@@ -262,27 +271,24 @@ func newDeployCmd(app *App) *cobra.Command {
 				}
 			}
 
-			if err := tsuru.Setup(app.Config.Tsuru, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
-				return err
+			// The build runs against the platform, which knows the app only by
+			// its mangled name. Fall back to a fetch if neither create nor the
+			// lookup carried it (older portal, or an odd response).
+			if tsuruName == "" {
+				fetched, err := client.App(cmd.Context(), org, name)
+				if err != nil {
+					return err
+				}
+				tsuruName = fetched.TsuruName
 			}
-			defer tsuru.Flush()
 
-			deploy := &tsuruclient.AppDeploy{}
-			flags := []string{"--app", name}
-			if message != "" {
-				flags = append(flags, "--message", message)
-			}
-			if dockerfile != "" {
-				flags = append(flags, "--dockerfile", filepath.Join(dir, dockerfile))
-			}
-			if err := deploy.Flags().Parse(flags); err != nil {
-				return err
-			}
-			err = tsuru.Run(deploy, []string{dir}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
-			if errors.Is(err, tsurucmd.ErrAbortCommand) {
-				return fmt.Errorf("deploy of %q failed", name)
-			}
-			if err != nil {
+			if err := runBuild(cmd, app, buildArgs{
+				tsuruName:   tsuruName,
+				displayName: name,
+				dir:         dir,
+				dockerfile:  dockerfile,
+				message:     message,
+			}); err != nil {
 				return err
 			}
 
@@ -307,6 +313,40 @@ func newDeployCmd(app *App) *cobra.Command {
 	f.StringVarP(&message, "message", "m", "", "deploy message")
 
 	return cmd
+}
+
+// buildArgs is what the tsuru build step needs. displayName is only for error
+// text; tsuruName is what the platform is addressed by.
+type buildArgs struct {
+	tsuruName, displayName, dir, dockerfile, message string
+}
+
+// runBuild uploads and builds through the tsuru-client shim. It is a package
+// var so a test can assert what the build is addressed with — a regression
+// guard for the bug where the build targeted the display name and Tsuru
+// answered "app not found".
+var runBuild = func(cmd *cobra.Command, app *App, a buildArgs) error {
+	if err := tsuru.Setup(app.Config.Tsuru, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		return err
+	}
+	defer tsuru.Flush()
+
+	deploy := &tsuruclient.AppDeploy{}
+	flags := []string{"--app", a.tsuruName}
+	if a.message != "" {
+		flags = append(flags, "--message", a.message)
+	}
+	if a.dockerfile != "" {
+		flags = append(flags, "--dockerfile", filepath.Join(a.dir, a.dockerfile))
+	}
+	if err := deploy.Flags().Parse(flags); err != nil {
+		return err
+	}
+	err := tsuru.Run(deploy, []string{a.dir}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+	if errors.Is(err, tsurucmd.ErrAbortCommand) {
+		return fmt.Errorf("deploy of %q failed", a.displayName)
+	}
+	return err
 }
 
 func firstNonEmpty(values ...string) string {

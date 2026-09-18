@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/coffeece/goship/internal/portal"
+	"github.com/spf13/cobra"
 )
 
 func TestLoadProjectIsOptional(t *testing.T) {
@@ -119,8 +120,8 @@ func TestDeployWithNoConfigInfersEverything(t *testing.T) {
 		case r.Method == http.MethodGet:
 			w.WriteHeader(http.StatusNotFound) // the app does not exist yet
 		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created)             //nolint:errcheck
-			w.Write([]byte(`{"name":"widget","platform":"go"}`)) //nolint:errcheck
+			json.NewDecoder(r.Body).Decode(&created)                                        //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget","platform":"go"}`)) //nolint:errcheck
 		}
 	})
 
@@ -226,8 +227,8 @@ func TestDeployHonoursAnExplicitPlan(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/available-plans"):
 			t.Error("the catalogue should not be consulted when --plan is given")
 		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
-			w.Write([]byte(`{"name":"widget"}`))     //nolint:errcheck
+			json.NewDecoder(r.Body).Decode(&created)                        //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -254,7 +255,7 @@ func TestDeployStopsWhenTheAppLivesInAnotherOrg(t *testing.T) {
 		case r.URL.Path == "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"acme"},{"id":"2","slug":"other"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/other/apps/widget":
-			w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
 			t.Error("a duplicate app was created in the wrong org")
 		default:
@@ -292,8 +293,8 @@ func TestDeployStillCreatesWhenTheNameIsFreeEverywhere(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/available-plans"):
 			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
 		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
-			w.Write([]byte(`{"name":"widget"}`))     //nolint:errcheck
+			json.NewDecoder(r.Body).Decode(&created)                        //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -323,7 +324,7 @@ func TestDeployFindsTheAppWhenThePinnedOrgIsForbidden(t *testing.T) {
 		case r.URL.Path == "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"mine"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/mine/apps/widget":
-			w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
 			t.Error("an app was created despite one existing in a reachable org")
 		default:
@@ -385,7 +386,7 @@ func TestDeployPicksTheOrgThatOwnsTheApp(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/beta/apps/widget":
 			deployedOrg = "beta"
-			w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -415,7 +416,7 @@ func TestDeployAsksWhenTheNameIsAmbiguous(t *testing.T) {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/alpha/apps/widget", "/api/v1/orgs/beta/apps/widget":
-			w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -473,7 +474,7 @@ func TestDeployBuildsFromADockerfile(t *testing.T) {
 		if r.Method == http.MethodPost {
 			t.Error("an app was created when one already exists")
 		}
-		w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+		w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 	})
 
 	dir := filepath.Join(t.TempDir(), "widget")
@@ -498,8 +499,8 @@ func TestDeployCreatesAPlatformlessAppForADockerfile(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/available-plans"):
 			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
 		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
-			w.Write([]byte(`{"name":"widget"}`))     //nolint:errcheck
+			json.NewDecoder(r.Body).Decode(&created)                        //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -527,7 +528,7 @@ func TestDeployCreatesAPlatformlessAppForADockerfile(t *testing.T) {
 // The config's dockerfile survives the round trip and drives the build.
 func TestDeployHonoursTheDockerfileFromConfig(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"name":"widget"}`)) //nolint:errcheck
+		w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 	})
 
 	dir := filepath.Join(t.TempDir(), "widget")
@@ -556,8 +557,8 @@ func TestDeployOnANodeDoesNotAskForAPlan(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/available-plans"):
 			t.Error("the paid catalogue must not be consulted for a node-placed app")
 		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
-			w.Write([]byte(`{"name":"quake"}`))      //nolint:errcheck
+			json.NewDecoder(r.Body).Decode(&created)                      //nolint:errcheck
+			w.Write([]byte(`{"name":"quake","tsuru_name":"acme-quake"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -593,8 +594,8 @@ func TestDeployReadsTheNodeFromConfig(t *testing.T) {
 		case r.URL.Path == "/api/v1/orgs/acme/nodes":
 			w.Write([]byte(`[{"id":"n-1","name":"do-server1"}]`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
-			w.Write([]byte(`{"name":"quake"}`))      //nolint:errcheck
+			json.NewDecoder(r.Body).Decode(&created)                      //nolint:errcheck
+			w.Write([]byte(`{"name":"quake","tsuru_name":"acme-quake"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -610,5 +611,44 @@ func TestDeployReadsTheNodeFromConfig(t *testing.T) {
 	run(t, "", "deploy", dir) //nolint:errcheck
 	if created["node_id"] != "n-1" {
 		t.Errorf("node_id = %v, want the id resolved from the config's name", created["node_id"])
+	}
+}
+
+// The build must be addressed by the mangled tsuru_name, not the display name:
+// the platform does not know "quake", only "acme-quake". Passing the display
+// name is the bug that produced `App quake not found` after a clean create.
+func TestDeployBuildsAgainstTheMangledName(t *testing.T) {
+	var gotBuild buildArgs
+	orig := runBuild
+	runBuild = func(_ *cobra.Command, _ *App, a buildArgs) error { gotBuild = a; return nil }
+	t.Cleanup(func() { runBuild = orig })
+
+	var created map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
+		case r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound) // new app
+		case r.Method == http.MethodPost:
+			json.NewDecoder(r.Body).Decode(&created)                      //nolint:errcheck
+			w.Write([]byte(`{"name":"quake","tsuru_name":"acme-quake"}`)) //nolint:errcheck
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "quake")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
+
+	if _, err := run(t, "", "deploy", dir); err != nil {
+		t.Fatal(err)
+	}
+	if gotBuild.tsuruName != "acme-quake" {
+		t.Errorf("build addressed %q, want the mangled acme-quake", gotBuild.tsuruName)
+	}
+	if gotBuild.displayName != "quake" {
+		t.Errorf("display name = %q, want quake (used only in messages)", gotBuild.displayName)
 	}
 }
