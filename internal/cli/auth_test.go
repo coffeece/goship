@@ -171,14 +171,16 @@ func TestSingleOrgAccountsNeedNoSelection(t *testing.T) {
 	}
 }
 
-// With several, guessing would be wrong, so it still asks.
+// With several orgs and none chosen, a command that ACTS on one org still has
+// to ask — guessing would act on the wrong one. (A listing like `apps` instead
+// falls back to all; see TestAppsWithNoOrgListsEverything.)
 func TestMultipleOrgsStillRequireAChoice(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
 	})
 	os.Unsetenv("GOSHIP_ORG")
 
-	_, err := run(t, "", "apps")
+	_, err := run(t, "", "app", "info", "some-app")
 	if err == nil || !strings.Contains(err.Error(), "goship org use") {
 		t.Fatalf("got %v", err)
 	}

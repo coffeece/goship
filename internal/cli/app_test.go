@@ -257,3 +257,45 @@ func TestAppsAllJSONKeysByOrg(t *testing.T) {
 		t.Errorf("got %v", got)
 	}
 }
+
+// A listing with no org selected is not an error: it falls back to every org,
+// the same view as --all. Demanding `org use` first for a read is friction.
+func TestAppsWithNoOrgListsEverything(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/apps":
+			w.Write([]byte(`[{"name":"arcade"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/globex/apps":
+			w.Write([]byte(`[{"name":"globex-api"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	out, err := run(t, "", "apps")
+	if err != nil {
+		t.Fatalf("apps with no org must not error: %v", err)
+	}
+	for _, want := range []string{"games", "arcade", "globex", "globex-api"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestOrgsLists(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/orgs" {
+			w.Write([]byte(`[{"id":"1","name":"Games","slug":"games"}]`)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	out, err := run(t, "", "orgs")
+	if err != nil || !strings.Contains(out, "games") {
+		t.Fatalf("orgs = %q, %v", out, err)
+	}
+}

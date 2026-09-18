@@ -112,6 +112,7 @@ func NewRoot(version string) *cobra.Command {
 		newLogoutCmd(app),
 		newWhoamiCmd(app),
 		newOrgCmd(app),
+		newOrgsCmd(app),
 		newAppsCmd(app),
 		newAppCmd(app),
 		newEnvCmd(app),

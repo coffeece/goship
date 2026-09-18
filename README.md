@@ -106,7 +106,7 @@ goship deploy --env-file .env
 
 | | |
 |---|---|
-| `goship apps [-A]` | list apps in the current org, or `--all` across every org you belong to |
+| `goship apps [-A]` | list apps in the current org; `--all`, or no org selected, spans every org |
 | `goship app create\|info\|rm\|start\|stop\|restart\|scale\|plan` | manage one app |
 | `goship init [dir]` | write a `goship.yml` with what it can work out |
 | `goship deploy [dir]` | create if needed, apply env, deploy |
@@ -120,7 +120,7 @@ goship deploy --env-file .env
 | `goship node add\|list\|info\|rm` | your own machines (BYON) |
 | `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
 | `goship releases` / `goship rollback` | deploy history |
-| `goship org list\|use` | switch organization |
+| `goship orgs` / `goship org use <slug>` | list orgs / choose one |
 
 Run `goship <command> --help` for flags.
 

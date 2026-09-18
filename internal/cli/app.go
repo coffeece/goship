@@ -29,9 +29,15 @@ func newAppsCmd(app *App) *cobra.Command {
 				return renderAppsAcrossOrgs(cmd, app, client, orgs)
 			}
 
+			// No org to work against — not an error for a listing. Show apps
+			// across every org instead of demanding `org use` first.
 			org, err := app.Org(cmd.Context())
 			if err != nil {
-				return err
+				orgs, listErr := client.Orgs(cmd.Context())
+				if listErr != nil {
+					return listErr
+				}
+				return renderAppsAcrossOrgs(cmd, app, client, orgs)
 			}
 			apps, err := client.Apps(cmd.Context(), org)
 			if err != nil {
