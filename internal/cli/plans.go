@@ -24,7 +24,11 @@ func newPlansCmd(app *App) *cobra.Command {
 			client, r := app.Portal(), app.Renderer()
 
 			if node != "" {
-				plans, err := client.AvailablePlans(cmd.Context(), org, kind, node)
+				id, err := resolveNode(cmd.Context(), client, org, node)
+				if err != nil {
+					return err
+				}
+				plans, err := client.AvailablePlans(cmd.Context(), org, kind, id)
 				if err != nil {
 					return err
 				}
@@ -63,7 +67,7 @@ func newPlansCmd(app *App) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if err := r.Message("\n%s (your hardware — not billed)  node %s", n.Name, n.ID); err != nil {
+				if err := r.Message("\n%s (your hardware — not billed)", n.Name); err != nil {
 					return err
 				}
 				if err := r.Render(plans); err != nil {
@@ -74,7 +78,7 @@ func newPlansCmd(app *App) *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&kind, "kind", "app", `plan kind: "app", "db", or "" for all`)
-	cmd.Flags().StringVar(&node, "node", "", "show only what this node's pool admits")
+	cmd.Flags().StringVar(&node, "node", "", "show only what this node's pool admits (name or id)")
 
 	return cmd
 }

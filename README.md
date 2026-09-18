@@ -70,8 +70,8 @@ env:
   LOG_LEVEL: info
 ```
 
-To run it on a machine you own, name the node — `goship node list` has the
-ids. Nothing on your own hardware is billed, so plans there are just sizes;
+To run it on a machine you own, name the node — `goship node list` shows them.
+Nothing on your own hardware is billed, so plans there are just sizes;
 `goship plans` lists them per placement, with the node's pool default marked:
 
 ```
@@ -82,13 +82,13 @@ SLUG         NAME     CPU    MEMORY   PRICE
 app-micro    Micro    200    256      R$ 9.90/mo
 app-small    Small    500    512      R$ 19.90/mo
 
-do-server1 (your hardware — not billed)  node 25b640dc-…
+do-server1 (your hardware — not billed)
 SLUG                       NAME                CPU    MEMORY   PRICE
 byon-do-server1-default    Sized to the node   1800   3600     included   default
 app-small                  Small               500    512      included
 ```
 
-`goship deploy --node <id>` with no plan takes the pool's default; `--plan`
+`goship deploy --node do-server1` with no plan takes the pool's default; `--plan`
 picks any size the pool admits, including the one sized to the whole node.
 
 `org` pins the organization for the whole project, so a repo always deploys to

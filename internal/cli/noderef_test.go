@@ -1,0 +1,70 @@
+package cli
+
+import (
+	"context"
+
+	"encoding/json"
+	"github.com/coffeece/goship/internal/config"
+	"github.com/coffeece/goship/internal/portal"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const twoNodes = `[{"id":"25b640dc-5b91-49e8-ac21-1409efd47375","name":"do-server1","status":"active"},
+                   {"id":"9f3c0000-0000-0000-0000-000000000001","name":"homelab","status":"active"}]`
+
+func TestResolveNode(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(twoNodes)) //nolint:errcheck
+	})
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := portal.New(cfg.API, "")
+
+	for _, tc := range []struct{ ref, want string }{
+		{"do-server1", "25b640dc-5b91-49e8-ac21-1409efd47375"},
+		{"9f3c0000-0000-0000-0000-000000000001", "9f3c0000-0000-0000-0000-000000000001"},
+	} {
+		got, err := resolveNode(context.Background(), client, "acme", tc.ref)
+		if err != nil || got != tc.want {
+			t.Errorf("resolveNode(%q) = %q, %v; want %q", tc.ref, got, err, tc.want)
+		}
+	}
+
+	_, err = resolveNode(context.Background(), client, "acme", "nope")
+	if err == nil || !strings.Contains(err.Error(), "do-server1") || !strings.Contains(err.Error(), "homelab") {
+		t.Errorf("an unknown ref should list what exists, got %v", err)
+	}
+}
+
+// The API keys on ids; the person typed a name. The id is what must be sent.
+func TestDeployNodeByNameSendsTheID(t *testing.T) {
+	var created map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/orgs/acme/nodes":
+			w.Write([]byte(twoNodes)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
+			w.Write([]byte(`{"name":"quake"}`))      //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "quake")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
+
+	run(t, "", "deploy", dir, "--node", "do-server1") //nolint:errcheck
+	if created["node_id"] != "25b640dc-5b91-49e8-ac21-1409efd47375" {
+		t.Errorf("node_id = %v, want the id resolved from the name", created["node_id"])
+	}
+}

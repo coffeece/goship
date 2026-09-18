@@ -98,7 +98,13 @@ func TestDestructiveCommandsAllConfirm(t *testing.T) {
 		{"node", "rm", "n1"},
 	} {
 		t.Run(args[0], func(t *testing.T) {
-			stubAPIWithOrg(t, func(http.ResponseWriter, *http.Request) {
+			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+				// Resolving a node's name is a read; it may happen before the
+				// question. Anything else must not.
+				if r.Method == http.MethodGet {
+					w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
+					return
+				}
 				t.Errorf("%v reached the API without confirmation", args)
 			})
 			if _, err := run(t, "n\n", args...); err == nil {

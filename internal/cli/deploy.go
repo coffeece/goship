@@ -217,7 +217,11 @@ func newDeployCmd(app *App) *cobra.Command {
 				}
 				req := portal.CreateAppRequest{Name: name, Platform: platform, Plan: plan}
 				if node != "" {
-					req.NodeID = &node
+					id, err := resolveNode(cmd.Context(), client, org, node)
+					if err != nil {
+						return err
+					}
+					req.NodeID = &id
 				}
 				if _, err := client.CreateApp(cmd.Context(), org, req); err != nil {
 					return err
@@ -297,7 +301,7 @@ func newDeployCmd(app *App) *cobra.Command {
 	f.StringVarP(&appName, "app", "a", "", "app name (default: the directory name)")
 	f.StringVar(&platform, "platform", "", "platform for a new app (default: inferred from the files present)")
 	f.StringVar(&dockerfile, "dockerfile", "", "build from this container file instead of a platform")
-	f.StringVar(&node, "node", "", "place a new app on one of your own machines (never billed)")
+	f.StringVar(&node, "node", "", "place a new app on one of your own machines, by name (never billed)")
 	f.StringVar(&plan, "plan", "", "plan, used when creating the app")
 	f.StringVar(&envFile, "env-file", "", "dotenv file applied as private variables")
 	f.StringVarP(&message, "message", "m", "", "deploy message")

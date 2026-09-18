@@ -1,11 +1,36 @@
 package cli
 
 import (
+	"context"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/spf13/cobra"
 )
+
+// resolveNode turns what a person types — the node's name, usually — into
+// the id the API keys on. Ids are accepted too, so nothing that worked keeps
+// working only by accident. Names are unique within an organization (each
+// backs a pool named after it), so there is no ambiguity to resolve.
+func resolveNode(ctx context.Context, client *portal.Client, org, ref string) (string, error) {
+	nodes, err := client.Nodes(ctx, org)
+	if err != nil {
+		return "", err
+	}
+	names := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		if n.ID == ref || n.Name == ref {
+			return n.ID, nil
+		}
+		names = append(names, n.Name)
+	}
+	if len(names) == 0 {
+		return "", fmt.Errorf("no node %q: org %q has no nodes yet — `goship node add` connects one", ref, org)
+	}
+	return "", fmt.Errorf("no node %q in org %q; you have: %s", ref, org, strings.Join(names, ", "))
+}
 
 // orgRunE adapts a command body that needs the resolved organization.
 func orgRunE(app *App, fn func(cmd *cobra.Command, org string, args []string) error) func(*cobra.Command, []string) error {
@@ -106,18 +131,22 @@ func newVolumeCmd(app *App) *cobra.Command {
 	}
 
 	create := &cobra.Command{
-		Use:   "create <name> --node <node-id>",
+		Use:   "create <name> --node <node>",
 		Short: "Create a volume on one of your nodes",
 		Args:  cobra.ExactArgs(1),
 	}
 	var node, plan string
 	var size int
-	create.Flags().StringVar(&node, "node", "", "node id (required)")
+	create.Flags().StringVar(&node, "node", "", "node name or id (required)")
 	create.Flags().StringVar(&plan, "plan", "byon-local", "byon-local or do-block-storage")
 	create.Flags().IntVar(&size, "size", 5, "capacity in GiB")
 	_ = create.MarkFlagRequired("node")
 	create.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		v, err := app.Portal().CreateVolume(cmd.Context(), org, args[0], node, plan, size)
+		nodeID, err := resolveNode(cmd.Context(), app.Portal(), org, node)
+		if err != nil {
+			return err
+		}
+		v, err := app.Portal().CreateVolume(cmd.Context(), org, args[0], nodeID, plan, size)
 		if err != nil {
 			return err
 		}
@@ -259,11 +288,15 @@ func newNodeCmd(app *App) *cobra.Command {
 	}
 
 	info := &cobra.Command{
-		Use:   "info <id>",
+		Use:   "info <node>",
 		Short: "Show a node",
 		Args:  cobra.ExactArgs(1),
 		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			n, err := app.Portal().Node(cmd.Context(), org, args[0])
+			id, err := resolveNode(cmd.Context(), app.Portal(), org, args[0])
+			if err != nil {
+				return err
+			}
+			n, err := app.Portal().Node(cmd.Context(), org, id)
 			if err != nil {
 				return err
 			}
@@ -272,7 +305,7 @@ func newNodeCmd(app *App) *cobra.Command {
 	}
 
 	remove := &cobra.Command{
-		Use:     "rm <id>",
+		Use:     "rm <node>",
 		Aliases: []string{"remove", "delete"},
 		Short:   "Disconnect a node",
 		Args:    cobra.ExactArgs(1),
@@ -280,10 +313,14 @@ func newNodeCmd(app *App) *cobra.Command {
 	var destroy bool
 	remove.Flags().BoolVar(&destroy, "destroy-server", false, "also destroy the machine at the cloud provider")
 	remove.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+		id, err := resolveNode(cmd.Context(), app.Portal(), org, args[0])
+		if err != nil {
+			return err
+		}
 		if err := confirm(cmd, app.Global.Yes, "Disconnect node %q?", args[0]); err != nil {
 			return err
 		}
-		if err := app.Portal().DeleteNode(cmd.Context(), org, args[0], destroy); err != nil {
+		if err := app.Portal().DeleteNode(cmd.Context(), org, id, destroy); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Node %s disconnected.", args[0])

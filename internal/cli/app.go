@@ -61,7 +61,11 @@ func appCreateCmd(app *App) *cobra.Command {
 			}
 			req.Name = args[0]
 			if node != "" {
-				req.NodeID = &node
+				id, err := resolveNode(cmd.Context(), app.Portal(), org, node)
+				if err != nil {
+					return err
+				}
+				req.NodeID = &id
 			}
 			created, err := app.Portal().CreateApp(cmd.Context(), org, req)
 			if err != nil {
@@ -74,7 +78,7 @@ func appCreateCmd(app *App) *cobra.Command {
 	f.StringVar(&req.Platform, "platform", "", "platform: go, python, nodejs or static (required)")
 	f.StringVar(&req.Plan, "plan", "", "plan slug; the org default when omitted")
 	f.StringVar(&req.Description, "description", "", "human description")
-	f.StringVar(&node, "node", "", "run on one of your own nodes (BYON)")
+	f.StringVar(&node, "node", "", "run on one of your own nodes, by name (BYON)")
 	_ = cmd.MarkFlagRequired("platform")
 
 	return cmd

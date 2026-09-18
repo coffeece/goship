@@ -134,7 +134,7 @@ app: %s
 # one and asks otherwise.
 plan:
 
-# Place the app on one of your own machines ("goship node list" for the ids).
+# Place the app on one of your own machines, by name ("goship node list").
 # A node-placed app is never billed and needs no plan.
 node:
 
