@@ -180,8 +180,58 @@ func TestMultipleOrgsStillRequireAChoice(t *testing.T) {
 	})
 	os.Unsetenv("GOSHIP_ORG")
 
-	_, err := run(t, "", "app", "info", "some-app")
+	// A mutating command must not guess an org — it still demands a choice.
+	_, err := run(t, "", "app", "stop", "some-app")
 	if err == nil || !strings.Contains(err.Error(), "goship org use") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// With no org selected, `app info` (read-only) locates the app across every
+// org the user belongs to instead of demanding a choice.
+func TestAppInfoFindsAppAcrossOrgs(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/a/apps":
+			w.Write([]byte(`[]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/b/apps":
+			w.Write([]byte(`[{"name":"my-game"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/b/apps/my-game":
+			w.Write([]byte(`{"name":"my-game","plan_name":"Small"}`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	out, err := run(t, "", "app", "info", "my-game")
+	if err != nil {
+		t.Fatalf("app info across orgs: %v", err)
+	}
+	if !strings.Contains(out, "my-game") {
+		t.Errorf("expected the app in output, got %q", out)
+	}
+}
+
+// A name present in more than one org is ambiguous: info must refuse to guess
+// and ask for --org.
+func TestAppInfoAmbiguousAcrossOrgs(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/a/apps", "/api/v1/orgs/b/apps":
+			w.Write([]byte(`[{"name":"dup"}]`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	_, err := run(t, "", "app", "info", "dup")
+	if err == nil || !strings.Contains(err.Error(), "more than one organization") {
 		t.Fatalf("got %v", err)
 	}
 }

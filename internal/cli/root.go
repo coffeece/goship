@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/coffeece/goship/internal/config"
 	"github.com/coffeece/goship/internal/portal"
@@ -63,6 +64,42 @@ func (a *App) Org(ctx context.Context) (string, error) {
 		return orgs[0].Slug, nil
 	}
 	return a.Config.OrgOrError("")
+}
+
+// OrgForApp resolves the org to act on for a named app. It prefers the
+// normal Org() resolution; only when nothing selects an org does it search
+// every org the user belongs to for the app. A name present in more than one
+// org is ambiguous and returns an error asking for --org, so a bare command
+// never guesses between two apps that share a name.
+func (a *App) OrgForApp(ctx context.Context, name string) (string, error) {
+	if org, err := a.Org(ctx); err == nil {
+		return org, nil
+	}
+	orgs, err := a.Portal().Orgs(ctx)
+	if err != nil {
+		return "", err
+	}
+	var matches []string
+	for _, o := range orgs {
+		apps, err := a.Portal().Apps(ctx, o.Slug)
+		if err != nil {
+			return "", err
+		}
+		for _, app := range apps {
+			if app.Name == name {
+				matches = append(matches, o.Slug)
+				break
+			}
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("app %q not found in any of your organizations", name)
+	default:
+		return "", fmt.Errorf("app %q exists in more than one organization (%s): pass --org to choose", name, strings.Join(matches, ", "))
+	}
 }
 
 func (a *App) Portal() *portal.Client {

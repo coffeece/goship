@@ -146,7 +146,9 @@ func appInfoCmd(app *App) *cobra.Command {
 		Short: "Show an app and its units",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org(cmd.Context())
+			// Read-only, so with no org selected we locate the app across
+			// every org rather than demanding `org use` first.
+			org, err := app.OrgForApp(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
