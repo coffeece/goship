@@ -100,3 +100,38 @@ func TestTraceLogsOneLinePerRequest(t *testing.T) {
 		t.Errorf("trace = %q", trace.String())
 	}
 }
+
+func TestAvailablePlansAsksForTheNodesPool(t *testing.T) {
+	var gotQuery string
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Write([]byte(`[{"slug":"b","kind":"app","is_active":true,"default":true},{"slug":"a","kind":"app","is_active":true,"sort_order":1}]`)) //nolint:errcheck
+	})
+
+	plans, err := c.AvailablePlans(context.Background(), "acme", "app", "node 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotQuery != "node=node+1" {
+		t.Errorf("query = %q", gotQuery)
+	}
+	// For a node the platform's order is the contract; sort_order is ignored.
+	if plans[0].Slug != "b" || plans[0].Mark != "default" {
+		t.Errorf("got %+v", plans)
+	}
+}
+
+func TestPlanPriceWording(t *testing.T) {
+	for _, tc := range []struct {
+		p    Plan
+		want string
+	}{
+		{Plan{IsFree: true}, "free"},
+		{Plan{Billed: false, PriceCents: 0}, "included"},
+		{Plan{Billed: true, PriceCents: 1990}, "R$ 19.90/mo"},
+	} {
+		if got := tc.p.Price(); got != tc.want {
+			t.Errorf("%+v → %q, want %q", tc.p, got, tc.want)
+		}
+	}
+}

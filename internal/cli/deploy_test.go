@@ -178,13 +178,13 @@ func TestDeployReportsWhenItCannotInferThePlatform(t *testing.T) {
 }
 
 const freePlanCatalog = `[
-  {"slug":"app-free","kind":"app","display_name":"Free","cpu_milli":100,"memory_mb":256,"price_cents":0,"is_free":true,"is_active":true,"sort_order":10},
-  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_free":false,"is_active":true,"sort_order":30}
+  {"slug":"app-free","kind":"app","display_name":"Free","cpu_milli":100,"memory_mb":256,"price_cents":0,"is_free":true,"is_active":true,"sort_order":10,"billed":false},
+  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_free":false,"is_active":true,"sort_order":30,"billed":true}
 ]`
 
 const paidPlanCatalog = `[
-  {"slug":"app-micro","kind":"app","display_name":"Micro","cpu_milli":200,"memory_mb":256,"price_cents":990,"is_free":false,"is_active":true,"sort_order":20},
-  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_free":false,"is_active":true,"sort_order":30}
+  {"slug":"app-micro","kind":"app","display_name":"Micro","cpu_milli":200,"memory_mb":256,"price_cents":990,"is_free":false,"is_active":true,"sort_order":20,"billed":true},
+  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_free":false,"is_active":true,"sort_order":30,"billed":true}
 ]`
 
 // Picking a paid plan on someone's behalf spends their money. With no free
