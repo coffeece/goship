@@ -774,3 +774,19 @@ func TestAnOutdatedCLIIsToldToUpgrade(t *testing.T) {
 		t.Errorf("error = %v, want the API's upgrade instruction", err)
 	}
 }
+
+// goship.yaml also carries the platform's configuration (health checks, hooks,
+// processes), which the API reads. The CLI must load such a file for its own
+// keys without tripping over the rest.
+func TestLoadProjectToleratesThePlatformSection(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "goship.yaml"), "app: blog\nplatform: python\nhealthcheck:\n  path: /healthz\nhooks:\n  build:\n    - make assets\nprocesses:\n  - name: web\n    command: gunicorn app:app\n")
+
+	p, _, err := loadProject(dir)
+	if err != nil {
+		t.Fatalf("loadProject: %v", err)
+	}
+	if p.App != "blog" || p.Platform != "python" {
+		t.Errorf("project = %+v", p)
+	}
+}
