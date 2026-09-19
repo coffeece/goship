@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -157,9 +158,26 @@ func newRollbackCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-// pipedShellGrace is how long a shell fed from a pipe stays open after its
-// input ends.
-var pipedShellGrace = 2 * time.Second
+// firstWrite passes writes through and closes seen on the first one.
+type firstWrite struct {
+	w    io.Writer
+	seen chan struct{}
+	once sync.Once
+}
+
+func (f *firstWrite) Write(p []byte) (int, error) {
+	if len(p) > 0 {
+		f.once.Do(func() { close(f.seen) })
+	}
+	return f.w.Write(p)
+}
+
+// pipedShellGrace is how long a shell fed from a pipe may keep running after
+// its input ends. A script normally finishes with `exit`, which closes the
+// shell from the other side well before this; the cap is for one that does not.
+// It has to cover an isolated container's start-up, which happens after the
+// input has already been sent.
+var pipedShellGrace = 60 * time.Second
 
 func newShellCmd(app *App) *cobra.Command {
 	var (
@@ -210,15 +228,26 @@ func newShellCmd(app *App) *cobra.Command {
 		}
 
 		done := make(chan error, 2)
+		ready := &firstWrite{w: cmd.OutOrStdout(), seen: make(chan struct{})}
 		go func() {
-			_, err := io.Copy(cmd.OutOrStdout(), conn)
+			_, err := io.Copy(ready, conn)
 			done <- err
 		}()
 		go func() {
+			if !interactive {
+				// A script is sent in one go, and whatever reaches the unit
+				// before its shell is up is lost — an isolated container takes
+				// a while to start. The first output, the prompt, says it is
+				// listening.
+				select {
+				case <-ready.seen:
+				case <-time.After(pipedShellGrace):
+				}
+			}
 			_, err := io.Copy(conn, cmd.InOrStdin())
 			if err == nil && !interactive {
-				// Piped input ran out: give the commands a moment to answer
-				// rather than hanging up on them mid-output.
+				// Piped input ran out: let the commands finish and the shell
+				// close itself rather than hanging up on them mid-output.
 				time.Sleep(pipedShellGrace)
 			}
 			done <- err

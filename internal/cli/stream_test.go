@@ -96,7 +96,7 @@ func TestReleasesListsTheHistory(t *testing.T) {
 // interactive session takes, minus the raw terminal.
 func TestShellPipesInputToTheUnitAndPrintsItsOutput(t *testing.T) {
 	pipedShellGrace = 50 * time.Millisecond
-	t.Cleanup(func() { pipedShellGrace = 2 * time.Second })
+	t.Cleanup(func() { pipedShellGrace = 60 * time.Second })
 
 	var path, query, auth string
 	up := websocket.Upgrader{}
@@ -106,7 +106,8 @@ func TestShellPipesInputToTheUnitAndPrintsItsOutput(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer ws.Close() //nolint:errcheck
+		defer ws.Close()                                     //nolint:errcheck
+		ws.WriteMessage(websocket.TextMessage, []byte("$ ")) //nolint:errcheck
 		_, msg, err := ws.ReadMessage()
 		if err != nil {
 			return
@@ -126,7 +127,7 @@ func TestShellPipesInputToTheUnitAndPrintsItsOutput(t *testing.T) {
 	if !strings.Contains(query, "isolated=true") || !strings.Contains(query, "unit=blog-web-1") {
 		t.Errorf("query = %q", query)
 	}
-	if out != "ran: ls /app\n" {
+	if out != "$ ran: ls /app\n" {
 		t.Errorf("output = %q", out)
 	}
 }
