@@ -141,5 +141,23 @@ node:
 # Environment variables applied on every deploy. Secrets do not belong in a file
 # you commit — pass those with --env-file instead.
 env:
+
+# Everything below is read by the platform, not by goship: how to check the app
+# is healthy, what to run around a build or a restart, and which processes it
+# has. Uncomment what you need. https://docs.goship.sh/apps/goship-yaml/
+#
+# healthcheck:
+#   path: /healthz
+#
+# hooks:
+#   build:
+#     - make assets
+#   restart:
+#     after:
+#       - ./migrate.sh
+#
+# processes:
+#   - name: web
+#     command: ./server
 `, name, orgLine, build)
 }
