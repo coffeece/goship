@@ -14,10 +14,11 @@ import (
 )
 
 type Client struct {
-	base  string
-	token string
-	http  *http.Client
-	trace io.Writer
+	base    string
+	token   string
+	version string
+	http    *http.Client
+	trace   io.Writer
 }
 
 type Option func(*Client)
@@ -26,6 +27,9 @@ type Option func(*Client)
 func WithTrace(w io.Writer) Option { return func(c *Client) { c.trace = w } }
 
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
+
+// WithVersion reports the CLI's version to the API on every request.
+func WithVersion(v string) Option { return func(c *Client) { c.version = v } }
 
 func New(base, token string, opts ...Option) *Client {
 	c := &Client{
@@ -101,9 +105,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
+	c.decorate(req)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -123,6 +125,20 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
+
+// decorate adds what every request carries: the credential, and the CLI's
+// version so the API can tell an outdated binary to upgrade.
+func (c *Client) decorate(req *http.Request) {
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if c.version != "" {
+		req.Header.Set("User-Agent", "goship/"+c.version)
+		req.Header.Set("X-Goship-Version", c.version)
+	}
+}
+
+func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
 
 func decodeError(resp *http.Response) error {
 	var payload struct {
