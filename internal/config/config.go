@@ -9,7 +9,12 @@ import (
 	"path/filepath"
 )
 
-const DefaultAPI = "https://goship.sh"
+const DefaultAPI = "https://api.goship.sh"
+
+// legacyAPI is what DefaultAPI used to be. The dashboard still answers there,
+// but the API moved to a host of its own; a config file that pinned the old
+// value is moved along rather than left on a host that may stop serving it.
+const legacyAPI = "https://goship.sh"
 
 type Config struct {
 	// API is the GoShip API, the only thing the CLI talks to.
@@ -54,7 +59,7 @@ func Load() (*Config, error) {
 		}
 	}
 
-	if c.API == "" {
+	if c.API == "" || c.API == legacyAPI {
 		c.API = DefaultAPI
 	}
 	overlayEnv(c)

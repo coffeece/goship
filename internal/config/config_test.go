@@ -26,6 +26,34 @@ func TestLoadWithoutAFileReturnsDefaults(t *testing.T) {
 	}
 }
 
+// The API moved to a host of its own. A config written when it still lived on
+// the dashboard's host follows it; anything else a person chose is left alone.
+func TestLoadMovesTheOldDefaultAPIAlong(t *testing.T) {
+	tempConfig(t)
+	if err := (&Config{API: "https://goship.sh", Org: "acme"}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.API != DefaultAPI || c.Org != "acme" {
+		t.Errorf("API=%q Org=%q", c.API, c.Org)
+	}
+
+	if err := (&Config{API: "https://staging.example"}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ = Load(); c.API != "https://staging.example" {
+		t.Errorf("a chosen API was overwritten: %q", c.API)
+	}
+
+	t.Setenv("GOSHIP_API", "https://goship.sh")
+	if c, _ = Load(); c.API != "https://goship.sh" {
+		t.Errorf("GOSHIP_API was overridden: %q", c.API)
+	}
+}
+
 func TestEnvOverridesTheFile(t *testing.T) {
 	tempConfig(t)
 	if err := (&Config{API: "https://file.example", Org: "from-file"}).Save(); err != nil {
