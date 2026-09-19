@@ -103,11 +103,18 @@ func (a *App) OrgForApp(ctx context.Context, name string) (string, error) {
 }
 
 func (a *App) Portal() *portal.Client {
-	var opts []portal.Option
+	return a.portalWithToken(resolveToken(a.Config.Token))
+}
+
+// anonymousPortal is for the calls that happen before there is a credential.
+func (a *App) anonymousPortal() *portal.Client { return a.portalWithToken("") }
+
+func (a *App) portalWithToken(token string) *portal.Client {
+	opts := []portal.Option{portal.WithVersion(a.Version)}
 	if a.Global.Verbose {
 		opts = append(opts, portal.WithTrace(os.Stderr))
 	}
-	return portal.New(a.Config.API, resolveToken(a.Config.Token), opts...)
+	return portal.New(a.Config.API, token, opts...)
 }
 
 func NewRoot(version string) *cobra.Command {

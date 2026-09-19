@@ -21,8 +21,8 @@ func TestLoadWithoutAFileReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.API != DefaultAPI || c.Tsuru != DefaultTsuru {
-		t.Errorf("got API=%q Tsuru=%q, want the defaults", c.API, c.Tsuru)
+	if c.API != DefaultAPI {
+		t.Errorf("got API=%q, want the default", c.API)
 	}
 }
 

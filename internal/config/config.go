@@ -9,18 +9,16 @@ import (
 	"path/filepath"
 )
 
-const (
-	DefaultAPI   = "https://goship.sh"
-	DefaultTsuru = "https://api.coffeece.com"
-)
+const DefaultAPI = "https://goship.sh"
 
 type Config struct {
-	// API is the GoShip portal, which serves everything except the streaming
-	// commands; Tsuru is the platform API those few still talk to.
-	API   string `json:"api,omitempty"`
-	Tsuru string `json:"tsuru,omitempty"`
-	Org   string `json:"org,omitempty"`
-	Token string `json:"token,omitempty"`
+	// API is the GoShip API, the only thing the CLI talks to.
+	API string `json:"api,omitempty"`
+	Org string `json:"org,omitempty"`
+	// Token is the credential; TokenID identifies it to the API when it is an
+	// API token minted by `goship login`, so `goship logout` can revoke it.
+	Token   string `json:"token,omitempty"`
+	TokenID string `json:"token_id,omitempty"`
 }
 
 // Path is the config file location: $GOSHIP_CONFIG, else under
@@ -39,7 +37,7 @@ func Path() (string, error) {
 // Load reads the config file and overlays GOSHIP_* environment variables.
 // A missing file is not an error.
 func Load() (*Config, error) {
-	c := &Config{API: DefaultAPI, Tsuru: DefaultTsuru}
+	c := &Config{API: DefaultAPI}
 
 	path, err := Path()
 	if err != nil {
@@ -56,21 +54,16 @@ func Load() (*Config, error) {
 		}
 	}
 
-	overlayEnv(c)
-
 	if c.API == "" {
 		c.API = DefaultAPI
 	}
-	if c.Tsuru == "" {
-		c.Tsuru = DefaultTsuru
-	}
+	overlayEnv(c)
 	return c, nil
 }
 
 func overlayEnv(c *Config) {
 	for env, field := range map[string]*string{
 		"GOSHIP_API":   &c.API,
-		"GOSHIP_TSURU": &c.Tsuru,
 		"GOSHIP_ORG":   &c.Org,
 		"GOSHIP_TOKEN": &c.Token,
 	} {

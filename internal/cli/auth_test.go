@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/coffeece/goship/internal/config"
+	"github.com/spf13/cobra"
 )
 
 func stubAPI(t *testing.T, h http.HandlerFunc) {
@@ -33,26 +34,96 @@ func run(t *testing.T, stdin string, args ...string) (string, error) {
 	return out.String(), err
 }
 
-func TestLoginStoresTheToken(t *testing.T) {
-	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]string
-		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
-		if body["email"] != "gui@example.com" || body["password"] != "hunter2" {
-			t.Errorf("credentials not forwarded: %v", body)
+// loginAPI is a portal that signs "gui@example.com" in and mints API tokens.
+func loginAPI(t *testing.T, calls *[]string) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		*calls = append(*calls, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization"))
+		switch {
+		case r.URL.Path == "/api/v1/login":
+			w.Write([]byte(`{"token":"jwt-123"}`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/auth/tokens" && r.Method == http.MethodPost:
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+			if name, _ := body["name"].(string); !strings.HasPrefix(name, "goship CLI") || body["expires_in_days"] != float64(sessionDays) {
+				t.Errorf("token request = %v", body)
+			}
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"id":"tok-1","token":"gsp_session"}`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/auth/me":
+			w.Write([]byte(`{"email":"gui@example.com","groups":["acme"]}`)) //nolint:errcheck
+		case strings.HasPrefix(r.URL.Path, "/api/v1/auth/tokens/") && r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.Write([]byte(`{"token":"jwt-123"}`)) //nolint:errcheck
-	})
+	}
+}
 
-	if _, err := run(t, "hunter2\n", "login", "--email", "gui@example.com"); err != nil {
+// A sign-in is traded for an API token: that is what lasts, shows up in the
+// profile page, and can be revoked. The portal's own token lasts hours.
+func TestLoginKeepsARevocableAPIToken(t *testing.T) {
+	var calls []string
+	stubAPI(t, loginAPI(t, &calls))
+
+	out, err := run(t, "hunter2\n", "login", "--email", "gui@example.com")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Logged in as gui@example.com") {
+		t.Errorf("output = %q", out)
 	}
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Token != "jwt-123" {
-		t.Errorf("token = %q, want it persisted", cfg.Token)
+	if cfg.Token != "gsp_session" || cfg.TokenID != "tok-1" {
+		t.Errorf("stored token=%q id=%q, want the API token and its id", cfg.Token, cfg.TokenID)
+	}
+	if len(calls) < 2 || calls[1] != "POST /api/v1/auth/tokens Bearer jwt-123" {
+		t.Errorf("calls = %v, want the fresh sign-in to mint the token", calls)
+	}
+}
+
+func TestBrowserLoginEndsInTheSameSession(t *testing.T) {
+	var calls []string
+	stubAPI(t, loginAPI(t, &calls))
+	orig := loginInBrowser
+	loginInBrowser = func(*cobra.Command, *App) (string, error) { return "jwt-from-browser", nil }
+	t.Cleanup(func() { loginInBrowser = orig })
+
+	if _, err := run(t, "", "login"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.Load()
+	if cfg.Token != "gsp_session" {
+		t.Errorf("token = %q", cfg.Token)
+	}
+	if calls[0] != "POST /api/v1/auth/tokens Bearer jwt-from-browser" {
+		t.Errorf("calls = %v", calls)
+	}
+}
+
+// An API that cannot mint tokens still leaves the person signed in.
+func TestLoginFallsBackToTheShortLivedToken(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/login":
+			w.Write([]byte(`{"token":"jwt-123"}`)) //nolint:errcheck
+		case "/api/v1/auth/me":
+			w.Write([]byte(`{"email":"gui@example.com"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	if _, err := run(t, "hunter2\n", "login", "--email", "gui@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.Load()
+	if cfg.Token != "jwt-123" || cfg.TokenID != "" {
+		t.Errorf("token=%q id=%q", cfg.Token, cfg.TokenID)
 	}
 }
 
@@ -85,9 +156,10 @@ func TestLoginRefusesWhenTheTokenComesFromTheEnvironment(t *testing.T) {
 	}
 }
 
-func TestLogoutClearsTheToken(t *testing.T) {
-	stubAPI(t, func(http.ResponseWriter, *http.Request) {})
-	if err := (&config.Config{Token: "jwt"}).Save(); err != nil {
+func TestLogoutRevokesTheTokenAndClearsIt(t *testing.T) {
+	var calls []string
+	stubAPI(t, loginAPI(t, &calls))
+	if err := (&config.Config{Token: "gsp_session", TokenID: "tok-1"}).Save(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -95,7 +167,25 @@ func TestLogoutClearsTheToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg, _ := config.Load()
-	if cfg.Token != "" {
+	if cfg.Token != "" || cfg.TokenID != "" {
+		t.Errorf("token=%q id=%q, want both cleared", cfg.Token, cfg.TokenID)
+	}
+	if len(calls) != 1 || calls[0] != "DELETE /api/v1/auth/tokens/tok-1 Bearer gsp_session" {
+		t.Errorf("calls = %v, want the token revoked server-side", calls)
+	}
+}
+
+// Offline, or already revoked from the profile page: still signed out here.
+func TestLogoutClearsTheTokenEvenWhenRevokingFails(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) })
+	if err := (&config.Config{Token: "gsp_session", TokenID: "tok-1"}).Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := run(t, "", "logout"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := config.Load(); cfg.Token != "" {
 		t.Errorf("token = %q, want it cleared", cfg.Token)
 	}
 }
