@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/coffeece/goship/internal/portal"
-	"github.com/spf13/cobra"
 )
 
 func TestLoadProjectIsOptional(t *testing.T) {
@@ -466,12 +468,32 @@ func TestPublicURL(t *testing.T) {
 	}
 }
 
-// An existing app with a container file deploys through it. The flag reaches
-// tsuru-client as --dockerfile, which is what makes it a container build
+// An existing app with a container file deploys through it: the file's
+// contents travel with the upload, which is what makes it a container build
 // rather than a platform build.
 func TestDeployBuildsFromADockerfile(t *testing.T) {
+	var gotDockerfile string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/deploys"):
+			mr, err := r.MultipartReader()
+			if err != nil {
+				t.Errorf("MultipartReader: %v", err)
+				return
+			}
+			for {
+				part, err := mr.NextPart()
+				if err != nil {
+					break
+				}
+				b, _ := io.ReadAll(part)
+				if part.FormName() == "dockerfile" {
+					gotDockerfile = string(b)
+				}
+			}
+			w.Write([]byte(`{"type":"result","ok":true}` + "\n")) //nolint:errcheck
+			return
+		case r.Method == http.MethodPost:
 			t.Error("an app was created when one already exists")
 		}
 		w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
@@ -483,9 +505,15 @@ func TestDeployBuildsFromADockerfile(t *testing.T) {
 	}
 	write(t, filepath.Join(dir, "Dockerfile"), "FROM alpine\n")
 
-	out, _ := run(t, "", "deploy", dir)
+	out, err := run(t, "", "deploy", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(out, "Building widget from Dockerfile") {
 		t.Errorf("the container build should be announced, got %q", out)
+	}
+	if gotDockerfile != "FROM alpine\n" {
+		t.Errorf("dockerfile field = %q, want the file's contents", gotDockerfile)
 	}
 }
 
@@ -614,25 +642,95 @@ func TestDeployReadsTheNodeFromConfig(t *testing.T) {
 	}
 }
 
-// The build must be addressed by the mangled tsuru_name, not the display name:
-// the platform does not know "quake", only "acme-quake". Passing the display
-// name is the bug that produced `App quake not found` after a clean create.
-func TestDeployBuildsAgainstTheMangledName(t *testing.T) {
-	var gotBuild buildArgs
-	orig := runBuild
-	runBuild = func(_ *cobra.Command, _ *App, a buildArgs) error { gotBuild = a; return nil }
-	t.Cleanup(func() { runBuild = orig })
-
-	var created map[string]any
+// A deploy ends in one upload to the API, addressed by the name the customer
+// chose. The platform-side "<org>-<app>" name is the API's business: a client
+// that had to know it is how `App quake not found` happened after a clean
+// create.
+func TestDeployUploadsTheProjectUnderItsDisplayName(t *testing.T) {
+	var (
+		deployPath string
+		packed     []string
+		message    string
+	)
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/available-plans"):
 			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
-		case r.Method == http.MethodGet:
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/deploys"):
+			deployPath = r.URL.Path
+			mr, err := r.MultipartReader()
+			if err != nil {
+				t.Errorf("MultipartReader: %v", err)
+				return
+			}
+			for {
+				part, err := mr.NextPart()
+				if err != nil {
+					break
+				}
+				switch part.FormName() {
+				case "message":
+					b, _ := io.ReadAll(part)
+					message = string(b)
+				case "file":
+					gz, err := gzip.NewReader(part)
+					if err != nil {
+						t.Errorf("the upload is not gzip: %v", err)
+						return
+					}
+					tr := tar.NewReader(gz)
+					for {
+						h, err := tr.Next()
+						if err != nil {
+							break
+						}
+						packed = append(packed, h.Name)
+					}
+				}
+			}
+			w.Write([]byte(`{"type":"output","data":"---> building\n"}` + "\n" + `{"type":"result","ok":true}` + "\n")) //nolint:errcheck
+		case r.Method == http.MethodGet && deployPath == "":
 			w.WriteHeader(http.StatusNotFound) // new app
+		case r.Method == http.MethodGet:
+			w.Write([]byte(`{"name":"quake","addresses":["https://quake-x1.apps.goship.sh"]}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created)                      //nolint:errcheck
 			w.Write([]byte(`{"name":"quake","tsuru_name":"acme-quake"}`)) //nolint:errcheck
+		}
+	})
+
+	dir := filepath.Join(t.TempDir(), "quake")
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
+	write(t, filepath.Join(dir, ".git", "config"), "[core]\n")
+
+	out, err := run(t, "", "deploy", dir, "-m", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deployPath != "/api/v1/orgs/acme/apps/quake/deploys" {
+		t.Errorf("deploy path = %q, want the display name", deployPath)
+	}
+	if message != "first" {
+		t.Errorf("message = %q", message)
+	}
+	if got := strings.Join(packed, " "); got != "go.mod" {
+		t.Errorf("packed = %q, want the project without .git", got)
+	}
+	if !strings.Contains(out, "---> building") || !strings.Contains(out, "https://quake-x1.apps.goship.sh") {
+		t.Errorf("output = %q, want the build log and then the address", out)
+	}
+}
+
+func TestDeployReportsAFailedBuild(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/deploys"):
+			io.Copy(io.Discard, r.Body)                                                                                                                                   //nolint:errcheck
+			w.Write([]byte(`{"type":"output","data":"main.go:3: undefined: x\n"}` + "\n" + `{"type":"result","ok":false,"error":"deploy failed: exit status 1"}` + "\n")) //nolint:errcheck
+		case r.Method == http.MethodGet:
+			w.Write([]byte(`{"name":"quake"}`)) //nolint:errcheck
 		}
 	})
 
@@ -642,13 +740,11 @@ func TestDeployBuildsAgainstTheMangledName(t *testing.T) {
 	}
 	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
 
-	if _, err := run(t, "", "deploy", dir); err != nil {
-		t.Fatal(err)
+	out, err := run(t, "", "deploy", dir)
+	if err == nil || !strings.Contains(err.Error(), "deploy of quake failed: exit status 1") {
+		t.Errorf("error = %v, want the build's own reason", err)
 	}
-	if gotBuild.tsuruName != "acme-quake" {
-		t.Errorf("build addressed %q, want the mangled acme-quake", gotBuild.tsuruName)
-	}
-	if gotBuild.displayName != "quake" {
-		t.Errorf("display name = %q, want quake (used only in messages)", gotBuild.displayName)
+	if !strings.Contains(out, "undefined: x") {
+		t.Errorf("the compiler error never reached the terminal: %q", out)
 	}
 }
