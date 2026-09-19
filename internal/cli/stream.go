@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // noJSON refuses --output json on commands whose output is a live stream of
@@ -154,18 +157,79 @@ func newRollbackCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-// newShellCmd keeps the command visible while it has no backend: an
-// interactive shell needs a websocket the GoShip API does not proxy yet.
-func newShellCmd(_ *App) *cobra.Command {
-	return &cobra.Command{
+// pipedShellGrace is how long a shell fed from a pipe stays open after its
+// input ends.
+var pipedShellGrace = 2 * time.Second
+
+func newShellCmd(app *App) *cobra.Command {
+	var (
+		appName  string
+		unit     string
+		isolated bool
+	)
+	cmd := &cobra.Command{
 		Use:   "shell --app <app>",
-		Short: "Open a shell in a running unit (not available yet)",
-		Args:  cobra.ArbitraryArgs,
-		RunE: func(*cobra.Command, []string) error {
-			return errors.New("an interactive shell is not available yet. `goship run -a <app> -- <command>` runs a command where the app's code and environment are")
-		},
-		DisableFlagParsing: true,
+		Short: "Open a shell in one of the app's units",
+		Long: "Opens an interactive shell where the app's code and environment are. It\n" +
+			"lands in a serving unit; --isolated starts a fresh container instead, which\n" +
+			"also works for an app that is paused or crashing.",
+		Args: cobra.NoArgs,
 	}
+	f := cmd.Flags()
+	f.StringVarP(&appName, "app", "a", "", "app name (required)")
+	f.StringVarP(&unit, "unit", "u", "", "unit to open the shell in (see `goship app info`)")
+	f.BoolVar(&isolated, "isolated", false, "open the shell in a new container rather than a serving unit")
+	_ = cmd.MarkFlagRequired("app")
+
+	cmd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
+		if err := noJSON(app, cmd); err != nil {
+			return err
+		}
+		opts := portal.ShellOptions{Unit: unit, Isolated: isolated, Term: os.Getenv("TERM")}
+
+		// A real terminal is switched to raw mode so keys, not lines, travel;
+		// piped input (`echo ls | goship shell`) is sent as it comes.
+		in, _ := cmd.InOrStdin().(*os.File)
+		interactive := in != nil && term.IsTerminal(int(in.Fd()))
+		if interactive {
+			opts.Width, opts.Height, _ = term.GetSize(int(in.Fd()))
+		}
+
+		conn, err := app.Portal().Shell(cmd.Context(), org, appName, opts)
+		if err != nil {
+			return err
+		}
+		defer conn.Close() //nolint:errcheck
+
+		if interactive {
+			state, err := term.MakeRaw(int(in.Fd()))
+			if err != nil {
+				return fmt.Errorf("switching the terminal to raw mode: %w", err)
+			}
+			defer term.Restore(int(in.Fd()), state) //nolint:errcheck
+		}
+
+		done := make(chan error, 2)
+		go func() {
+			_, err := io.Copy(cmd.OutOrStdout(), conn)
+			done <- err
+		}()
+		go func() {
+			_, err := io.Copy(conn, cmd.InOrStdin())
+			if err == nil && !interactive {
+				// Piped input ran out: give the commands a moment to answer
+				// rather than hanging up on them mid-output.
+				time.Sleep(pipedShellGrace)
+			}
+			done <- err
+		}()
+		err = <-done
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
+		return err
+	})
+	return cmd
 }
 
 func newStreamCmds(app *App) []*cobra.Command {

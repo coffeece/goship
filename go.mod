@@ -3,6 +3,7 @@ module github.com/coffeece/goship
 go 1.26.6
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	github.com/sabhiram/go-gitignore v0.0.0-20171017070213-362f9845770f
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.46.0

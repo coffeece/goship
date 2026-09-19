@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestLogsPrintsEachLineWithItsSourceAndUnit(t *testing.T) {
@@ -89,12 +92,54 @@ func TestReleasesListsTheHistory(t *testing.T) {
 	}
 }
 
-func TestShellSaysWhatToUseInstead(t *testing.T) {
-	stubAPIWithOrg(t, func(http.ResponseWriter, *http.Request) { t.Error("shell must not call the API") })
+// Piped input reaches the shell and its output comes back: the same path an
+// interactive session takes, minus the raw terminal.
+func TestShellPipesInputToTheUnitAndPrintsItsOutput(t *testing.T) {
+	pipedShellGrace = 50 * time.Millisecond
+	t.Cleanup(func() { pipedShellGrace = 2 * time.Second })
+
+	var path, query, auth string
+	up := websocket.Upgrader{}
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		path, query, auth = r.URL.Path, r.URL.RawQuery, r.Header.Get("Authorization")
+		ws, err := up.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.Close() //nolint:errcheck
+		_, msg, err := ws.ReadMessage()
+		if err != nil {
+			return
+		}
+		ws.WriteMessage(websocket.TextMessage, []byte("ran: "+string(msg)))                                     //nolint:errcheck
+		ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")) //nolint:errcheck
+	})
+	t.Setenv("GOSHIP_TOKEN", "gsp_test")
+
+	out, err := run(t, "ls /app\n", "shell", "-a", "blog", "--isolated", "-u", "blog-web-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/api/v1/orgs/acme/apps/blog/shell" || auth != "Bearer gsp_test" {
+		t.Errorf("path=%q auth=%q", path, auth)
+	}
+	if !strings.Contains(query, "isolated=true") || !strings.Contains(query, "unit=blog-web-1") {
+		t.Errorf("query = %q", query)
+	}
+	if out != "ran: ls /app\n" {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestShellReportsARefusalFromTheAPI(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"data conflict: app \"blog\" is paused"}`)) //nolint:errcheck
+	})
 
 	_, err := run(t, "", "shell", "-a", "blog")
-	if err == nil || !strings.Contains(err.Error(), "goship run") {
-		t.Errorf("error = %v, want a pointer to `goship run`", err)
+	if err == nil || !strings.Contains(err.Error(), "paused") {
+		t.Errorf("error = %v, want the API's reason", err)
 	}
 }
 
