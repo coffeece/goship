@@ -113,6 +113,10 @@ func newDeployCmd(app *App) *cobra.Command {
 			if len(args) == 1 {
 				dir = args[0]
 			}
+			// Before anything is created on the other side.
+			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+				return fmt.Errorf("%s is not a directory to deploy from", dir)
+			}
 			proj, projFile, err := loadProject(dir)
 			if err != nil {
 				return err

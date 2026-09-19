@@ -748,3 +748,29 @@ func TestDeployReportsAFailedBuild(t *testing.T) {
 		t.Errorf("the compiler error never reached the terminal: %q", out)
 	}
 }
+
+func TestDeployRefusesAMissingDirectoryBeforeCallingTheAPI(t *testing.T) {
+	stubAPIWithOrg(t, func(http.ResponseWriter, *http.Request) {
+		t.Error("the API was called for a directory that does not exist")
+	})
+
+	_, err := run(t, "", "deploy", filepath.Join(t.TempDir(), "nope"))
+	if err == nil || !strings.Contains(err.Error(), "is not a directory") {
+		t.Errorf("error = %v", err)
+	}
+}
+
+func TestAnOutdatedCLIIsToldToUpgrade(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Goship-Version") == "" {
+			t.Error("the CLI did not send its version")
+		}
+		w.WriteHeader(http.StatusUpgradeRequired)
+		w.Write([]byte(`{"error":"this goship (0.2.0) is too old for the API; upgrade to 0.3.0 or newer: https://docs.goship.sh/cli/instalacao/","code":"upgrade_required"}`)) //nolint:errcheck
+	})
+
+	_, err := run(t, "", "apps")
+	if err == nil || !strings.Contains(err.Error(), "upgrade to 0.3.0") {
+		t.Errorf("error = %v, want the API's upgrade instruction", err)
+	}
+}
