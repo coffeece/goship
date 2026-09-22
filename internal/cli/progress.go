@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -433,7 +434,7 @@ func (p *progress) frame() []string {
 	}
 	lines := []string{truncate(p.liveRow(s), p.width-1)}
 	for _, l := range tail(s.lines, tailLines) {
-		lines = append(lines, p.paint("2", truncate("      │ "+l, p.width-1)))
+		lines = append(lines, p.paint("2", truncate("      │ "+printable(l), p.width-1)))
 	}
 	return lines
 }
@@ -514,6 +515,33 @@ func tail(lines []string, n int) []string {
 		}
 	}
 	return out
+}
+
+var escapeSeq = regexp.MustCompile(`\x1b(\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|.)`)
+
+// printable is a line of output as one row of the live area can hold it: no
+// escapes of its own, no control characters, tabs as spaces. Of a line that
+// redraws itself with \r, what the terminal would end up showing is kept.
+func printable(s string) string {
+	if i := strings.LastIndexByte(s, '\r'); i >= 0 {
+		s = s[i+1:]
+	}
+	s = escapeSeq.ReplaceAllString(s, "")
+	var b strings.Builder
+	col := 0
+	for _, r := range s {
+		switch {
+		case r == '\t':
+			n := 8 - col%8
+			b.WriteString(strings.Repeat(" ", n))
+			col += n
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0):
+		default:
+			b.WriteRune(r)
+			col++
+		}
+	}
+	return b.String()
 }
 
 func truncate(s string, n int) string {

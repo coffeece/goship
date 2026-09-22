@@ -281,3 +281,19 @@ func TestProgressWithAnOlderAPIPrintsItsOutputAsItArrives(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveTailCannotWrapOrInjectEscapes(t *testing.T) {
+	p, _, _ := newTestProgress(modeLive)
+	send(t, p, stepEv("build", "start", ""),
+		outputEv("build", "\x1b[32mok\x1b[0m\tdone\x07\n50%\r100%\n"))
+	f := p.frame()
+	if len(f) != 3 {
+		t.Fatalf("frame = %q", f)
+	}
+	if f[1] != "      │ ok      done" {
+		t.Errorf("tail[0] = %q", f[1])
+	}
+	if f[2] != "      │ 100%" {
+		t.Errorf("tail[1] = %q", f[2])
+	}
+}
