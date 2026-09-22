@@ -200,6 +200,19 @@ func TestLiveFrameTruncatesToTheTerminal(t *testing.T) {
 	}
 }
 
+func TestLiveFrameNeverWrapsOnANarrowTerminal(t *testing.T) {
+	p, _, _ := newTestProgress(modeLive)
+	p.width = 30
+	send(t, p, stepEv("build", "start", ""),
+		stepEv("build", "progress", "waiting for health check on every unit"))
+
+	for _, l := range p.frame() {
+		if n := len([]rune(l)); n > p.width-1 {
+			t.Errorf("line of %d runes on a %d-column terminal: %q", n, p.width, l)
+		}
+	}
+}
+
 func TestLiveProgressLeavesFinishedStepsAndNoLiveArea(t *testing.T) {
 	p, out, _ := newTestProgress(modeLive)
 	send(t, p, stepEv("build", "start", ""), outputEv("build", "#1 load\n"), stepEv("build", "done", "image v7"))

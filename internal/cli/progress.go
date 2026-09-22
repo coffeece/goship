@@ -420,7 +420,7 @@ func (p *progress) frame() []string {
 	if s == nil {
 		return nil
 	}
-	lines := []string{p.liveRow(s)}
+	lines := []string{truncate(p.liveRow(s), p.width-1)}
 	for _, l := range tail(s.lines, tailLines) {
 		lines = append(lines, p.paint("2", truncate("      │ "+l, p.width-1)))
 	}
