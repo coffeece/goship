@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -203,6 +204,12 @@ func (p *progress) Finish(err error) {
 	}
 	p.printHeader()
 	cur := p.active()
+	// A dropped connection is not a failure: the release carries on over
+	// there, so its step is left as it was drawn, running.
+	if errors.Is(err, portal.ErrStreamCut) {
+		p.drawn = 0
+		return
+	}
 	if err == nil {
 		for _, s := range p.steps {
 			if s.state == stepRunning {

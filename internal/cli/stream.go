@@ -156,9 +156,11 @@ func newRollbackCmd(app *App) *cobra.Command {
 		p.Header("Rolling back %s to %s", appName, version)
 		err := app.Portal().Rollback(cmd.Context(), org, appName, version, p.Event)
 		p.Finish(err)
+		ran := isOperationError(err)
 		err = explainStreamError(err, "rollback of "+appName, true)
-		if err != nil && !app.Global.Verbose {
-			err = fmt.Errorf("%w\nFull log: goship rollback %s -a %s --verbose", err, version, appName)
+		// Running a production rollback again is not how to read its log.
+		if ran {
+			err = fmt.Errorf("%w\nHistory: goship releases -a %s", err, appName)
 		}
 		return err
 	})

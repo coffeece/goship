@@ -875,3 +875,42 @@ func TestDeployFailureShowsTheFailingStepAndWhereToLookNext(t *testing.T) {
 		t.Errorf("error = %v", err)
 	}
 }
+
+func TestDeployRefusedUpFrontDoesNotPointAtTheLog(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/deploys"):
+			io.Copy(io.Discard, r.Body) //nolint:errcheck
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`{"error":"app is paused"}`)) //nolint:errcheck
+		case r.Method == http.MethodGet:
+			w.Write([]byte(`{"name":"quake","platform":"go"}`)) //nolint:errcheck
+		}
+	})
+
+	_, err := run(t, "", "deploy", quakeDir(t))
+	if err == nil || !strings.Contains(err.Error(), "app is paused") {
+		t.Fatalf("error = %v", err)
+	}
+	if strings.Contains(err.Error(), "Full log") {
+		t.Errorf("a deploy that never ran has no log: %v", err)
+	}
+}
+
+func TestDeployCutOffLeavesTheReleaseRunning(t *testing.T) {
+	deployAPI(t, `{"type":"step","step":"build","state":"start"}
+{"type":"step","step":"build","state":"done","detail":"image v7"}
+{"type":"step","step":"release","state":"start"}
+`)
+
+	out, err := run(t, "", "deploy", quakeDir(t))
+	if err == nil || !strings.Contains(err.Error(), "keeps running") {
+		t.Fatalf("error = %v", err)
+	}
+	if strings.Contains(out, "✗") {
+		t.Errorf("a release still running was marked failed:\n%s", out)
+	}
+	if strings.Contains(err.Error(), "Full log") {
+		t.Errorf("error = %v", err)
+	}
+}

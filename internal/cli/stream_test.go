@@ -175,3 +175,31 @@ func TestStreamedCommandsRefuseJSONOutput(t *testing.T) {
 		t.Error("logs accepted --output json")
 	}
 }
+
+func TestFailedRollbackPointsAtTheHistory(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"type":"step","step":"release","state":"start"}
+{"type":"result","ok":false,"error":"deploy failed: timeout"}
+`)) //nolint:errcheck
+	})
+
+	_, err := run(t, "", "rollback", "v3", "-a", "blog")
+	if err == nil || !strings.Contains(err.Error(), "History: goship releases -a blog") {
+		t.Fatalf("error = %v", err)
+	}
+	if strings.Contains(err.Error(), "goship rollback") {
+		t.Errorf("a production rollback should not be suggested again: %v", err)
+	}
+}
+
+func TestRefusedRollbackDoesNotPointAnywhere(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"app is paused"}`)) //nolint:errcheck
+	})
+
+	_, err := run(t, "", "rollback", "v3", "-a", "blog")
+	if err == nil || strings.Contains(err.Error(), "History:") || strings.Contains(err.Error(), "Full log") {
+		t.Errorf("error = %v", err)
+	}
+}

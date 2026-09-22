@@ -278,7 +278,10 @@ func newDeployCmd(app *App) *cobra.Command {
 			}, p)
 			p.Finish(buildErr)
 			if buildErr != nil {
-				if !app.Global.Verbose {
+				// Only a release that ran has a log to point at.
+				ran := isOperationError(buildErr)
+				buildErr = explainStreamError(buildErr, "deploy of "+name, true)
+				if ran && !app.Global.Verbose {
 					buildErr = fmt.Errorf("%w\nFull log: goship deploy --verbose  \u00b7  history: goship releases -a %s", buildErr, name)
 				}
 				return buildErr
@@ -343,7 +346,7 @@ var runBuild = func(cmd *cobra.Command, app *App, a buildArgs, p *progress) erro
 		return p.Event(ev)
 	})
 	pr.CloseWithError(err) //nolint:errcheck
-	return explainStreamError(err, "deploy of "+a.name, true)
+	return err
 }
 
 // countingWriter counts what passes through it; the upload's size is what the
@@ -375,6 +378,11 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+func isOperationError(err error) bool {
+	var opErr *portal.OperationError
+	return errors.As(err, &opErr)
 }
 
 // explainStreamError turns the ways a streamed operation ends badly into what

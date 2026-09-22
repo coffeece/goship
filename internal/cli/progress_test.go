@@ -252,3 +252,16 @@ func TestProgressKeepsOneRowForAStepThatStartsAgain(t *testing.T) {
 		t.Errorf("the reason was not printed:\n%s", got)
 	}
 }
+
+// A dropped connection says nothing about how the release went: it keeps
+// running on the other side.
+func TestProgressLeavesTheRunningStepOpenWhenTheStreamIsCut(t *testing.T) {
+	for _, mode := range []progressMode{modePlain, modeLive} {
+		p, out, _ := newTestProgress(mode)
+		send(t, p, stepEv("release", "start", ""), outputEv("release", "waiting\n"))
+		p.Finish(portal.ErrStreamCut)
+		if strings.Contains(out.String(), "✗") {
+			t.Errorf("mode %d: the release was marked failed:\n%s", mode, out.String())
+		}
+	}
+}
