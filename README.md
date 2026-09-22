@@ -5,11 +5,16 @@ your own nodes.
 
 ```sh
 $ goship deploy
-Creating app api (go)...
-Applying 3 environment variable(s)...
----- Building application image ----
----- Starting 1 new unit ----
-✓ https://api.apps.goship.sh
+Deploying api · go
+
+  ✓ Create        go, detected from go.mod, plan Free   0.4s
+  ✓ Environment   3 variables                           0.2s
+  ✓ Upload        48.2 KB                               0.3s
+  ✓ Build         image v1                             41s
+  ✓ Release       1/1 units healthy                     9.8s
+  ✓ Route                                               0.4s
+
+  → https://api.apps.goship.sh   v1 · 53s
 ```
 
 ## Install
@@ -32,7 +37,7 @@ its platform is inferred from the files present (`go.mod`, `pyproject.toml`,
 first deploy — the output says what it inferred:
 
 ```
-Creating app widget (go, detected from go.mod, plan Free)...
+  ✓ Create        go, detected from go.mod, plan Free   0.4s
 ```
 
 A plan is only chosen for you when it is free. If your organization has no free
@@ -141,6 +146,11 @@ GOSHIP_TOKEN=$TOKEN goship app rm old-api --yes
 
 Commands that stream — `deploy`, `logs`, `run`, `shell`, `releases`,
 `rollback` — reject `--output json` rather than pretend to support it.
+
+`deploy` and `rollback` show their steps; when one fails, its whole output is
+printed. `--verbose` (`-v`) shows the complete log as it arrives instead, and
+works on every command (it also logs HTTP requests to stderr). Output that is
+not a terminal gets one line per step, without colour or redraws.
 
 ## Configuration
 

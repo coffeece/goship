@@ -146,7 +146,7 @@ func NewRoot(version string) *cobra.Command {
 	f.StringVar(&app.Global.Org, "org", "", "organization slug (overrides the current org)")
 	f.StringVarP(&app.Global.Output, "output", "o", render.Table, "output format: table or json")
 	f.BoolVarP(&app.Global.Yes, "yes", "y", false, "answer yes to confirmations")
-	f.BoolVar(&app.Global.Verbose, "verbose", false, "log HTTP requests to stderr")
+	f.BoolVarP(&app.Global.Verbose, "verbose", "v", false, "show everything: the full deploy and rollback log, and HTTP requests on stderr")
 
 	root.AddCommand(
 		newVersionCmd(app),

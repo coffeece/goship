@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/coffeece/goship/internal/archive"
 	"github.com/coffeece/goship/internal/portal"
@@ -105,7 +106,7 @@ func newDeployCmd(app *App) *cobra.Command {
 			"A goship.yaml (or .goship.yaml) is an optional shortcut for the same values.\n" +
 			"Flags beat the file, the file beats what is inferred.",
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			if app.Global.Output == render.JSON {
 				return fmt.Errorf("deploy streams its output; --output json is not supported")
 			}
@@ -117,6 +118,10 @@ func newDeployCmd(app *App) *cobra.Command {
 			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 				return fmt.Errorf("%s is not a directory to deploy from", dir)
 			}
+
+			p := newProgress(cmd.OutOrStdout(), app.Global.Verbose)
+			defer func() { p.Finish(err) }()
+
 			proj, projFile, err := loadProject(dir)
 			if err != nil {
 				return err
@@ -126,7 +131,6 @@ func newDeployCmd(app *App) *cobra.Command {
 			plan = firstNonEmpty(plan, proj.Plan)
 			node = firstNonEmpty(node, proj.Node)
 
-			r := app.Renderer()
 			client := app.Portal()
 
 			// The app name is known before the organization has to be, so an
@@ -145,9 +149,7 @@ func newDeployCmd(app *App) *cobra.Command {
 					return err
 				}
 				org = owners[0]
-				if err := r.Message("Using org %s, where %q already exists. Run `goship org use %s` to keep it.", org, name, org); err != nil {
-					return err
-				}
+				p.Note("Using org %s, where %q already exists. Run `goship org use %s` to keep it.", org, name, org)
 			}
 
 			// Where the build instructions came from, so the creation line can
@@ -177,9 +179,19 @@ func newDeployCmd(app *App) *cobra.Command {
 			// Not found and forbidden both mean "not usable from here", and both
 			// are worth searching the user's other organizations for: a pinned
 			// org left over from another account produces the second one.
-			_, lookupErr := client.App(cmd.Context(), org, name)
+			existing, lookupErr := client.App(cmd.Context(), org, name)
 			if lookupErr != nil && !portal.IsNotFound(lookupErr) && !portal.IsForbidden(lookupErr) {
 				return lookupErr
+			}
+
+			buildWith := firstNonEmpty(dockerfile, platform)
+			if lookupErr == nil {
+				buildWith = firstNonEmpty(dockerfile, existing.Platform, platform)
+			}
+			if buildWith != "" {
+				p.Header("Deploying %s · %s", name, buildWith)
+			} else {
+				p.Header("Deploying %s", name)
 			}
 			if lookupErr != nil {
 				if others := appInOtherOrgs(cmd.Context(), client, org, name); len(others) > 0 {
@@ -215,9 +227,7 @@ func newDeployCmd(app *App) *cobra.Command {
 					plan = chosen.Slug
 					origin += ", plan " + chosen.DisplayName
 				}
-				if err := r.Message("Creating app %s (%s)...", name, origin); err != nil {
-					return err
-				}
+				p.Begin("create")
 				req := portal.CreateAppRequest{Name: name, Platform: platform, Plan: plan}
 				if node != "" {
 					id, err := resolveNode(cmd.Context(), client, org, node)
@@ -229,6 +239,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				if _, err := client.CreateApp(cmd.Context(), org, req); err != nil {
 					return err
 				}
+				p.Done("create", origin)
 			}
 
 			env := map[string]string{}
@@ -251,35 +262,30 @@ func newDeployCmd(app *App) *cobra.Command {
 					// published in the app's public environment.
 					vars = append(vars, portal.EnvVar{Name: k, Value: env[k], Public: false})
 				}
-				if err := r.Message("Applying %d environment variable(s)...", len(vars)); err != nil {
-					return err
-				}
+				p.Begin("environment")
 				if err := client.SetEnv(cmd.Context(), org, name, vars, true); err != nil {
 					return err
 				}
+				p.Done("environment", plural(len(vars), "variable"))
 			}
 
-			if dockerfile != "" {
-				if err := r.Message("Building %s from %s.", name, dockerfile); err != nil {
-					return err
-				}
-			}
-
-			if err := runBuild(cmd, app, buildArgs{
+			buildErr := runBuild(cmd, app, buildArgs{
 				org:        org,
 				name:       name,
 				dir:        dir,
 				dockerfile: dockerfile,
 				message:    message,
-			}); err != nil {
-				return err
+			}, p)
+			p.Finish(buildErr)
+			if buildErr != nil {
+				if !app.Global.Verbose {
+					buildErr = fmt.Errorf("%w\nFull log: goship deploy --verbose  \u00b7  history: goship releases -a %s", buildErr, name)
+				}
+				return buildErr
 			}
-
-			// The build output ends on "OK" with no address. Close on the URL,
-			// which is the thing the user actually wanted.
 			if deployed, appErr := client.App(cmd.Context(), org, name); appErr == nil {
 				if url := publicURL(deployed); url != "" {
-					return r.Message("\n\u2713 %s", url)
+					p.Summary(url)
 				}
 			}
 			return nil
@@ -303,9 +309,10 @@ type buildArgs struct {
 	org, name, dir, dockerfile, message string
 }
 
-// runBuild packs the project and uploads it, printing the build as it runs.
-// It is a package var so a test can assert what a deploy asks to be built.
-var runBuild = func(cmd *cobra.Command, app *App, a buildArgs) error {
+// runBuild packs the project and uploads it, reporting the build to p as it
+// runs. It is a package var so a test can assert what a deploy asks to be
+// built.
+var runBuild = func(cmd *cobra.Command, app *App, a buildArgs, p *progress) error {
 	in := portal.DeployRequest{Message: a.message}
 	if a.dockerfile != "" {
 		content, err := os.ReadFile(filepath.Join(a.dir, a.dockerfile))
@@ -318,15 +325,56 @@ var runBuild = func(cmd *cobra.Command, app *App, a buildArgs) error {
 	// The archive is written into the request as it is produced: a project is
 	// never held in memory or spooled to disk first.
 	pr, pw := io.Pipe()
+	sent := &countingWriter{w: pw}
 	go func() {
-		_, _, err := archive.Write(a.dir, pw)
+		_, _, err := archive.Write(a.dir, sent)
 		pw.CloseWithError(err) //nolint:errcheck
 	}()
 	in.Archive = pr
 
-	err := app.Portal().Deploy(cmd.Context(), a.org, a.name, in, portal.PrintOutput(cmd.OutOrStdout()))
+	p.Begin("upload")
+	uploaded := false
+	err := app.Portal().Deploy(cmd.Context(), a.org, a.name, in, func(ev portal.ReleaseEvent) error {
+		// The build starts once the upload is in, so the first event ends it.
+		if !uploaded {
+			uploaded = true
+			p.Done("upload", formatBytes(sent.n.Load()))
+		}
+		return p.Event(ev)
+	})
 	pr.CloseWithError(err) //nolint:errcheck
 	return explainStreamError(err, "deploy of "+a.name, true)
+}
+
+// countingWriter counts what passes through it; the upload's size is what the
+// archive compressed to.
+type countingWriter struct {
+	w io.Writer
+	n atomic.Int64
+}
+
+func (c *countingWriter) Write(b []byte) (int, error) {
+	n, err := c.w.Write(b)
+	c.n.Add(int64(n))
+	return n, err
+}
+
+func formatBytes(n int64) string {
+	switch {
+	case n < 1<<10:
+		return fmt.Sprintf("%d B", n)
+	case n < 1<<20:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	}
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // explainStreamError turns the ways a streamed operation ends badly into what

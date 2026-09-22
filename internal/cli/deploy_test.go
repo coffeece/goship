@@ -509,7 +509,7 @@ func TestDeployBuildsFromADockerfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Building widget from Dockerfile") {
+	if !strings.Contains(out, "Deploying widget · Dockerfile\n") {
 		t.Errorf("the container build should be announced, got %q", out)
 	}
 	if gotDockerfile != "FROM alpine\n" {
@@ -568,7 +568,7 @@ func TestDeployHonoursTheDockerfileFromConfig(t *testing.T) {
 	write(t, filepath.Join(dir, "goship.yml"), "app: widget\ndockerfile: Dockerfile.prod\n")
 
 	out, _ := run(t, "", "deploy", dir)
-	if !strings.Contains(out, "Building widget from Dockerfile.prod") {
+	if !strings.Contains(out, "Deploying widget · Dockerfile.prod\n") {
 		t.Errorf("the config's dockerfile should win over the go.mod, got %q", out)
 	}
 }
@@ -788,5 +788,90 @@ func TestLoadProjectToleratesThePlatformSection(t *testing.T) {
 	}
 	if p.App != "blog" || p.Platform != "python" {
 		t.Errorf("project = %+v", p)
+	}
+}
+
+// stepStream is what the API sends for a deploy that goes through every step.
+const stepStream = `{"type":"step","step":"build","state":"start"}
+{"type":"output","step":"build","data":"#1 load\n"}
+{"type":"step","step":"build","state":"done","detail":"image v7"}
+{"type":"step","step":"release","state":"start"}
+{"type":"output","step":"release","data":" ---> All units ready\n"}
+{"type":"step","step":"release","state":"done","detail":"1/1 units healthy"}
+{"type":"step","step":"route","state":"start"}
+{"type":"step","step":"route","state":"done"}
+{"type":"result","ok":true}
+`
+
+func deployAPI(t *testing.T, stream string) {
+	t.Helper()
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/deploys"):
+			io.Copy(io.Discard, r.Body) //nolint:errcheck
+			w.Write([]byte(stream))     //nolint:errcheck
+		case r.Method == http.MethodGet:
+			w.Write([]byte(`{"name":"quake","platform":"go","addresses":["https://quake-x1.apps.goship.sh"]}`)) //nolint:errcheck
+		}
+	})
+}
+
+func quakeDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "quake")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
+	return dir
+}
+
+func TestDeployShowsStepsNotTheLog(t *testing.T) {
+	deployAPI(t, stepStream)
+
+	out, err := run(t, "", "deploy", quakeDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Deploying quake · go\n", "✓ Upload ", "✓ Build image v7", "✓ Release 1/1 units healthy", "✓ Route", "https://quake-x1.apps.goship.sh"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "#1 load") || strings.Contains(out, "All units ready") {
+		t.Errorf("the log leaked into the default view:\n%s", out)
+	}
+}
+
+func TestDeployVerboseShowsTheWholeLog(t *testing.T) {
+	deployAPI(t, stepStream)
+
+	out, err := run(t, "", "deploy", quakeDir(t), "-v")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "#1 load\n") || !strings.Contains(out, " ---> All units ready\n") {
+		t.Errorf("verbose lost the log:\n%s", out)
+	}
+	if strings.Contains(out, "✓ Build") {
+		t.Errorf("verbose should not draw the API's steps:\n%s", out)
+	}
+}
+
+func TestDeployFailureShowsTheFailingStepAndWhereToLookNext(t *testing.T) {
+	deployAPI(t, `{"type":"step","step":"build","state":"start"}
+{"type":"output","step":"build","data":"#5 ./main.go:12:2: undefined: foo\n"}
+{"type":"result","ok":false,"error":"deploy failed: exit code: 1"}
+`)
+
+	out, err := run(t, "", "deploy", quakeDir(t))
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if !strings.Contains(out, "✗ Build") || !strings.Contains(out, "    #5 ./main.go:12:2: undefined: foo") {
+		t.Errorf("output:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "deploy of quake failed: exit code: 1") || !strings.Contains(err.Error(), "goship deploy --verbose") {
+		t.Errorf("error = %v", err)
 	}
 }
