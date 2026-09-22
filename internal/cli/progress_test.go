@@ -169,3 +169,46 @@ func TestFmtDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestLiveFrameShowsTheRunningStepAndItsTail(t *testing.T) {
+	p, _, clk := newTestProgress(modeLive)
+	send(t, p, stepEv("build", "start", ""))
+	send(t, p, outputEv("build", "one\ntwo\n\nthree\nfour\n"))
+	clk.advance(2 * time.Second)
+
+	f := p.frame()
+	if len(f) != 4 {
+		t.Fatalf("frame = %q, want the row and a 3-line tail", f)
+	}
+	if !strings.HasPrefix(f[0], "  ⠋ Build") || !strings.HasSuffix(f[0], "2.0s") {
+		t.Errorf("row = %q", f[0])
+	}
+	for i, want := range []string{"two", "three", "four"} {
+		if f[i+1] != "      │ "+want {
+			t.Errorf("tail[%d] = %q, want %q", i, f[i+1], want)
+		}
+	}
+}
+
+func TestLiveFrameTruncatesToTheTerminal(t *testing.T) {
+	p, _, _ := newTestProgress(modeLive)
+	send(t, p, stepEv("build", "start", ""), outputEv("build", strings.Repeat("x", 200)+"\n"))
+	for _, l := range p.frame() {
+		if n := len([]rune(l)); n > p.width-1 {
+			t.Errorf("line of %d runes on a %d-column terminal: %q", n, p.width, l)
+		}
+	}
+}
+
+func TestLiveProgressLeavesFinishedStepsAndNoLiveArea(t *testing.T) {
+	p, out, _ := newTestProgress(modeLive)
+	send(t, p, stepEv("build", "start", ""), outputEv("build", "#1 load\n"), stepEv("build", "done", "image v7"))
+	p.Finish(nil)
+
+	if f := p.frame(); len(f) != 0 {
+		t.Errorf("live area still drawn: %q", f)
+	}
+	if !strings.Contains(out.String(), "✓ Build") || !strings.Contains(out.String(), "image v7") {
+		t.Errorf("output = %q", out.String())
+	}
+}

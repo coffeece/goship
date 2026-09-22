@@ -412,9 +412,103 @@ func (p *progress) paint(code, s string) string {
 	return "\x1b[" + code + "m" + s + "\x1b[0m"
 }
 
-// The live view is added in the next task; on a non-terminal these are no-ops.
-func (p *progress) redraw()                {}
-func (p *progress) clearLive()             {}
-func (p *progress) startSpinner()          {}
-func (p *progress) stopSpinner()           {}
-func (p *progress) liveRow(s *step) string { return plainRow(s) }
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// frame is the live area: the running step and the last lines of its output.
+func (p *progress) frame() []string {
+	s := p.active()
+	if s == nil {
+		return nil
+	}
+	lines := []string{p.liveRow(s)}
+	for _, l := range tail(s.lines, tailLines) {
+		lines = append(lines, p.paint("2", truncate("      │ "+l, p.width-1)))
+	}
+	return lines
+}
+
+// redraw replaces the live area on screen with the current frame.
+func (p *progress) redraw() {
+	if p.mode != modeLive {
+		return
+	}
+	p.clearLive()
+	f := p.frame()
+	for _, l := range f {
+		fmt.Fprintln(p.out, l)
+	}
+	p.drawn = len(f)
+}
+
+func (p *progress) clearLive() {
+	if p.mode != modeLive || p.drawn == 0 {
+		return
+	}
+	// Up to the first line of the live area, then clear to the end of the screen.
+	fmt.Fprintf(p.out, "\x1b[%dF\x1b[J", p.drawn)
+	p.drawn = 0
+}
+
+func (p *progress) liveRow(s *step) string {
+	mark := p.paint("32", "✓")
+	switch s.state {
+	case stepRunning:
+		mark = spinnerFrames[p.spin%len(spinnerFrames)]
+	case stepFailed:
+		mark = p.paint("31", "✗")
+	}
+	end := s.end
+	if s.state == stepRunning {
+		end = p.now()
+	}
+	row := fmt.Sprintf("  %s %-12s %-28s %6s", mark, s.title(), truncate(s.detail, 28), fmtDuration(end.Sub(s.start)))
+	return strings.TrimRight(row, " ")
+}
+
+func (p *progress) startSpinner() {
+	if p.tick == 0 || p.stop != nil {
+		return
+	}
+	p.stop = make(chan struct{})
+	go func(stop chan struct{}) {
+		t := time.NewTicker(p.tick)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				p.mu.Lock()
+				p.spin++
+				p.redraw()
+				p.mu.Unlock()
+			}
+		}
+	}(p.stop)
+}
+
+func (p *progress) stopSpinner() {
+	if p.stop != nil {
+		close(p.stop)
+		p.stop = nil
+	}
+}
+
+// tail is the last n non-blank lines.
+func tail(lines []string, n int) []string {
+	var out []string
+	for i := len(lines) - 1; i >= 0 && len(out) < n; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			out = append([]string{lines[i]}, out...)
+		}
+	}
+	return out
+}
+
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if n < 2 || len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
+}
