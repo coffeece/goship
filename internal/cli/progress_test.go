@@ -125,6 +125,37 @@ func TestProgressKeepsOnlyTheLastLinesOfAStep(t *testing.T) {
 	}
 }
 
+func TestProgressAttributesAPartialLineToItsOwnStep(t *testing.T) {
+	p, _, _ := newTestProgress(modePlain)
+	send(t, p,
+		stepEv("build", "start", ""),
+		outputEv("build", "foo"),
+		stepEv("build", "done", ""),
+		stepEv("release", "start", ""),
+		outputEv("release", "bar\n"),
+	)
+	if got := p.steps[0].lines; len(got) != 1 || got[0] != "foo" {
+		t.Errorf("build lines = %v, want [\"foo\"]", got)
+	}
+	if got := p.steps[1].lines; len(got) != 1 || got[0] != "bar" {
+		t.Errorf("release lines = %v, want [\"bar\"]", got)
+	}
+}
+
+func TestProgressMarksFailureAfterTheLastStepWhenNoneIsRunning(t *testing.T) {
+	p, out, _ := newTestProgress(modePlain)
+	send(t, p, stepEv("build", "start", ""), outputEv("build", "#1 load\n"), stepEv("build", "done", "image v7"))
+	p.Finish(errors.New("x"))
+
+	got := out.String()
+	if !strings.Contains(got, "✓ Build image v7") {
+		t.Errorf("missing the success row for the finished step:\n%s", got)
+	}
+	if !strings.Contains(got, "✗ Failed after Build\n\n    #1 load\n") {
+		t.Errorf("missing the failure marker for the last step:\n%s", got)
+	}
+}
+
 func TestFmtDuration(t *testing.T) {
 	cases := map[time.Duration]string{
 		600 * time.Millisecond:   "0.6s",

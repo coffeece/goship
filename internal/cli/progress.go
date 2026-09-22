@@ -78,20 +78,21 @@ type progress struct {
 	tick  time.Duration // spinner interval; 0 means no spinner
 	now   func() time.Time
 
-	mu       sync.Mutex
-	header   string
-	notes    []string
-	started  bool // header printed
-	finished bool
-	began    time.Time
-	steps    []*step
-	partial  string
-	pending  []string // output before any step: an API that reports none
-	sawStep  bool
-	version  string
-	drawn    int // lines of the live area on screen
-	spin     int
-	stop     chan struct{}
+	mu          sync.Mutex
+	header      string
+	notes       []string
+	started     bool // header printed
+	finished    bool
+	began       time.Time
+	steps       []*step
+	partial     string
+	partialStep string   // the step key partial arrived under, if any
+	pending     []string // output before any step: an API that reports none
+	sawStep     bool
+	version     string
+	drawn       int // lines of the live area on screen
+	spin        int
+	stop        chan struct{}
 }
 
 func newProgress(out io.Writer, verbose bool) *progress {
@@ -225,8 +226,22 @@ func (p *progress) Finish(err error) {
 	case cur != nil:
 		p.dump(cur.lines, "    ")
 	case len(p.steps) > 0:
-		p.dump(p.steps[len(p.steps)-1].lines, "    ")
+		last := p.steps[len(p.steps)-1]
+		p.failedAfter(last)
+		p.dump(last.lines, "    ")
 	}
+}
+
+// failedAfter reports a failure the API's stream never attributed to a
+// running step: every step it named ended cleanly, so the last one to run is
+// where the reason is.
+func (p *progress) failedAfter(s *step) {
+	mark := "✗"
+	if p.mode == modeLive {
+		p.clearLive()
+		mark = p.paint("31", mark)
+	}
+	fmt.Fprintf(p.out, "%s Failed after %s\n", mark, s.title())
 }
 
 // Summary ends a successful release on the address it is served at.
@@ -248,6 +263,10 @@ func (p *progress) Summary(url string) {
 }
 
 func (p *progress) begin(key string) {
+	if p.partial != "" {
+		p.route(p.partialStep, strings.TrimRight(p.partial, "\r"))
+		p.partial, p.partialStep = "", ""
+	}
 	p.printHeader()
 	if cur := p.active(); cur != nil {
 		p.finish(cur, stepDone, cur.detail)
@@ -280,18 +299,29 @@ func (p *progress) finish(s *step, state stepState, detail string) {
 func (p *progress) output(stepKey, data string) {
 	lines := strings.Split(p.partial+data, "\n")
 	p.partial = lines[len(lines)-1]
+	if p.partial != "" {
+		p.partialStep = stepKey
+	} else {
+		p.partialStep = ""
+	}
 	for _, l := range lines[:len(lines)-1] {
-		l = strings.TrimRight(l, "\r")
-		switch s := p.find(stepKey); {
-		case stepKey != "" && s != nil:
-			s.add(l)
-		case len(p.steps) > 0 && p.sawStep:
-			p.steps[len(p.steps)-1].add(l)
-		default:
-			p.pending = append(p.pending, l)
-		}
+		p.route(stepKey, strings.TrimRight(l, "\r"))
 	}
 	p.redraw()
+}
+
+// route files one complete line under the step key names, the running step
+// if the caller left it blank, or as unattributed pending output when
+// neither applies yet.
+func (p *progress) route(stepKey, line string) {
+	switch s := p.find(stepKey); {
+	case stepKey != "" && s != nil:
+		s.add(line)
+	case len(p.steps) > 0 && p.sawStep:
+		p.steps[len(p.steps)-1].add(line)
+	default:
+		p.pending = append(p.pending, line)
+	}
 }
 
 func (p *progress) printHeader() {
