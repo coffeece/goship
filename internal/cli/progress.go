@@ -263,6 +263,11 @@ func (p *progress) Summary(url string) {
 }
 
 func (p *progress) begin(key string) {
+	// An API may start a step again (a release, once per process): it is the
+	// same step, still running.
+	if s := p.find(key); s != nil && s.state == stepRunning {
+		return
+	}
 	if p.partial != "" {
 		p.route(p.partialStep, strings.TrimRight(p.partial, "\r"))
 		p.partial, p.partialStep = "", ""

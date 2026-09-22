@@ -225,3 +225,30 @@ func TestLiveProgressLeavesFinishedStepsAndNoLiveArea(t *testing.T) {
 		t.Errorf("output = %q", out.String())
 	}
 }
+
+// A multi-process release from an API that starts it once per process, or
+// re-deploys a process while undoing a failure: still one Release row, and
+// the reason for the failure stays in it.
+func TestProgressKeepsOneRowForAStepThatStartsAgain(t *testing.T) {
+	p, out, _ := newTestProgress(modePlain)
+	send(t, p,
+		stepEv("release", "start", ""),
+		outputEv("release", "---- Updating units [web] [version 3] ----\n"),
+		stepEv("release", "start", ""),
+		outputEv("release", "**** HEALTHCHECK TIMEOUT OF 5M0S EXCEEDED ****\n"),
+		stepEv("release", "start", ""),
+		outputEv("release", " ---> All units ready\n"),
+	)
+	p.Finish(errors.New("deploy failed"))
+
+	got := out.String()
+	if n := strings.Count(got, "→ Release"); n != 1 {
+		t.Errorf("%d Release rows:\n%s", n, got)
+	}
+	if strings.Contains(got, "✓ Release") || !strings.Contains(got, "✗ Release") {
+		t.Errorf("the failing release is not the failed row:\n%s", got)
+	}
+	if !strings.Contains(got, "    **** HEALTHCHECK TIMEOUT OF 5M0S EXCEEDED ****\n") {
+		t.Errorf("the reason was not printed:\n%s", got)
+	}
+}
