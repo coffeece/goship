@@ -178,9 +178,9 @@ func TestStreamedCommandsRefuseJSONOutput(t *testing.T) {
 
 func TestFailedRollbackPointsAtTheHistory(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"type":"step","step":"release","state":"start"}
+		_, _ = w.Write([]byte(`{"type":"step","step":"release","state":"start"}
 {"type":"result","ok":false,"error":"deploy failed: timeout"}
-`)) //nolint:errcheck
+`))
 	})
 
 	_, err := run(t, "", "rollback", "v3", "-a", "blog")

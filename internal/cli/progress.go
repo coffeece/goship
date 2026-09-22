@@ -332,7 +332,7 @@ func (p *progress) route(stepKey, line string) {
 	default:
 		p.printHeader()
 		p.clearLive()
-		fmt.Fprintln(p.out, line)
+		fmt.Fprintln(p.out, line) //nolint:errcheck
 	}
 }
 
