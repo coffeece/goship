@@ -76,6 +76,30 @@ func TestRollbackAcceptsABareVersionNumber(t *testing.T) {
 	}
 }
 
+func TestRollbackShowsItsSteps(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"type":"step","step":"release","state":"start"}
+{"type":"output","step":"release","data":" ---> All units ready\n"}
+{"type":"step","step":"release","state":"done","detail":"1/1 units healthy"}
+{"type":"step","step":"route","state":"start"}
+{"type":"result","ok":true}
+`)) //nolint:errcheck
+	})
+
+	out, err := run(t, "", "rollback", "v3", "-a", "blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Rolling back blog to v3\n", "✓ Release 1/1 units healthy", "✓ Route"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "All units ready") {
+		t.Errorf("the log leaked:\n%s", out)
+	}
+}
+
 func TestReleasesListsTheHistory(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`[{"version":3,"origin":"app-deploy","user":"dev@acme.test","message":"fix","can_rollback":true}]`)) //nolint:errcheck

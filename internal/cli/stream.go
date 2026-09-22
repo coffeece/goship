@@ -152,8 +152,15 @@ func newRollbackCmd(app *App) *cobra.Command {
 		if !strings.HasPrefix(version, "v") {
 			version = "v" + version
 		}
-		err := app.Portal().Rollback(cmd.Context(), org, appName, version, portal.PrintOutput(cmd.OutOrStdout()))
-		return explainStreamError(err, "rollback of "+appName, true)
+		p := newProgress(cmd.OutOrStdout(), app.Global.Verbose)
+		p.Header("Rolling back %s to %s", appName, version)
+		err := app.Portal().Rollback(cmd.Context(), org, appName, version, p.Event)
+		p.Finish(err)
+		err = explainStreamError(err, "rollback of "+appName, true)
+		if err != nil && !app.Global.Verbose {
+			err = fmt.Errorf("%w\nFull log: goship rollback %s -a %s --verbose", err, version, appName)
+		}
+		return err
 	})
 	return cmd
 }
