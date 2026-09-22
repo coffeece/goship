@@ -27,10 +27,13 @@ func (e *OperationError) Error() string { return e.Message }
 
 // event is one line of a GoShip event stream.
 type event struct {
-	Type  string `json:"type"`
-	Data  string `json:"data"`
-	OK    bool   `json:"ok"`
-	Error string `json:"error"`
+	Type   string `json:"type"`
+	Data   string `json:"data"`
+	OK     bool   `json:"ok"`
+	Error  string `json:"error"`
+	Step   string `json:"step"`
+	State  string `json:"state"`
+	Detail string `json:"detail"`
 	LogEntry
 }
 
@@ -120,6 +123,38 @@ func outputTo(out io.Writer) func(event) error {
 	}
 }
 
+// ReleaseEvent is one event of a deploy or rollback: a line of output (Type
+// "output", tagged with its Step when the API knows it), or a step starting,
+// moving on or ending (Type "step").
+type ReleaseEvent struct {
+	Type   string
+	Step   string
+	State  string
+	Detail string
+	Data   string
+}
+
+func releaseEvents(on func(ReleaseEvent) error) func(event) error {
+	return func(ev event) error {
+		if ev.Type != "output" && ev.Type != "step" {
+			return nil
+		}
+		return on(ReleaseEvent{Type: ev.Type, Step: ev.Step, State: ev.State, Detail: ev.Detail, Data: ev.Data})
+	}
+}
+
+// PrintOutput handles a release by writing its output to w and ignoring its
+// steps.
+func PrintOutput(w io.Writer) func(ReleaseEvent) error {
+	return func(ev ReleaseEvent) error {
+		if ev.Type != "output" {
+			return nil
+		}
+		_, err := io.WriteString(w, ev.Data)
+		return err
+	}
+}
+
 // Deploy is one entry of an app's release history.
 type Deploy struct {
 	ID          string    `json:"id"`
@@ -150,9 +185,9 @@ type DeployRequest struct {
 	Dockerfile string
 }
 
-// Deploy uploads the archive and copies the build output to out. The body is
-// produced while it is sent, so the archive is never held in memory.
-func (c *Client) Deploy(ctx context.Context, org, app string, in DeployRequest, out io.Writer) error {
+// Deploy uploads the archive and hands each output line and step to on. The
+// body is produced while it is sent, so the archive is never held in memory.
+func (c *Client) Deploy(ctx context.Context, org, app string, in DeployRequest, on func(ReleaseEvent) error) error {
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 	go func() {
@@ -180,14 +215,15 @@ func (c *Client) Deploy(ctx context.Context, org, app string, in DeployRequest, 
 		pw.CloseWithError(err) //nolint:errcheck
 	}()
 
-	err := c.stream(ctx, http.MethodPost, "/orgs/"+esc(org)+"/apps/"+esc(app)+"/deploys", mw.FormDataContentType(), pr, outputTo(out))
+	err := c.stream(ctx, http.MethodPost, "/orgs/"+esc(org)+"/apps/"+esc(app)+"/deploys", mw.FormDataContentType(), pr, releaseEvents(on))
 	pr.CloseWithError(err) //nolint:errcheck
 	return err
 }
 
-// Rollback releases a previous version again, e.g. "v12".
-func (c *Client) Rollback(ctx context.Context, org, app, version string, out io.Writer) error {
-	return c.streamJSON(ctx, "/orgs/"+esc(org)+"/apps/"+esc(app)+"/deploys/rollback", map[string]string{"version": version}, outputTo(out))
+// Rollback releases a previous version again, e.g. "v12", and hands each
+// output line and step to on.
+func (c *Client) Rollback(ctx context.Context, org, app, version string, on func(ReleaseEvent) error) error {
+	return c.streamJSON(ctx, "/orgs/"+esc(org)+"/apps/"+esc(app)+"/deploys/rollback", map[string]string{"version": version}, releaseEvents(on))
 }
 
 // Run runs a one-off command in the app's image.

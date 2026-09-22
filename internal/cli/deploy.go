@@ -324,7 +324,7 @@ var runBuild = func(cmd *cobra.Command, app *App, a buildArgs) error {
 	}()
 	in.Archive = pr
 
-	err := app.Portal().Deploy(cmd.Context(), a.org, a.name, in, cmd.OutOrStdout())
+	err := app.Portal().Deploy(cmd.Context(), a.org, a.name, in, portal.PrintOutput(cmd.OutOrStdout()))
 	pr.CloseWithError(err) //nolint:errcheck
 	return explainStreamError(err, "deploy of "+a.name, true)
 }

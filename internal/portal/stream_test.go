@@ -46,7 +46,7 @@ func TestDeployUploadsTheArchiveLastAndCopiesTheOutput(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("tarball"), Message: "fix", Dockerfile: "FROM scratch"}, &out)
+	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("tarball"), Message: "fix", Dockerfile: "FROM scratch"}, PrintOutput(&out))
 	if err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestStreamReportsAFailedOperation(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	err := c.Rollback(context.Background(), "acme", "blog", "v3", &out)
+	err := c.Rollback(context.Background(), "acme", "blog", "v3", PrintOutput(&out))
 	var opErr *OperationError
 	if !errors.As(err, &opErr) || opErr.Message != "deploy failed: exit status 1" {
 		t.Fatalf("error = %v, want the API's account of the failure", err)
@@ -93,7 +93,7 @@ func TestStreamRefusedUpFrontIsAnAPIError(t *testing.T) {
 		fmt.Fprintln(w, `{"error":"data conflict: app \"blog\" is paused — wake it up before deploying"}`)
 	})
 
-	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("x")}, io.Discard)
+	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("x")}, PrintOutput(io.Discard))
 	var apiErr *Error
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict || !strings.Contains(apiErr.Message, "paused") {
 		t.Errorf("error = %v", err)
@@ -124,5 +124,32 @@ func TestLogsPassesTheOptionsAndEveryLine(t *testing.T) {
 		if !strings.Contains(query, want) {
 			t.Errorf("query %q missing %q", query, want)
 		}
+	}
+}
+
+func TestReleaseEventsCarryTheirStep(t *testing.T) {
+	c := streamServer(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, `{"type":"step","step":"build","state":"start"}`)
+		fmt.Fprintln(w, `{"type":"output","step":"build","data":"#1 load\n"}`)
+		fmt.Fprintln(w, `{"type":"ping"}`)
+		fmt.Fprintln(w, `{"type":"step","step":"build","state":"done","detail":"image v7"}`)
+		fmt.Fprintln(w, `{"type":"result","ok":true}`)
+	})
+
+	var got []ReleaseEvent
+	err := c.Rollback(context.Background(), "acme", "blog", "v7", func(ev ReleaseEvent) error {
+		got = append(got, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	want := []ReleaseEvent{
+		{Type: "step", Step: "build", State: "start"},
+		{Type: "output", Step: "build", Data: "#1 load\n"},
+		{Type: "step", Step: "build", State: "done", Detail: "image v7"},
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("events = %+v, want %+v", got, want)
 	}
 }
