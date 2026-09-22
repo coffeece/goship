@@ -265,3 +265,19 @@ func TestProgressLeavesTheRunningStepOpenWhenTheStreamIsCut(t *testing.T) {
 		}
 	}
 }
+
+func TestProgressWithAnOlderAPIPrintsItsOutputAsItArrives(t *testing.T) {
+	for _, mode := range []progressMode{modePlain, modeLive} {
+		p, out, _ := newTestProgress(mode)
+		p.Begin("upload")
+		p.Done("upload", "1 KB")
+		send(t, p, outputEv("", "---> building\n"))
+		if !strings.Contains(out.String(), "---> building\n") {
+			t.Errorf("mode %d: the output waits for the end:\n%s", mode, out.String())
+		}
+		p.Finish(errors.New("deploy failed"))
+		if n := strings.Count(out.String(), "---> building"); n != 1 {
+			t.Errorf("mode %d: printed %d times:\n%s", mode, n, out.String())
+		}
+	}
+}

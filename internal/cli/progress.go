@@ -87,8 +87,7 @@ type progress struct {
 	began       time.Time
 	steps       []*step
 	partial     string
-	partialStep string   // the step key partial arrived under, if any
-	pending     []string // output before any step: an API that reports none
+	partialStep string // the step key partial arrived under, if any
 	sawStep     bool
 	version     string
 	drawn       int // lines of the live area on screen
@@ -199,7 +198,7 @@ func (p *progress) Finish(err error) {
 	if p.partial != "" {
 		p.output("", "\n")
 	}
-	if !p.started && len(p.pending) == 0 {
+	if !p.started {
 		return
 	}
 	p.printHeader()
@@ -216,9 +215,6 @@ func (p *progress) Finish(err error) {
 				p.finish(s, stepDone, s.detail)
 			}
 		}
-		if !p.sawStep && p.mode != modeVerbose {
-			p.dump(p.pending, "")
-		}
 		return
 	}
 	if cur != nil {
@@ -229,7 +225,7 @@ func (p *progress) Finish(err error) {
 	}
 	switch {
 	case !p.sawStep:
-		p.dump(p.pending, "")
+		// Whatever the API said is already on screen.
 	case cur != nil:
 		p.dump(cur.lines, "    ")
 	case len(p.steps) > 0:
@@ -322,9 +318,10 @@ func (p *progress) output(stepKey, data string) {
 	p.redraw()
 }
 
-// route files one complete line under the step key names, the running step
-// if the caller left it blank, or as unattributed pending output when
-// neither applies yet.
+// route files one complete line under the step key names, or the running step
+// if the caller left it blank. Until the API has named a step it may be one
+// that names none, so its output is printed as it comes rather than held
+// until the end.
 func (p *progress) route(stepKey, line string) {
 	switch s := p.find(stepKey); {
 	case stepKey != "" && s != nil:
@@ -332,7 +329,9 @@ func (p *progress) route(stepKey, line string) {
 	case len(p.steps) > 0 && p.sawStep:
 		p.steps[len(p.steps)-1].add(line)
 	default:
-		p.pending = append(p.pending, line)
+		p.printHeader()
+		p.clearLive()
+		fmt.Fprintln(p.out, line)
 	}
 }
 
