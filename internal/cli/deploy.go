@@ -437,6 +437,10 @@ func publicURL(a *portal.App) string {
 		return "https://" + strings.TrimPrefix(strings.TrimPrefix(a.CNames[0], "https://"), "http://")
 	}
 	if len(a.Addresses) > 0 {
+		// The platform reports its address without a scheme; every app is served over https.
+		if !strings.Contains(a.Addresses[0], "://") {
+			return "https://" + a.Addresses[0]
+		}
 		return a.Addresses[0]
 	}
 	return ""

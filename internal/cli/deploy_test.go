@@ -458,6 +458,9 @@ func TestPublicURL(t *testing.T) {
 		{"falls back to the platform address", portal.App{
 			Addresses: []string{"https://widget.apps.goship.sh"},
 		}, "https://widget.apps.goship.sh"},
+		{"a bare platform address gets its scheme", portal.App{
+			Addresses: []string{"quake.x1y2z3.apps.goship.sh"},
+		}, "https://quake.x1y2z3.apps.goship.sh"},
 		{"nothing to show", portal.App{}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
