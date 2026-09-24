@@ -10,7 +10,7 @@ Deploying api · go
   ✓ Create        go, detected from go.mod, plan Free   0.4s
   ✓ Environment   3 variables                           0.2s
   ✓ Upload        48.2 KB                               0.3s
-  ✓ Build         image v1                             41s
+  ✓ Build         image v1                              41s
   ✓ Release       1/1 units healthy                     9.8s
   ✓ Route                                               0.4s
 
@@ -83,14 +83,14 @@ Nothing on your own hardware is billed, so plans there are just sizes;
 $ goship plans
 
 GoShip (shared)
-SLUG         NAME     CPU    MEMORY   PRICE
-app-micro    Micro    200    256      R$ 9.90/mo
-app-small    Small    500    512      R$ 19.90/mo
+SLUG                    NAME    CPU   MEMORY   PRICE
+app-micro-sandboxed     Micro   200   256      R$ 9.90/mo
+app-small-sandboxed     Small   500   512      R$ 19.90/mo
 
 do-server1 (your hardware — not billed)
 SLUG                       NAME                CPU    MEMORY   PRICE
 byon-do-server1-default    Sized to the node   1800   3600     included   default
-app-small                  Small               500    512      included
+app-small-sandboxed        Small               500    512      included
 ```
 
 `goship deploy --node do-server1` with no plan takes the pool's default; `--plan`
@@ -145,8 +145,8 @@ CLI works unattended:
 GOSHIP_TOKEN=$TOKEN goship app rm old-api --yes
 ```
 
-Commands that stream — `deploy`, `logs`, `run`, `shell`, `releases`,
-`rollback` — reject `--output json` rather than pretend to support it.
+Commands that stream — `deploy`, `logs`, `run`, `shell`, `rollback` — reject
+`--output json` rather than pretend to support it.
 
 `deploy` and `rollback` show their steps; when one fails, its whole output is
 printed. `--verbose` (`-v`) shows the complete log as it arrives instead, and
@@ -163,19 +163,21 @@ not a terminal gets one line per step, without colour or redraws.
 | `GOSHIP_CONFIG` | config file path |
 
 Defaults live in `~/.config/goship/config.json`, written `0600` because it
-holds a token. Flags beat environment variables, which beat the file.
+holds a token. Flags beat environment variables, which beat the file. The
+variables apply to the process that sets them and are never written to the
+file, so a CI token stays in CI.
 
 ## Development
 
 ```sh
 make build   # ./bin/goship
-make test
-make lint
+make check   # lint, race tests and govulncheck, as CI runs them
 ```
 
-The architecture, and why this replaced the `coffeece` CLI, is in
-[docs/design/cli-architecture.md](docs/design/cli-architecture.md).
+How the CLI is put together is in [docs/architecture.md](docs/architecture.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change and
+[SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## License
 
-BSD 3-Clause. See [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](LICENSE).
