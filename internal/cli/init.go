@@ -48,7 +48,7 @@ func newInitCmd(app *App) *cobra.Command {
 			}
 
 			// The selected org is local state, so init still needs no network.
-			org := app.Config.Org
+			org := app.Config.SelectedOrg()
 
 			path := filepath.Join(dir, initFile)
 			if err := os.WriteFile(path, []byte(renderProject(name, org, platform, dockerfile)), 0o644); err != nil {

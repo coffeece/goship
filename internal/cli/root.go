@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/coffeece/goship/internal/config"
@@ -44,26 +47,28 @@ func (a *App) Renderer() *render.Renderer {
 	return render.New(a.Out, a.Global.Output)
 }
 
-// Org resolves the organization a command runs against: --org, then whatever
-// `org use` persisted. With neither, an account that belongs to exactly one
-// organization has nothing to choose, so pick it rather than demand a step.
+// errNoOrg is what a command that acts on one organization says when nothing
+// chooses it.
+var errNoOrg = errors.New("no organization selected: run `goship org use <slug>` or pass --org")
+
+// selectedOrg is the organization something chose: --org, then a goship.yml
+// in the working directory — more specific than whatever `org use` was last
+// pointed at — then GOSHIP_ORG or the persisted selection.
+func (a *App) selectedOrg() string {
+	return cmp.Or(a.Global.Org, a.ProjectOrg, a.Config.SelectedOrg())
+}
+
+// Org resolves the organization a command runs against. With nothing
+// selected, an account that belongs to exactly one organization has nothing
+// to choose, so pick it rather than demand a step.
 func (a *App) Org(ctx context.Context) (string, error) {
-	if a.Global.Org != "" {
-		return a.Global.Org, nil
-	}
-	// A goship.yml in the working directory says which organization this
-	// project belongs to, which is more specific than whatever `org use` was
-	// last pointed at.
-	if a.ProjectOrg != "" {
-		return a.ProjectOrg, nil
-	}
-	if a.Config.Org != "" {
-		return a.Config.Org, nil
+	if org := a.selectedOrg(); org != "" {
+		return org, nil
 	}
 	if orgs, err := a.Portal().Orgs(ctx); err == nil && len(orgs) == 1 {
 		return orgs[0].Slug, nil
 	}
-	return a.Config.OrgOrError("")
+	return "", errNoOrg
 }
 
 // OrgForApp resolves the org to act on for a named app. It prefers the
@@ -72,12 +77,15 @@ func (a *App) Org(ctx context.Context) (string, error) {
 // org is ambiguous and returns an error asking for --org, so a bare command
 // never guesses between two apps that share a name.
 func (a *App) OrgForApp(ctx context.Context, name string) (string, error) {
-	if org, err := a.Org(ctx); err == nil {
+	if org := a.selectedOrg(); org != "" {
 		return org, nil
 	}
 	orgs, err := a.Portal().Orgs(ctx)
 	if err != nil {
 		return "", err
+	}
+	if len(orgs) == 1 {
+		return orgs[0].Slug, nil
 	}
 	var matches []string
 	for _, o := range orgs {
@@ -85,11 +93,8 @@ func (a *App) OrgForApp(ctx context.Context, name string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		for _, app := range apps {
-			if app.Name == name {
-				matches = append(matches, o.Slug)
-				break
-			}
+		if slices.ContainsFunc(apps, func(app portal.App) bool { return app.Name == name }) {
+			matches = append(matches, o.Slug)
 		}
 	}
 	switch len(matches) {
@@ -103,7 +108,7 @@ func (a *App) OrgForApp(ctx context.Context, name string) (string, error) {
 }
 
 func (a *App) Portal() *portal.Client {
-	return a.portalWithToken(resolveToken(a.Config.Token))
+	return a.portalWithToken(a.Config.Credential())
 }
 
 // anonymousPortal is for the calls that happen before there is a credential.
@@ -114,7 +119,7 @@ func (a *App) portalWithToken(token string) *portal.Client {
 	if a.Global.Verbose {
 		opts = append(opts, portal.WithTrace(os.Stderr))
 	}
-	return portal.New(a.Config.API, token, opts...)
+	return portal.New(a.Config.Endpoint(), token, opts...)
 }
 
 func NewRoot(version string) *cobra.Command {

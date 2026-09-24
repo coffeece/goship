@@ -24,7 +24,7 @@ func TestResolveNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := portal.New(cfg.API, "")
+	client := portal.New(cfg.Endpoint(), "")
 
 	for _, tc := range []struct{ ref, want string }{
 		{"do-server1", "25b640dc-5b91-49e8-ac21-1409efd47375"},

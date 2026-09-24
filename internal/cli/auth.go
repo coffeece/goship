@@ -60,7 +60,7 @@ func browserLogin(cmd *cobra.Command, app *App) error {
 var loginInBrowser = func(cmd *cobra.Command, app *App) (string, error) {
 	ctx, stop := interruptible(cmd.Context())
 	defer stop()
-	return oauthlogin.Run(ctx, app.Config.API, app.anonymousPortal(), oauthlogin.Options{Out: cmd.ErrOrStderr()})
+	return oauthlogin.Run(ctx, app.Config.Endpoint(), app.anonymousPortal(), oauthlogin.Options{Out: cmd.ErrOrStderr()})
 }
 
 // sessionDays is how long a login lasts before the person is asked again.

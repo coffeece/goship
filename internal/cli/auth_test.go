@@ -226,16 +226,20 @@ func TestOrgUseRejectsAnOrgYouAreNotIn(t *testing.T) {
 	}
 }
 
-func TestCommandsFailWithoutAnOrg(t *testing.T) {
-	isolateConfig(t)
-	os.Unsetenv("GOSHIP_ORG")
+// GOSHIP_TOKEN belongs to the process that has it. A command that saves the
+// config must not copy it to disk, where it would outlive the CI job.
+func TestSavingTheConfigNeverStoresTheEnvironmentToken(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`[{"id":"1","name":"Acme","slug":"acme"}]`)) //nolint:errcheck
+	})
+	t.Setenv("GOSHIP_TOKEN", "gsp_ci_secret")
 
-	cfg, err := config.Load()
-	if err != nil {
+	if _, err := run(t, "", "org", "use", "acme"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cfg.OrgOrError(""); err == nil {
-		t.Fatal("expected an error naming `goship org use`")
+	cfg, _ := config.Load()
+	if cfg.Org != "acme" || cfg.Token != "" || cfg.API != "" {
+		t.Errorf("saved %+v, want only the org", cfg)
 	}
 }
 
