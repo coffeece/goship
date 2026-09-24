@@ -8,6 +8,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newTokensCmd is the plural lister, matching `orgs`: tokens belong to you,
+// not to an organization.
+func newTokensCmd(app *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "tokens",
+		Short: "List your active API tokens",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tokens, err := app.Portal().APITokens(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return app.Renderer().Render(tokens)
+		},
+	}
+}
+
 func newTokenCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "token",
@@ -38,19 +55,8 @@ func newTokenCmd(app *App) *cobra.Command {
 		return nil
 	}
 
-	list := &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List your active tokens",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			tokens, err := app.Portal().APITokens(cmd.Context())
-			if err != nil {
-				return err
-			}
-			return app.Renderer().Render(tokens)
-		},
-	}
+	list := deprecatedList(newTokensCmd(app))
+	list.Aliases = []string{"ls"}
 
 	revoke := &cobra.Command{
 		Use:     "rm <name-or-id>",
@@ -77,7 +83,7 @@ func newTokenCmd(app *App) *cobra.Command {
 				return fmt.Errorf("no token %q; you have: %s", args[0], strings.Join(names, ", "))
 			case 1:
 			default:
-				return fmt.Errorf("%d tokens are named %q — revoke by id instead (see `goship token list`)", len(ids), args[0])
+				return fmt.Errorf("%d tokens are named %q — revoke by id instead (see `goship tokens`)", len(ids), args[0])
 			}
 			if err := app.Portal().RevokeAPIToken(cmd.Context(), ids[0]); err != nil {
 				return err

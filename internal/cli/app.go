@@ -10,78 +10,7 @@ import (
 )
 
 func newAppsCmd(app *App) *cobra.Command {
-	var all bool
-	cmd := &cobra.Command{
-		Use:   "apps",
-		Short: "List your apps in the current organization, or --all of them",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, r := app.Portal(), app.Renderer()
-
-			// --all spans every org you belong to. Apps are org-scoped, so
-			// without it "apps" shows only the current one — which surprises
-			// anyone whose apps are spread across orgs.
-			if all {
-				orgs, err := client.Orgs(cmd.Context())
-				if err != nil {
-					return err
-				}
-				return renderAppsAcrossOrgs(cmd, app, client, orgs)
-			}
-
-			// No org to work against — not an error for a listing. Show apps
-			// across every org instead of demanding `org use` first.
-			org, err := app.Org(cmd.Context())
-			if err != nil {
-				orgs, listErr := client.Orgs(cmd.Context())
-				if listErr != nil {
-					return listErr
-				}
-				return renderAppsAcrossOrgs(cmd, app, client, orgs)
-			}
-			apps, err := client.Apps(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			return r.Render(apps)
-		},
-	}
-	cmd.Flags().BoolVarP(&all, "all", "A", false, "list apps across every organization you belong to")
-	return cmd
-}
-
-func renderAppsAcrossOrgs(cmd *cobra.Command, app *App, client *portal.Client, orgs []portal.Org) error {
-	r := app.Renderer()
-
-	if app.Global.Output == "json" {
-		out := map[string][]portal.App{}
-		for _, o := range orgs {
-			apps, err := client.Apps(cmd.Context(), o.Slug)
-			if err != nil {
-				return err
-			}
-			out[o.Slug] = apps
-		}
-		return r.Render(out)
-	}
-
-	for i, o := range orgs {
-		apps, err := client.Apps(cmd.Context(), o.Slug)
-		if err != nil {
-			return err
-		}
-		lead := "%s"
-		if i > 0 {
-			lead = "\n%s"
-		}
-		if err := r.Message(lead, o.Slug); err != nil {
-			return err
-		}
-		if err := r.Render(apps); err != nil {
-			return err
-		}
-	}
-	return nil
+	return newOrgListCmd(app, "apps", "List your apps in the current organization, or --all of them", (*portal.Client).Apps)
 }
 
 func newAppCmd(app *App) *cobra.Command {

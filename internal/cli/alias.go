@@ -25,7 +25,7 @@ var legacyNames = map[string][]string{
 	"env-set":             {"env", "set"},
 	"env-unset":           {"env", "unset"},
 	"volume-create":       {"volume", "create"},
-	"volume-list":         {"volume", "list"},
+	"volume-list":         {"volumes"},
 	"volume-info":         {"volume", "info"},
 	"volume-bind":         {"volume", "bind"},
 	"volume-unbind":       {"volume", "unbind"},

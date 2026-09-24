@@ -43,6 +43,11 @@ func orgRunE(app *App, fn func(cmd *cobra.Command, org string, args []string) er
 	}
 }
 
+// newDomainsCmd is the plural lister, matching `apps`.
+func newDomainsCmd(app *App) *cobra.Command {
+	return newOrgListCmd(app, "domains", "List registered domains in the current organization, or --all of them", (*portal.Client).OrgDomains)
+}
+
 func newDomainCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "domain",
@@ -82,18 +87,7 @@ func newDomainCmd(app *App) *cobra.Command {
 		return app.Renderer().Message("Domain %s detached from %s.", args[0], rmApp)
 	})
 
-	list := &cobra.Command{
-		Use:   "list",
-		Short: "List the organization's registered domains",
-		Args:  cobra.NoArgs,
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
-			domains, err := app.Portal().OrgDomains(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			return app.Renderer().Render(domains)
-		}),
-	}
+	list := deprecatedList(newDomainsCmd(app))
 
 	register := &cobra.Command{
 		Use:   "register <domain>",
@@ -122,6 +116,11 @@ func newDomainCmd(app *App) *cobra.Command {
 
 	cmd.AddCommand(add, remove, list, register, verify)
 	return cmd
+}
+
+// newVolumesCmd is the plural lister, matching `apps`.
+func newVolumesCmd(app *App) *cobra.Command {
+	return newOrgListCmd(app, "volumes", "List volumes in the current organization, or --all of them", (*portal.Client).Volumes)
 }
 
 func newVolumeCmd(app *App) *cobra.Command {
@@ -153,18 +152,7 @@ func newVolumeCmd(app *App) *cobra.Command {
 		return app.Renderer().Render(v)
 	})
 
-	list := &cobra.Command{
-		Use:   "list",
-		Short: "List volumes",
-		Args:  cobra.NoArgs,
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
-			volumes, err := app.Portal().Volumes(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			return app.Renderer().Render(volumes)
-		}),
-	}
+	list := deprecatedList(newVolumesCmd(app))
 
 	info := &cobra.Command{
 		Use:   "info <name>",
@@ -242,6 +230,11 @@ func newVolumeCmd(app *App) *cobra.Command {
 	return cmd
 }
 
+// newNodesCmd is the plural lister, matching `apps`.
+func newNodesCmd(app *App) *cobra.Command {
+	return newOrgListCmd(app, "nodes", "List your nodes in the current organization, or --all of them", (*portal.Client).Nodes)
+}
+
 func newNodeCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "node",
@@ -274,18 +267,7 @@ func newNodeCmd(app *App) *cobra.Command {
 		return app.Renderer().Render(created)
 	})
 
-	list := &cobra.Command{
-		Use:   "list",
-		Short: "List your nodes",
-		Args:  cobra.NoArgs,
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
-			nodes, err := app.Portal().Nodes(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			return app.Renderer().Render(nodes)
-		}),
-	}
+	list := deprecatedList(newNodesCmd(app))
 
 	info := &cobra.Command{
 		Use:   "info <node>",

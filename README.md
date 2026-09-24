@@ -75,7 +75,7 @@ env:
   LOG_LEVEL: info
 ```
 
-To run it on a machine you own, name the node — `goship node list` shows them.
+To run it on a machine you own, name the node — `goship nodes` shows them.
 Nothing on your own hardware is billed, so plans there are just sizes;
 `goship plans` lists them per placement, with the node's pool default marked:
 
@@ -111,7 +111,7 @@ goship deploy --env-file .env
 
 | | |
 |---|---|
-| `goship apps [-A]` | list apps in the current org; `--all`, or no org selected, spans every org |
+| `goship apps\|dbs\|domains\|volumes\|nodes [-A]` | list in the current org; `--all`, or no org selected, spans every org |
 | `goship app create\|info\|rm\|start\|stop\|restart\|scale\|plan` | manage one app |
 | `goship init [dir]` | write a `goship.yml` with what it can work out |
 | `goship deploy [dir]` | create if needed, apply env, deploy |
@@ -119,13 +119,14 @@ goship deploy --env-file .env
 | `goship run -a api -- <cmd>` | run a command in the app's containers |
 | `goship shell -a api` | shell into a unit |
 | `goship env list\|set\|unset -a api` | environment variables |
-| `goship db create\|list\|info\|users\|bind\|unbind\|rm` | managed PostgreSQL |
-| `goship domain add\|rm\|list\|register\|verify` | custom domains and TLS |
-| `goship volume create\|list\|info\|bind\|unbind\|rm` | persistent disks |
-| `goship node add\|list\|info\|rm` | your own machines (BYON) |
+| `goship db create\|info\|users\|user-add\|bind\|unbind\|rm` | managed PostgreSQL |
+| `goship domain add\|rm\|register\|verify` | custom domains and TLS |
+| `goship volume create\|info\|bind\|unbind\|rm` | persistent disks |
+| `goship node add\|info\|rm` | your own machines (BYON) |
 | `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
+| `goship tokens` / `goship token create\|rm` | list / manage API tokens for CI |
 
 Run `goship <command> --help` for flags.
 

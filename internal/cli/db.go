@@ -1,8 +1,14 @@
 package cli
 
 import (
+	"github.com/coffeece/goship/internal/portal"
 	"github.com/spf13/cobra"
 )
+
+// newDBsCmd is the plural lister, matching `apps`.
+func newDBsCmd(app *App) *cobra.Command {
+	return newOrgListCmd(app, "dbs", "List databases in the current organization, or --all of them", (*portal.Client).Databases)
+}
 
 func newDBCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
@@ -27,18 +33,7 @@ func newDBCmd(app *App) *cobra.Command {
 		return app.Renderer().Message("Database %s requested on plan %s.", args[0], plan)
 	})
 
-	list := &cobra.Command{
-		Use:   "list",
-		Short: "List databases",
-		Args:  cobra.NoArgs,
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
-			dbs, err := app.Portal().Databases(cmd.Context(), org)
-			if err != nil {
-				return err
-			}
-			return app.Renderer().Render(dbs)
-		}),
-	}
+	list := deprecatedList(newDBsCmd(app))
 
 	info := &cobra.Command{
 		Use:   "info <name>",

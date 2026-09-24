@@ -20,7 +20,7 @@ func TestDatabaseCommandsUseTheServiceInstanceEndpoints(t *testing.T) {
 		{"unbind", http.MethodDelete, "/api/v1/orgs/acme/services/postgresql/instances/main/bind/api",
 			[]string{"db", "unbind", "main", "-a", "api"}},
 		{"list", http.MethodGet, "/api/v1/orgs/acme/databases",
-			[]string{"db", "list"}},
+			[]string{"dbs"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotPath, gotMethod string
