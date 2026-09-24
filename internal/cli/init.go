@@ -106,7 +106,7 @@ var notNameChar = regexp.MustCompile(`[^a-z0-9-]+`)
 func appNameFor(dir string) string {
 	base := strings.ToLower(filepath.Base(mustAbs(dir)))
 	name := strings.Trim(notNameChar.ReplaceAllString(base, "-"), "-")
-	if name == "" || !(name[0] >= 'a' && name[0] <= 'z') {
+	if name == "" || name[0] < 'a' || name[0] > 'z' {
 		name = "app-" + name
 	}
 	return strings.Trim(name, "-")

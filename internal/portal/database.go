@@ -42,7 +42,7 @@ type DatabaseUser struct {
 
 func (c *Client) Databases(ctx context.Context, org string) ([]Database, error) {
 	var dbs []Database
-	return dbs, c.get(ctx, "/orgs/"+esc(org)+"/databases", &dbs)
+	return dbs, c.get(ctx, orgPath(org, "/databases"), &dbs)
 }
 
 func (c *Client) Database(ctx context.Context, org, name string) (*Database, error) {
@@ -60,15 +60,20 @@ func (c *Client) DatabaseUsers(ctx context.Context, org, name string) ([]Databas
 	return users, c.get(ctx, dbPath(org, name)+"/users", &users)
 }
 
-// CreateDatabaseUser returns the only copy of the plaintext password there
-// will ever be.
-func (c *Client) CreateDatabaseUser(ctx context.Context, org, name, username, accessMode string) (map[string]any, error) {
-	out := map[string]any{}
+// NewDatabaseUser is a user just created. Password is the only copy of the
+// plaintext password there will ever be.
+type NewDatabaseUser struct {
+	User     DatabaseUser `json:"user"`
+	Password string       `json:"password"`
+}
+
+func (c *Client) CreateDatabaseUser(ctx context.Context, org, name, username, accessMode string) (*NewDatabaseUser, error) {
+	var out NewDatabaseUser
 	body := map[string]string{"username": username}
 	if accessMode != "" {
 		body["access_mode"] = accessMode
 	}
-	return out, c.post(ctx, dbPath(org, name)+"/users", body, &out)
+	return &out, c.post(ctx, dbPath(org, name)+"/users", body, &out)
 }
 
 func (c *Client) CreateDatabase(ctx context.Context, org, name, plan, description string) error {
@@ -89,9 +94,9 @@ func (c *Client) UnbindDatabase(ctx context.Context, org, name, appName string) 
 }
 
 func dbPath(org, name string) string {
-	return "/orgs/" + esc(org) + "/databases/" + esc(name)
+	return orgPath(org, "/databases/"+esc(name))
 }
 
 func instancesPath(org string) string {
-	return "/orgs/" + esc(org) + "/services/" + ServicePostgres + "/instances"
+	return orgPath(org, "/services/"+ServicePostgres+"/instances")
 }

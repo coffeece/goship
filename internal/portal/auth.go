@@ -48,16 +48,12 @@ func (c *Client) ExchangeCode(ctx context.Context, code, redirectURI, verifier s
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	c.decorate(req)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.send(c.http, req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	if resp.StatusCode >= 400 {
-		return "", decodeError(resp)
-	}
 	var out struct {
 		AccessToken string `json:"access_token"`
 	}

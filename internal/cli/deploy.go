@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync/atomic"
 
 	"github.com/coffeece/goship/internal/archive"
 	"github.com/coffeece/goship/internal/portal"
-	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -103,12 +103,12 @@ func newDeployCmd(app *App) *cobra.Command {
 		Long: "Deploys the current directory. No configuration is required: the app is\n" +
 			"named after the directory, its platform is inferred from the files present,\n" +
 			"and it is created on first deploy.\n\n" +
-			"A goship.yaml (or .goship.yaml) is an optional shortcut for the same values.\n" +
+			"A goship.yml (or goship.yaml) is an optional shortcut for the same values.\n" +
 			"Flags beat the file, the file beats what is inferred.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			if app.Global.Output == render.JSON {
-				return fmt.Errorf("deploy streams its output; --output json is not supported")
+			if err := noJSON(app, cmd); err != nil {
+				return err
 			}
 			dir := "."
 			if len(args) == 1 {
@@ -243,21 +243,17 @@ func newDeployCmd(app *App) *cobra.Command {
 			}
 
 			env := map[string]string{}
-			for k, v := range proj.Env {
-				env[k] = v
-			}
+			maps.Copy(env, proj.Env)
 			if envFile != "" {
 				fromFile, err := parseEnvFile(envFile)
 				if err != nil {
 					return err
 				}
-				for k, v := range fromFile {
-					env[k] = v
-				}
+				maps.Copy(env, fromFile)
 			}
 			if len(env) > 0 {
 				vars := make([]portal.EnvVar, 0, len(env))
-				for _, k := range sortedKeys(env) {
+				for _, k := range slices.Sorted(maps.Keys(env)) {
 					// Secrets arrive through --env-file, so nothing set here is
 					// published in the app's public environment.
 					vars = append(vars, portal.EnvVar{Name: k, Value: env[k], Public: false})
@@ -411,15 +407,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func mustAbs(dir string) string {

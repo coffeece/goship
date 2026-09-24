@@ -117,7 +117,7 @@ func TestVerboseProgressPassesEveryLineThrough(t *testing.T) {
 func TestProgressKeepsOnlyTheLastLinesOfAStep(t *testing.T) {
 	p, _, _ := newTestProgress(modePlain)
 	send(t, p, stepEv("build", "start", ""))
-	for i := 0; i < maxStepLines+10; i++ {
+	for range maxStepLines + 10 {
 		send(t, p, outputEv("build", "line\n"))
 	}
 	if n := len(p.steps[0].lines); n != maxStepLines {

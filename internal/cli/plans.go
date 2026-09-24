@@ -21,66 +21,82 @@ func newPlansCmd(app *App) *cobra.Command {
 			"available and which applies by default.",
 		Args: cobra.NoArgs,
 		RunE: orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
-			client, r := app.Portal(), app.Renderer()
+			ctx, client, r := cmd.Context(), app.Portal(), app.Renderer()
 
 			if node != "" {
-				id, err := resolveNode(cmd.Context(), client, org, node)
+				id, err := resolveNode(ctx, client, org, node)
 				if err != nil {
 					return err
 				}
-				plans, err := client.AvailablePlans(cmd.Context(), org, kind, id)
+				plans, err := client.AvailablePlans(ctx, org, kind, id)
 				if err != nil {
 					return err
 				}
-				return r.Render(plans)
+				return r.Render(app.planView(plans))
 			}
 
-			shared, err := client.AvailablePlans(cmd.Context(), org, kind, "")
+			shared, err := client.AvailablePlans(ctx, org, kind, "")
 			if err != nil {
 				return err
 			}
-			nodes, err := client.Nodes(cmd.Context(), org)
+			nodes, err := client.Nodes(ctx, org)
 			if err != nil {
 				return err
 			}
-
-			if app.Global.Output == render.JSON {
-				out := map[string]any{"shared": shared}
-				for _, n := range nodes {
-					plans, err := client.AvailablePlans(cmd.Context(), org, kind, n.ID)
-					if err != nil {
-						return err
-					}
-					out[n.Name] = plans
-				}
-				return r.Render(out)
-			}
-
-			if err := r.Message("GoShip (shared)"); err != nil {
-				return err
-			}
-			if err := r.Render(shared); err != nil {
-				return err
-			}
+			sections := []section[portal.Plan]{{key: "shared", title: "GoShip (shared)", items: shared}}
 			for _, n := range nodes {
-				plans, err := client.AvailablePlans(cmd.Context(), org, kind, n.ID)
+				plans, err := client.AvailablePlans(ctx, org, kind, n.ID)
 				if err != nil {
 					return err
 				}
-				if err := r.Message("\n%s (your hardware — not billed)", n.Name); err != nil {
-					return err
-				}
-				if err := r.Render(plans); err != nil {
-					return err
-				}
+				sections = append(sections, section[portal.Plan]{key: n.Name, title: n.Name + " (your hardware — not billed)", items: plans})
 			}
-			return nil
+			return renderSections(app, sections, app.planView)
 		}),
 	}
 	cmd.Flags().StringVar(&kind, "kind", "app", `plan kind: "app", "db", or "" for all`)
 	cmd.Flags().StringVar(&node, "node", "", "show only what this node's pool admits (name or id)")
 
 	return cmd
+}
+
+// planRow is a plan as the table shows it: priced, and marked when it is what
+// the placement applies by default.
+type planRow struct {
+	Slug   string `table:"SLUG"`
+	Name   string `table:"NAME"`
+	CPU    int    `table:"CPU"`
+	Memory int    `table:"MEMORY"`
+	Price  string `table:"PRICE"`
+	Mark   string `table:" "`
+}
+
+// planView is what to render for plans: the plans themselves as JSON, rows
+// for a table.
+func (a *App) planView(plans []portal.Plan) any {
+	if a.Global.Output == render.JSON {
+		return plans
+	}
+	rows := make([]planRow, len(plans))
+	for i, p := range plans {
+		rows[i] = planRow{Slug: p.Slug, Name: p.DisplayName, CPU: p.CPUMilli, Memory: p.MemoryMB, Price: price(p)}
+		if p.Default {
+			rows[i].Mark = "default"
+		}
+	}
+	return rows
+}
+
+// price renders the monthly price the way an invoice would.
+func price(p portal.Plan) string {
+	switch {
+	case p.IsFree:
+		return "free"
+	case !p.Billed:
+		return "included"
+	default:
+		return fmt.Sprintf("R$ %d.%02d/mo", p.PriceCents/100, p.PriceCents%100)
+	}
 }
 
 // choosePlan picks the plan for an app being created on the shared cluster. A
@@ -96,7 +112,7 @@ func choosePlan(ctx context.Context, client *portal.Client, org string) (portal.
 			return p, nil
 		}
 	}
-	return portal.Plan{}, fmt.Errorf("a plan is required to create an app:\n%s\nPass --plan <slug>, or set plan: in goship.yaml", planTable(plans))
+	return portal.Plan{}, fmt.Errorf("a plan is required to create an app:\n%s\nPass --plan <slug>, or set plan: in goship.yml", planTable(plans))
 }
 
 func planTable(plans []portal.Plan) string {
@@ -105,7 +121,7 @@ func planTable(plans []portal.Plan) string {
 	}
 	var b strings.Builder
 	for _, p := range plans {
-		fmt.Fprintf(&b, "  %-22s %4dm CPU  %5d MB  %s\n", p.Slug, p.CPUMilli, p.MemoryMB, p.Price())
+		fmt.Fprintf(&b, "  %-22s %4dm CPU  %5d MB  %s\n", p.Slug, p.CPUMilli, p.MemoryMB, price(p))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

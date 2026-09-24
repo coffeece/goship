@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/coffeece/goship/internal/portal"
 )
 
 func plansAPI(t *testing.T) {
@@ -85,5 +87,20 @@ func TestPlansJSONKeysEachPlacement(t *testing.T) {
 	}
 	if got["do-server1"][0]["default"] != true {
 		t.Errorf("the node default should be flagged in JSON: %v", got["do-server1"][0])
+	}
+}
+
+func TestPlanPriceWording(t *testing.T) {
+	for _, tc := range []struct {
+		p    portal.Plan
+		want string
+	}{
+		{portal.Plan{IsFree: true}, "free"},
+		{portal.Plan{Billed: false, PriceCents: 0}, "included"},
+		{portal.Plan{Billed: true, PriceCents: 1990}, "R$ 19.90/mo"},
+	} {
+		if got := price(tc.p); got != tc.want {
+			t.Errorf("%+v → %q, want %q", tc.p, got, tc.want)
+		}
 	}
 }

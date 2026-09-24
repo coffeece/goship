@@ -19,8 +19,7 @@ import (
 // gitignore syntax. .tsuruignore is honoured for projects that predate GoShip.
 var IgnoreFiles = []string{".goshipignore", ".tsuruignore", ".dockerignore"}
 
-// alwaysIgnored never belongs in a build: version control, and the CLI's own
-// per-machine state.
+// alwaysIgnored never belongs in a build, whatever the ignore file says.
 var alwaysIgnored = []string{".git"}
 
 // Write streams dir as a gzipped tarball to w and returns how many files it

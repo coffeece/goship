@@ -32,17 +32,6 @@ func resolveNode(ctx context.Context, client *portal.Client, org, ref string) (s
 	return "", fmt.Errorf("no node %q in org %q; you have: %s", ref, org, strings.Join(names, ", "))
 }
 
-// orgRunE adapts a command body that needs the resolved organization.
-func orgRunE(app *App, fn func(cmd *cobra.Command, org string, args []string) error) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
-		org, err := app.Org(cmd.Context())
-		if err != nil {
-			return err
-		}
-		return fn(cmd, org, args)
-	}
-}
-
 // newDomainsCmd is the plural lister, matching `apps`.
 func newDomainsCmd(app *App) *cobra.Command {
 	return newOrgListCmd(app, "domains", "List registered domains in the current organization, or --all of them", (*portal.Client).OrgDomains)

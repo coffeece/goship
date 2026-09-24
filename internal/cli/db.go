@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/coffeece/goship/internal/portal"
+	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -81,8 +82,15 @@ func newDBCmd(app *App) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if app.Global.Output == render.JSON {
+			return app.Renderer().Render(created)
+		}
 		// The password is returned once and never again.
-		return app.Renderer().Render(created)
+		return app.Renderer().Render(struct {
+			Username string `table:"USERNAME"`
+			Access   string `table:"ACCESS"`
+			Password string `table:"PASSWORD"`
+		}{created.User.Username, created.User.AccessMode, created.Password})
 	})
 
 	bind := &cobra.Command{

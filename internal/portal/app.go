@@ -51,7 +51,7 @@ type CreateAppRequest struct {
 
 func (c *Client) Apps(ctx context.Context, org string) ([]App, error) {
 	var apps []App
-	return apps, c.get(ctx, "/orgs/"+esc(org)+"/apps", &apps)
+	return apps, c.get(ctx, orgPath(org, "/apps"), &apps)
 }
 
 func (c *Client) App(ctx context.Context, org, name string) (*App, error) {
@@ -61,7 +61,7 @@ func (c *Client) App(ctx context.Context, org, name string) (*App, error) {
 
 func (c *Client) CreateApp(ctx context.Context, org string, req CreateAppRequest) (*App, error) {
 	var app App
-	return &app, c.post(ctx, "/orgs/"+esc(org)+"/apps", req, &app)
+	return &app, c.post(ctx, orgPath(org, "/apps"), req, &app)
 }
 
 func (c *Client) DeleteApp(ctx context.Context, org, name string) error {
@@ -106,8 +106,4 @@ func (c *Client) UnsetEnv(ctx context.Context, org, name string, keys []string, 
 		NoRestart bool     `json:"no_restart"`
 	}{keys, noRestart}
 	return c.delete(ctx, appPath(org, name)+"/env", body)
-}
-
-func appPath(org, name string) string {
-	return "/orgs/" + esc(org) + "/apps/" + esc(name)
 }

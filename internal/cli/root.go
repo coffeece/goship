@@ -107,6 +107,17 @@ func (a *App) OrgForApp(ctx context.Context, name string) (string, error) {
 	}
 }
 
+// orgRunE adapts a command body that needs the resolved organization.
+func orgRunE(app *App, fn func(cmd *cobra.Command, org string, args []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		org, err := app.Org(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return fn(cmd, org, args)
+	}
+}
+
 func (a *App) Portal() *portal.Client {
 	return a.portalWithToken(a.Config.Credential())
 }

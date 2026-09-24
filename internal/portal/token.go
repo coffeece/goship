@@ -2,7 +2,6 @@ package portal
 
 import (
 	"context"
-	"net/url"
 	"time"
 )
 
@@ -31,5 +30,5 @@ func (c *Client) CreateAPIToken(ctx context.Context, name string, expiresInDays 
 }
 
 func (c *Client) RevokeAPIToken(ctx context.Context, id string) error {
-	return c.delete(ctx, "/auth/tokens/"+url.PathEscape(id), nil)
+	return c.delete(ctx, "/auth/tokens/"+esc(id), nil)
 }

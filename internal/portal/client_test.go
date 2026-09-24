@@ -116,22 +116,7 @@ func TestAvailablePlansAsksForTheNodesPool(t *testing.T) {
 		t.Errorf("query = %q", gotQuery)
 	}
 	// For a node the platform's order is the contract; sort_order is ignored.
-	if plans[0].Slug != "b" || plans[0].Mark != "default" {
+	if plans[0].Slug != "b" || !plans[0].Default {
 		t.Errorf("got %+v", plans)
-	}
-}
-
-func TestPlanPriceWording(t *testing.T) {
-	for _, tc := range []struct {
-		p    Plan
-		want string
-	}{
-		{Plan{IsFree: true}, "free"},
-		{Plan{Billed: false, PriceCents: 0}, "included"},
-		{Plan{Billed: true, PriceCents: 1990}, "R$ 19.90/mo"},
-	} {
-		if got := tc.p.Price(); got != tc.want {
-			t.Errorf("%+v → %q, want %q", tc.p, got, tc.want)
-		}
 	}
 }

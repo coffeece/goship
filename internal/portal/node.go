@@ -42,4 +42,4 @@ func (c *Client) DeleteNode(ctx context.Context, org, id string, destroyServer b
 	return c.delete(ctx, nodesPath(org)+"/"+esc(id), map[string]any{"destroy_server": destroyServer})
 }
 
-func nodesPath(org string) string { return "/orgs/" + esc(org) + "/nodes" }
+func nodesPath(org string) string { return orgPath(org, "/nodes") }

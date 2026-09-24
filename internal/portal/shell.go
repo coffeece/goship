@@ -2,12 +2,13 @@ package portal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,7 @@ type ShellOptions struct {
 // Shell opens an interactive shell in one of the app's units. What is written
 // to the result is typed into the terminal; what is read is its output.
 func (c *Client) Shell(ctx context.Context, org, app string, opts ShellOptions) (io.ReadWriteCloser, error) {
-	u, err := url.Parse(c.base + "/api/v1/orgs/" + esc(org) + "/apps/" + esc(app) + "/shell")
+	u, err := url.Parse(c.base + "/api/v1" + appPath(org, app) + "/shell")
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func (s *shellConn) Read(p []byte) (int, error) {
 		// Reading is also what answers the API's keep-alive pings.
 		_, r, err := s.ws.NextReader()
 		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) || strings.Contains(err.Error(), "use of closed network connection") {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) || errors.Is(err, net.ErrClosed) {
 				return 0, io.EOF
 			}
 			return 0, err

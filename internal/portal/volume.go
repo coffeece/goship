@@ -49,4 +49,4 @@ func (c *Client) DeleteVolume(ctx context.Context, org, name string) error {
 	return c.delete(ctx, volumesPath(org)+"/"+esc(name), nil)
 }
 
-func volumesPath(org string) string { return "/orgs/" + esc(org) + "/volumes" }
+func volumesPath(org string) string { return orgPath(org, "/volumes") }

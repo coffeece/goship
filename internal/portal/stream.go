@@ -2,6 +2,7 @@ package portal
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -57,20 +58,11 @@ func (c *Client) stream(ctx context.Context, method, path, contentType string, b
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	c.decorate(req)
-
-	resp, err := c.streaming().Do(req)
+	resp, err := c.send(c.streaming(), req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck
-
-	if c.trace != nil {
-		fmt.Fprintf(c.trace, "%s %s → %s\n", method, req.URL.Path, resp.Status)
-	}
-	if resp.StatusCode >= 400 {
-		return decodeError(resp)
-	}
 
 	// A line is one event; build output can carry long lines.
 	sc := bufio.NewScanner(resp.Body)
@@ -143,18 +135,6 @@ func releaseEvents(on func(ReleaseEvent) error) func(event) error {
 	}
 }
 
-// PrintOutput handles a release by writing its output to w and ignoring its
-// steps.
-func PrintOutput(w io.Writer) func(ReleaseEvent) error {
-	return func(ev ReleaseEvent) error {
-		if ev.Type != "output" {
-			return nil
-		}
-		_, err := io.WriteString(w, ev.Data)
-		return err
-	}
-}
-
 // Deploy is one entry of an app's release history.
 type Deploy struct {
 	ID          string    `json:"id"`
@@ -171,7 +151,7 @@ type Deploy struct {
 
 func (c *Client) Deploys(ctx context.Context, org, app string, limit int) ([]Deploy, error) {
 	var out []Deploy
-	path := "/orgs/" + esc(org) + "/apps/" + esc(app) + "/deploys"
+	path := appPath(org, app) + "/deploys"
 	if limit > 0 {
 		path += "?limit=" + strconv.Itoa(limit)
 	}
@@ -215,7 +195,7 @@ func (c *Client) Deploy(ctx context.Context, org, app string, in DeployRequest, 
 		pw.CloseWithError(err) //nolint:errcheck
 	}()
 
-	err := c.stream(ctx, http.MethodPost, "/orgs/"+esc(org)+"/apps/"+esc(app)+"/deploys", mw.FormDataContentType(), pr, releaseEvents(on))
+	err := c.stream(ctx, http.MethodPost, appPath(org, app)+"/deploys", mw.FormDataContentType(), pr, releaseEvents(on))
 	pr.CloseWithError(err) //nolint:errcheck
 	return err
 }
@@ -223,13 +203,13 @@ func (c *Client) Deploy(ctx context.Context, org, app string, in DeployRequest, 
 // Rollback releases a previous version again, e.g. "v12", and hands each
 // output line and step to on.
 func (c *Client) Rollback(ctx context.Context, org, app, version string, on func(ReleaseEvent) error) error {
-	return c.streamJSON(ctx, "/orgs/"+esc(org)+"/apps/"+esc(app)+"/deploys/rollback", map[string]string{"version": version}, releaseEvents(on))
+	return c.streamJSON(ctx, appPath(org, app)+"/deploys/rollback", map[string]string{"version": version}, releaseEvents(on))
 }
 
 // Run runs a one-off command in the app's image.
 func (c *Client) Run(ctx context.Context, org, app, command string, once, isolated bool, out io.Writer) error {
 	body := map[string]any{"command": command, "once": once, "isolated": isolated}
-	return c.streamJSON(ctx, "/orgs/"+esc(org)+"/apps/"+esc(app)+"/run", body, outputTo(out))
+	return c.streamJSON(ctx, appPath(org, app)+"/run", body, outputTo(out))
 }
 
 func (c *Client) streamJSON(ctx context.Context, path string, body any, on func(event) error) error {
@@ -237,7 +217,7 @@ func (c *Client) streamJSON(ctx context.Context, path string, body any, on func(
 	if err != nil {
 		return err
 	}
-	return c.stream(ctx, http.MethodPost, path, "application/json", bytesReader(encoded), on)
+	return c.stream(ctx, http.MethodPost, path, "application/json", bytes.NewReader(encoded), on)
 }
 
 // LogOptions selects which log lines to read.
@@ -264,7 +244,7 @@ func (c *Client) Logs(ctx context.Context, org, app string, opts LogOptions, on 
 	for _, u := range opts.Units {
 		q.Add("unit", u)
 	}
-	path := "/orgs/" + esc(org) + "/apps/" + esc(app) + "/logs"
+	path := appPath(org, app) + "/logs"
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}

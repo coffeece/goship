@@ -26,8 +26,6 @@ type Option func(*Client)
 // WithTrace logs one line per request, for --verbose.
 func WithTrace(w io.Writer) Option { return func(c *Client) { c.trace = w } }
 
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
-
 // WithVersion reports the CLI's version to the API on every request.
 func WithVersion(v string) Option { return func(c *Client) { c.version = v } }
 
@@ -105,25 +103,34 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	c.decorate(req)
-
-	resp, err := c.http.Do(req)
+	resp, err := c.send(c.http, req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	if c.trace != nil {
-		fmt.Fprintf(c.trace, "%s %s → %s\n", method, req.URL.Path, resp.Status)
-	}
-
-	if resp.StatusCode >= 400 {
-		return decodeError(resp)
-	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// send sends req with what every request carries and turns an error status
+// into an *Error. The caller closes the body of a response it returns.
+func (c *Client) send(h *http.Client, req *http.Request) (*http.Response, error) {
+	c.decorate(req)
+	resp, err := h.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if c.trace != nil {
+		fmt.Fprintf(c.trace, "%s %s → %s\n", req.Method, req.URL.Path, resp.Status)
+	}
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close() //nolint:errcheck
+		return nil, decodeError(resp)
+	}
+	return resp, nil
 }
 
 // decorate adds what every request carries: the credential, and the CLI's
@@ -137,8 +144,6 @@ func (c *Client) decorate(req *http.Request) {
 		req.Header.Set("X-Goship-Version", c.version)
 	}
 }
-
-func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
 
 func decodeError(resp *http.Response) error {
 	var payload struct {
@@ -154,3 +159,9 @@ func decodeError(resp *http.Response) error {
 }
 
 func esc(s string) string { return url.PathEscape(s) }
+
+// orgPath is an API path under an organization; rest starts with a slash.
+func orgPath(org, rest string) string { return "/orgs/" + esc(org) + rest }
+
+// appPath is an API path under one of the organization's apps.
+func appPath(org, app string) string { return orgPath(org, "/apps/"+esc(app)) }

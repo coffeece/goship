@@ -46,7 +46,7 @@ func TestDeployUploadsTheArchiveLastAndCopiesTheOutput(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("tarball"), Message: "fix", Dockerfile: "FROM scratch"}, PrintOutput(&out))
+	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("tarball"), Message: "fix", Dockerfile: "FROM scratch"}, printOutput(&out))
 	if err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestStreamReportsAFailedOperation(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	err := c.Rollback(context.Background(), "acme", "blog", "v3", PrintOutput(&out))
+	err := c.Rollback(context.Background(), "acme", "blog", "v3", printOutput(&out))
 	var opErr *OperationError
 	if !errors.As(err, &opErr) || opErr.Message != "deploy failed: exit status 1" {
 		t.Fatalf("error = %v, want the API's account of the failure", err)
@@ -93,7 +93,7 @@ func TestStreamRefusedUpFrontIsAnAPIError(t *testing.T) {
 		fmt.Fprintln(w, `{"error":"data conflict: app \"blog\" is paused — wake it up before deploying"}`)
 	})
 
-	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("x")}, PrintOutput(io.Discard))
+	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("x")}, printOutput(io.Discard))
 	var apiErr *Error
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict || !strings.Contains(apiErr.Message, "paused") {
 		t.Errorf("error = %v", err)
@@ -151,5 +151,17 @@ func TestReleaseEventsCarryTheirStep(t *testing.T) {
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("events = %+v, want %+v", got, want)
+	}
+}
+
+// printOutput handles a release by writing its output to w and ignoring its
+// steps.
+func printOutput(w io.Writer) func(ReleaseEvent) error {
+	return func(ev ReleaseEvent) error {
+		if ev.Type != "output" {
+			return nil
+		}
+		_, err := io.WriteString(w, ev.Data)
+		return err
 	}
 }

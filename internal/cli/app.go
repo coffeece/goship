@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 
 	"github.com/coffeece/goship/internal/portal"
@@ -39,11 +40,7 @@ func appCreateCmd(app *App) *cobra.Command {
 		Use:   "create <name>",
 		Short: "Create an app",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org(cmd.Context())
-			if err != nil {
-				return err
-			}
+		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			req.Name = args[0]
 			if node != "" {
 				id, err := resolveNode(cmd.Context(), app.Portal(), org, node)
@@ -57,7 +54,7 @@ func appCreateCmd(app *App) *cobra.Command {
 				return err
 			}
 			return app.Renderer().Render(created)
-		},
+		}),
 	}
 	f := cmd.Flags()
 	f.StringVar(&req.Platform, "platform", "", "platform: go, python, nodejs or static (required)")
@@ -106,11 +103,7 @@ func appRemoveCmd(app *App) *cobra.Command {
 		Aliases: []string{"remove", "delete"},
 		Short:   "Delete an app and everything it runs",
 		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org(cmd.Context())
-			if err != nil {
-				return err
-			}
+		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			if err := confirm(cmd, app.Global.Yes, "Delete app %q? This cannot be undone.", args[0]); err != nil {
 				return err
 			}
@@ -118,7 +111,7 @@ func appRemoveCmd(app *App) *cobra.Command {
 				return err
 			}
 			return app.Renderer().Message("App %s deleted.", args[0])
-		},
+		}),
 	}
 }
 
@@ -127,16 +120,12 @@ func appLifecycleCmd(app *App, action, short string) *cobra.Command {
 		Use:   action + " <name>",
 		Short: short,
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org(cmd.Context())
-			if err != nil {
-				return err
-			}
+		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			if err := app.Portal().Lifecycle(cmd.Context(), org, args[0], action); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s: %s requested.", args[0], action)
-		},
+		}),
 	}
 }
 
@@ -147,16 +136,12 @@ func appScaleCmd(app *App) *cobra.Command {
 		Use:   "scale <name> --units <n>",
 		Short: "Set how many units the app runs",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org(cmd.Context())
-			if err != nil {
-				return err
-			}
+		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			if err := app.Portal().ScaleApp(cmd.Context(), org, args[0], units); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s scaled to %d unit(s).", args[0], units)
-		},
+		}),
 	}
 	cmd.Flags().IntVar(&units, "units", 0, "number of units (required)")
 	_ = cmd.MarkFlagRequired("units")
@@ -169,16 +154,12 @@ func appPlanCmd(app *App) *cobra.Command {
 		Use:   "plan <name> <plan>",
 		Short: "Move the app to another plan",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			org, err := app.Org(cmd.Context())
-			if err != nil {
-				return err
-			}
+		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			if err := app.Portal().SetAppPlan(cmd.Context(), org, args[0], args[1]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s moved to plan %s.", args[0], args[1])
-		},
+		}),
 	}
 }
 
@@ -191,7 +172,7 @@ func confirm(cmd *cobra.Command, yes bool, format string, args ...any) error {
 		return err
 	}
 	if answer != "y" && answer != "yes" {
-		return fmt.Errorf("aborted")
+		return errors.New("aborted")
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -379,9 +380,9 @@ func (p *progress) dump(lines []string, indent string) {
 }
 
 func (p *progress) find(key string) *step {
-	for i := len(p.steps) - 1; i >= 0; i-- {
-		if p.steps[i].key == key {
-			return p.steps[i]
+	for _, s := range slices.Backward(p.steps) {
+		if s.key == key {
+			return s
 		}
 	}
 	return nil

@@ -40,4 +40,4 @@ func (c *Client) RemoveAppDomain(ctx context.Context, org, app, domain string) e
 	return c.delete(ctx, appPath(org, app)+"/domains/"+esc(domain), nil)
 }
 
-func orgDomainsPath(org string) string { return "/orgs/" + esc(org) + "/domains" }
+func orgDomainsPath(org string) string { return orgPath(org, "/domains") }
