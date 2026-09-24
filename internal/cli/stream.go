@@ -236,11 +236,15 @@ func newShellCmd(app *App) *cobra.Command {
 			defer term.Restore(int(in.Fd()), state) //nolint:errcheck
 		}
 
-		done := make(chan error, 2)
+		// Read once: the goroutines below may outlive the command, and must not
+		// look at the package var after it has returned.
+		grace := pipedShellGrace
+		output := make(chan error, 1)
+		input := make(chan error, 1)
 		ready := &firstWrite{w: cmd.OutOrStdout(), seen: make(chan struct{})}
 		go func() {
 			_, err := io.Copy(ready, conn)
-			done <- err
+			output <- err
 		}()
 		go func() {
 			if !interactive {
@@ -250,18 +254,25 @@ func newShellCmd(app *App) *cobra.Command {
 				// listening.
 				select {
 				case <-ready.seen:
-				case <-time.After(pipedShellGrace):
+				case <-time.After(grace):
 				}
 			}
 			_, err := io.Copy(conn, cmd.InOrStdin())
+			input <- err
+		}()
+
+		select {
+		case err = <-output:
+		case err = <-input:
 			if err == nil && !interactive {
 				// Piped input ran out: let the commands finish and the shell
 				// close itself rather than hanging up on them mid-output.
-				time.Sleep(pipedShellGrace)
+				select {
+				case err = <-output:
+				case <-time.After(grace):
+				}
 			}
-			done <- err
-		}()
-		err = <-done
+		}
 		if errors.Is(err, io.EOF) {
 			err = nil
 		}
