@@ -30,7 +30,9 @@ func TestEndpoints(t *testing.T) {
 		{"set env", "POST", "/api/v1/orgs/acme/apps/api/env", `{"envs":[{"name":"A","value":"1","public":false}],"no_restart":true}`, func(ctx context.Context, c *Client) error {
 			return c.SetEnv(ctx, "acme", "api", []EnvVar{{Name: "A", Value: "1"}}, true)
 		}},
-		{"unset env", "DELETE", "/api/v1/orgs/acme/apps/api/env", `{"envs":["A"],"no_restart":false}`, func(ctx context.Context, c *Client) error { return c.UnsetEnv(ctx, "acme", "api", []string{"A"}, false) }},
+		{"unset env", "DELETE", "/api/v1/orgs/acme/apps/api/env", `{"envs":["A"],"no_restart":false}`, func(ctx context.Context, c *Client) error {
+			return c.UnsetEnv(ctx, "acme", "api", []string{"A"}, false)
+		}},
 
 		{"databases", "GET", "/api/v1/orgs/acme/databases", "", func(ctx context.Context, c *Client) error { _, err := c.Databases(ctx, "acme"); return err }},
 		{"database", "GET", "/api/v1/orgs/acme/databases/shop", "", func(ctx context.Context, c *Client) error { _, err := c.Database(ctx, "acme", "shop"); return err }},
@@ -48,11 +50,16 @@ func TestEndpoints(t *testing.T) {
 		{"unbind database", "DELETE", "/api/v1/orgs/acme/services/postgresql/instances/shop/bind/api", "", func(ctx context.Context, c *Client) error { return c.UnbindDatabase(ctx, "acme", "shop", "api") }},
 
 		{"org domains", "GET", "/api/v1/orgs/acme/domains", "", func(ctx context.Context, c *Client) error { _, err := c.OrgDomains(ctx, "acme"); return err }},
-		{"register domain", "POST", "/api/v1/orgs/acme/domains", `{"domain":"acme.dev"}`, func(ctx context.Context, c *Client) error { _, err := c.RegisterOrgDomain(ctx, "acme", "acme.dev"); return err }},
+		{"register domain", "POST", "/api/v1/orgs/acme/domains", `{"domain":"acme.dev"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.RegisterOrgDomain(ctx, "acme", "acme.dev")
+			return err
+		}},
 		{"verify domain", "POST", "/api/v1/orgs/acme/domains/d1/verify", "", func(ctx context.Context, c *Client) error { return c.VerifyOrgDomain(ctx, "acme", "d1") }},
 		{"delete domain", "DELETE", "/api/v1/orgs/acme/domains/d1", "", func(ctx context.Context, c *Client) error { return c.DeleteOrgDomain(ctx, "acme", "d1") }},
 		{"add app domain", "POST", "/api/v1/orgs/acme/apps/api/domains", `{"domain":"api.acme.dev"}`, func(ctx context.Context, c *Client) error { return c.AddAppDomain(ctx, "acme", "api", "api.acme.dev") }},
-		{"remove app domain", "DELETE", "/api/v1/orgs/acme/apps/api/domains/api.acme.dev", "", func(ctx context.Context, c *Client) error { return c.RemoveAppDomain(ctx, "acme", "api", "api.acme.dev") }},
+		{"remove app domain", "DELETE", "/api/v1/orgs/acme/apps/api/domains/api.acme.dev", "", func(ctx context.Context, c *Client) error {
+			return c.RemoveAppDomain(ctx, "acme", "api", "api.acme.dev")
+		}},
 
 		{"nodes", "GET", "/api/v1/orgs/acme/nodes", "", func(ctx context.Context, c *Client) error { _, err := c.Nodes(ctx, "acme"); return err }},
 		{"node", "GET", "/api/v1/orgs/acme/nodes/n1", "", func(ctx context.Context, c *Client) error { _, err := c.Node(ctx, "acme", "n1"); return err }},

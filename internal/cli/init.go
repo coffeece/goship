@@ -51,7 +51,7 @@ func newInitCmd(app *App) *cobra.Command {
 			org := app.Config.SelectedOrg()
 
 			path := filepath.Join(dir, initFile)
-			if err := os.WriteFile(path, []byte(renderProject(name, org, platform, dockerfile)), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(renderProject(name, org, platform, dockerfile)), 0o644); err != nil { //nolint:gosec // G306: a project file, meant to be committed
 				return err
 			}
 

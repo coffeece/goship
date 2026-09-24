@@ -1,0 +1,36 @@
+version: "2"
+
+run:
+  go: "1.26"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - modernize
+    - unconvert
+  settings:
+    errcheck:
+      # Writes to the terminal: there is nowhere to report their failure.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gosec:
+      excludes:
+        - G104 # unhandled errors are errcheck's job, with the exclusions above
+        - G304 # every file the CLI opens is one the user named
+        - G115 # int(f.Fd()) is how x/term takes a file descriptor
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [errcheck, gosec]
+
+formatters:
+  enable:
+    - gofmt

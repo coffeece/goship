@@ -29,6 +29,13 @@ func Write(dir string, w io.Writer) (files int, ignoreFile string, err error) {
 	if err != nil {
 		return 0, "", err
 	}
+	// Files are opened through the root, so a path swapped for a symlink
+	// mid-walk cannot pack something from outside the project.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return 0, "", err
+	}
+	defer root.Close() //nolint:errcheck
 
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
@@ -80,7 +87,7 @@ func Write(dir string, w io.Writer) (files int, ignoreFile string, err error) {
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		f, err := os.Open(path)
+		f, err := root.Open(filepath.FromSlash(rel))
 		if err != nil {
 			return err
 		}

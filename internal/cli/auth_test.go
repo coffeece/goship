@@ -285,14 +285,14 @@ func TestMultipleOrgsStillRequireAChoice(t *testing.T) {
 // org the user belongs to instead of demanding a choice.
 func TestAppInfoFindsAppAcrossOrgs(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/v1/orgs":
+		switch r.URL.Path {
+		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/a/apps":
+		case "/api/v1/orgs/a/apps":
 			w.Write([]byte(`[]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/b/apps":
+		case "/api/v1/orgs/b/apps":
 			w.Write([]byte(`[{"name":"my-game"}]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/b/apps/my-game":
+		case "/api/v1/orgs/b/apps/my-game":
 			w.Write([]byte(`{"name":"my-game","plan_name":"Small"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)

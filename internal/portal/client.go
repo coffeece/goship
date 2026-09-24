@@ -119,7 +119,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 // into an *Error. The caller closes the body of a response it returns.
 func (c *Client) send(h *http.Client, req *http.Request) (*http.Response, error) {
 	c.decorate(req)
-	resp, err := h.Do(req)
+	resp, err := h.Do(req) //nolint:gosec // G704: the host is the API the user configured
 	if err != nil {
 		return nil, err
 	}

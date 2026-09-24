@@ -89,7 +89,7 @@ func (c *Client) stream(ctx context.Context, method, path, contentType string, b
 		}
 	}
 	if err := sc.Err(); err != nil && ctx.Err() == nil {
-		return fmt.Errorf("%w: %v", ErrStreamCut, err)
+		return fmt.Errorf("%w: %w", ErrStreamCut, err)
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
