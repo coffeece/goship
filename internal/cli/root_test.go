@@ -2,6 +2,7 @@ package cli
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -54,7 +55,8 @@ func TestVersionPrintsTheBuildVersion(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := out.String(), "goship v1.2.3\n"; got != want {
-		t.Errorf("got %q, want %q", got, want)
+	got := out.String()
+	if !strings.HasPrefix(got, "goship v1.2.3 (") || !strings.Contains(got, runtime.GOOS+"/"+runtime.GOARCH) {
+		t.Errorf("got %q, want the version and the platform it was built for", got)
 	}
 }

@@ -2,10 +2,6 @@ version: 2
 
 project_name: goship
 
-before:
-  hooks:
-    - go mod tidy
-
 builds:
   - id: goship
     main: ./cmd/goship
@@ -16,6 +12,8 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{ .Version }}
+    # The commit time, not the build time, so the same tag builds the same binary.
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
@@ -28,7 +26,7 @@ archives:
         formats: [zip]
     files:
       - README.md
-      - LICENSE*
+      - LICENSE
 
 checksum:
   name_template: checksums.txt
@@ -43,10 +41,10 @@ changelog:
       - "^docs:"
       - "^test:"
       - "^chore:"
+      - "^ci:"
 
 release:
   github:
     owner: coffeece
     name: goship
-  draft: true
   prerelease: auto
