@@ -187,6 +187,7 @@ func NewRoot(version string) *cobra.Command {
 		newNodesCmd(app),
 		newNodeCmd(app),
 		newPlansCmd(app),
+		newCloudCmd(app),
 	)
 	root.AddCommand(newStreamCmds(app)...)
 

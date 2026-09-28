@@ -96,6 +96,7 @@ func TestDestructiveCommandsAllConfirm(t *testing.T) {
 		{"db", "rm", "main"},
 		{"volume", "rm", "uploads"},
 		{"node", "rm", "n1"},
+		{"cloud", "disconnect", "acme-do"},
 	} {
 		t.Run(args[0], func(t *testing.T) {
 			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
