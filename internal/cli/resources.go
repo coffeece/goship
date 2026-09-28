@@ -290,17 +290,22 @@ func newNodeCmd(app *App) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if err := confirm(cmd, app.Global.Yes, "Disconnect node %q?", args[0]); err != nil {
+		question := "Disconnect node %q?"
+		if destroy {
+			question = "Disconnect node %q and destroy its machine at the cloud provider?"
+		}
+		if err := confirm(cmd, app.Global.Yes, question, args[0]); err != nil {
 			return err
 		}
 		if err := app.Portal().DeleteNode(cmd.Context(), org, id, destroy); err != nil {
 			return err
 		}
-		msg := "Node %s disconnected."
+		// Destroying the machine runs on after the API answers, so this says
+		// it is underway, not done.
 		if destroy {
-			msg = "Node %s disconnected and its machine destroyed."
+			return app.Renderer().Message("Node %s is being removed; its machine will be destroyed — `goship nodes` shows when it is gone.", args[0])
 		}
-		return app.Renderer().Message(msg, args[0])
+		return app.Renderer().Message("Node %s disconnected.", args[0])
 	})
 
 	cmd.AddCommand(add, newNodeCreateCmd(app), list, info, remove)

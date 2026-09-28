@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -101,11 +102,18 @@ func TestNodeRmDestroySendsFlag(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 	})
 
-	if _, err := run(t, "y\n", "node", "rm", "n1", "--destroy-server"); err != nil {
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("y\n"), "node", "rm", "n1", "--destroy-server")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if body["destroy_server"] != true {
 		t.Errorf("destroy_server = %v, want true", body["destroy_server"])
+	}
+	if !strings.Contains(stderr, `Disconnect node "n1" and destroy its machine at the cloud provider?`) {
+		t.Errorf("confirmation should name the destroy: %q", stderr)
+	}
+	if !strings.Contains(out, "Node n1 is being removed; its machine will be destroyed — `goship nodes` shows when it is gone.") {
+		t.Errorf("result should say the destroy is underway, not done: %q", out)
 	}
 }
 
@@ -121,7 +129,7 @@ func TestNodeRmDestroySurfacesAPIMessage(t *testing.T) {
 
 	_, err := run(t, "y\n", "node", "rm", "n1", "--destroy-server")
 	if err == nil {
-		t.Error("expected error")
+		t.Fatal("expected error")
 	}
 	if !strings.Contains(err.Error(), "destroying the machine needs the digitalocean account connected") {
 		t.Errorf("error message = %q, want to contain %q", err.Error(), "destroying the machine needs the digitalocean account connected")
