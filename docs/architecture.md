@@ -45,9 +45,14 @@ so a project is never held in memory or written to disk first.
 `goship shell` is a WebSocket to the same API.
 
 Cloud credential connections (OAuth, like `goship cloud connect digitalocean`) open the
-browser on the OAuth provider and poll the API for completion. The CLI polls
+browser on the GoShip dashboard's connect page
+(`/orgs/{slug}/settings/cloud-accounts/connect/{ticket}`), which hands off to the
+provider; that browser has to be signed in to GoShip. The CLI polls
 `GET /cloud-accounts/connect/{ticket}` every 2 seconds for up to 10 minutes, waiting
-for the OAuth flow to finish on the browser and reach the portal API.
+for the OAuth flow to finish in the browser and reach the portal API. `node create`
+follows provisioning the same way, bounded by `--timeout` (30 minutes by default).
+Both polls ride out up to three transient failures in a row (a network error or a
+5xx) and stop at once on a 4xx; Ctrl-C stops the wait, not the operation.
 
 ## Org context
 

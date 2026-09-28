@@ -148,7 +148,9 @@ GOSHIP_TOKEN=$TOKEN goship app rm old-api --yes
 
 Commands that stream — `deploy`, `logs`, `run`, `shell`, `rollback` — reject
 `--output json` rather than pretend to support it. `node create` follows provisioning
-progress instead (polls until the node is ready), unless `--no-wait` or `-o json` is passed.
+progress instead (polls until the node is ready, for up to `--timeout`, 30 minutes by
+default), unless `--no-wait` or `-o json` is passed. Ctrl-C stops following, not the
+node: it keeps provisioning, and `goship node info <name>` shows where it got to.
 
 `deploy` and `rollback` show their steps; when one fails, its whole output is
 printed. `--verbose` (`-v`) shows the complete log as it arrives instead, and
