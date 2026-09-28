@@ -23,8 +23,9 @@ var openURL = oauthlogin.OpenBrowser
 var ticketPollInterval = 2 * time.Second
 
 // oauthConnectTimeout bounds how long a person is made to wait on the
-// browser round trip before the CLI gives up.
-const oauthConnectTimeout = 10 * time.Minute
+// browser round trip before the CLI gives up; a package var so tests don't
+// wait for the real thing.
+var oauthConnectTimeout = 10 * time.Minute
 
 func newCloudCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
@@ -133,10 +134,20 @@ func connectCloudOAuth(cmd *cobra.Command, app *App, org string, p *portal.Cloud
 		case <-ticker.C:
 			t, err := app.Portal().CloudConnectTicket(ctx, org, ticket)
 			if err != nil {
+				// The deadline can land mid-request: the HTTP call then fails
+				// with its own wrapped context error rather than the select
+				// above ever seeing ctx.Done(). Report it the same way either
+				// way.
+				if ctx.Err() != nil {
+					return fmt.Errorf("timed out waiting to connect %s: %w", p.Label, ctx.Err())
+				}
 				return err
 			}
 			switch t.Status {
 			case "done":
+				if t.Account == nil {
+					return app.Renderer().Message("Connected %s.", p.Label)
+				}
 				return app.Renderer().Message("Connected %s as %q.", p.Label, t.Account.Label)
 			case "failed":
 				if t.Error != "" {
