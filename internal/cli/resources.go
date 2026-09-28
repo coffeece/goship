@@ -27,7 +27,7 @@ func resolveNode(ctx context.Context, client *portal.Client, org, ref string) (s
 		names = append(names, n.Name)
 	}
 	if len(names) == 0 {
-		return "", fmt.Errorf("no node %q: org %q has no nodes yet — `goship node add` connects one", ref, org)
+		return "", fmt.Errorf("no node %q: org %q has no nodes yet — `goship node create` makes one", ref, org)
 	}
 	return "", fmt.Errorf("no node %q in org %q; you have: %s", ref, org, strings.Join(names, ", "))
 }
@@ -231,9 +231,11 @@ func newNodeCmd(app *App) *cobra.Command {
 	}
 
 	add := &cobra.Command{
-		Use:   "add <name> --host <addr> --ssh-key <file>",
-		Short: "Connect a VPS you own",
-		Args:  cobra.ExactArgs(1),
+		Use:        "add <name> --host <addr> --ssh-key <file>",
+		Short:      "Connect a VPS you own",
+		Args:       cobra.ExactArgs(1),
+		Hidden:     true,
+		Deprecated: "use goship node create --host",
 	}
 	var req portal.CreateNodeRequest
 	var keyFile string
@@ -297,6 +299,6 @@ func newNodeCmd(app *App) *cobra.Command {
 		return app.Renderer().Message("Node %s disconnected.", args[0])
 	})
 
-	cmd.AddCommand(add, list, info, remove)
+	cmd.AddCommand(add, newNodeCreateCmd(app), list, info, remove)
 	return cmd
 }

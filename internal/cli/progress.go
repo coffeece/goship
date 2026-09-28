@@ -24,6 +24,13 @@ var stepTitles = map[string]string{
 	"build":       "Build",
 	"release":     "Release",
 	"route":       "Route",
+
+	// A node's provisioning stages, reported by `goship node create`'s follow.
+	"creating_machine": "Create machine",
+	"waiting_ssh":      "Wait for SSH",
+	"installing_k3s":   "Install k3s",
+	"registering":      "Register",
+	"measuring":        "Measure capacity",
 }
 
 const (
