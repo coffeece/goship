@@ -296,7 +296,11 @@ func newNodeCmd(app *App) *cobra.Command {
 		if err := app.Portal().DeleteNode(cmd.Context(), org, id, destroy); err != nil {
 			return err
 		}
-		return app.Renderer().Message("Node %s disconnected.", args[0])
+		msg := "Node %s disconnected."
+		if destroy {
+			msg = "Node %s disconnected and its machine destroyed."
+		}
+		return app.Renderer().Message(msg, args[0])
 	})
 
 	cmd.AddCommand(add, newNodeCreateCmd(app), list, info, remove)

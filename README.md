@@ -122,7 +122,8 @@ goship deploy --env-file .env
 | `goship db create\|info\|users\|user-add\|bind\|unbind\|rm` | managed PostgreSQL |
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
 | `goship volume create\|info\|bind\|unbind\|rm` | persistent disks |
-| `goship node add\|info\|rm` | your own machines (BYON) |
+| `goship node create\|info\|rm` | your own machines: create on a connected cloud or attach over SSH |
+| `goship cloud providers\|connect\|list\|regions\|sizes\|disconnect` | the cloud accounts your nodes run on |
 | `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
@@ -146,7 +147,8 @@ GOSHIP_TOKEN=$TOKEN goship app rm old-api --yes
 ```
 
 Commands that stream — `deploy`, `logs`, `run`, `shell`, `rollback` — reject
-`--output json` rather than pretend to support it.
+`--output json` rather than pretend to support it. `node create` follows provisioning
+progress instead (polls until the node is ready), unless `--no-wait` or `-o json` is passed.
 
 `deploy` and `rollback` show their steps; when one fails, its whole output is
 printed. `--verbose` (`-v`) shows the complete log as it arrives instead, and

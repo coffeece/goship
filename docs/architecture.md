@@ -24,7 +24,8 @@ internal/oauthlogin/ browser sign-in: authorization code + PKCE on a loopback po
    `table:"HEADER"`.
 2. **Streaming commands say so.** `deploy`, `logs`, `run`, `shell` and
    `rollback` write output as it arrives, so there is nothing to format; they
-   refuse `--output json` instead of ignoring it.
+   refuse `--output json` instead of ignoring it. `node create` polls for
+   provisioning progress instead of streaming.
 3. **The tree is written down.** Every subcommand is attached explicitly in
    `internal/cli`, so a dead branch is a test failure, not a surprise in help.
 
@@ -42,6 +43,11 @@ either way. A deploy uploads the archive in the same request as it is packed,
 so a project is never held in memory or written to disk first.
 
 `goship shell` is a WebSocket to the same API.
+
+Cloud credential connections (OAuth, like `goship cloud connect digitalocean`) open the
+browser on the OAuth provider and poll the API for completion. The CLI polls
+`GET /cloud-accounts/connect/{ticket}` every 2 seconds for up to 10 minutes, waiting
+for the OAuth flow to finish on the browser and reach the portal API.
 
 ## Org context
 

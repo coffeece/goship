@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -87,6 +88,43 @@ func TestDomainAddTargetsTheApp(t *testing.T) {
 	}
 	if body["domain"] != "shop.example.com" {
 		t.Errorf("body = %v", body)
+	}
+}
+
+func TestNodeRmDestroySendsFlag(t *testing.T) {
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+	})
+
+	if _, err := run(t, "y\n", "node", "rm", "n1", "--destroy-server"); err != nil {
+		t.Fatal(err)
+	}
+	if body["destroy_server"] != true {
+		t.Errorf("destroy_server = %v, want true", body["destroy_server"])
+	}
+}
+
+func TestNodeRmDestroySurfacesAPIMessage(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"destroying the machine needs the digitalocean account connected"}`)) //nolint:errcheck
+	})
+
+	_, err := run(t, "y\n", "node", "rm", "n1", "--destroy-server")
+	if err == nil {
+		t.Error("expected error")
+	}
+	if !strings.Contains(err.Error(), "destroying the machine needs the digitalocean account connected") {
+		t.Errorf("error message = %q, want to contain %q", err.Error(), "destroying the machine needs the digitalocean account connected")
 	}
 }
 
