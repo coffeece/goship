@@ -3,24 +3,37 @@ package portal
 import "context"
 
 type Node struct {
-	ID           string `json:"id" table:"ID"`
-	Name         string `json:"name" table:"NAME"`
-	Type         string `json:"type" table:"TYPE"`
-	Status       string `json:"status" table:"STATUS"`
-	Host         string `json:"host" table:"HOST"`
-	Port         int    `json:"port"`
-	PoolName     string `json:"pool_name" table:"POOL"`
-	ClusterName  string `json:"cluster_name"`
-	ErrorMessage string `json:"error_message,omitempty"`
+	ID            string `json:"id" table:"ID"`
+	Name          string `json:"name" table:"NAME"`
+	Type          string `json:"type" table:"TYPE"`
+	Status        string `json:"status" table:"STATUS"`
+	Host          string `json:"host" table:"HOST"`
+	Port          int    `json:"port"`
+	PoolName      string `json:"pool_name" table:"POOL"`
+	ClusterName   string `json:"cluster_name"`
+	ErrorMessage  string `json:"error_message,omitempty"`
+	Stage         string `json:"stage,omitempty"`
+	CloudProvider string `json:"cloud_provider,omitempty"`
+	CloudServerID string `json:"cloud_server_id,omitempty"`
+	CloudRegion   string `json:"cloud_region,omitempty"`
+	CloudSize     string `json:"cloud_size,omitempty"`
+	CloudAccount  *struct {
+		ID       string `json:"id"`
+		Provider string `json:"provider"`
+		Label    string `json:"label"`
+	} `json:"cloud_account,omitempty"`
 }
 
 type CreateNodeRequest struct {
-	Name    string `json:"name"`
-	Type    string `json:"type,omitempty"`
-	Host    string `json:"host,omitempty"`
-	Port    int    `json:"port,omitempty"`
-	SSHUser string `json:"ssh_user,omitempty"`
-	SSHKey  string `json:"ssh_key,omitempty"`
+	Name           string `json:"name"`
+	Type           string `json:"type,omitempty"`
+	Host           string `json:"host,omitempty"`
+	Port           int    `json:"port,omitempty"`
+	SSHUser        string `json:"ssh_user,omitempty"`
+	SSHKey         string `json:"ssh_key,omitempty"`
+	CloudAccountID string `json:"cloud_account_id,omitempty"`
+	Region         string `json:"region,omitempty"`
+	Size           string `json:"size,omitempty"`
 }
 
 func (c *Client) Nodes(ctx context.Context, org string) ([]Node, error) {

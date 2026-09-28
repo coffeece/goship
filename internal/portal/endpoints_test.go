@@ -67,7 +67,35 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.CreateNode(ctx, "acme", CreateNodeRequest{Name: "box", Type: "vps", Host: "10.0.0.1", Port: 22})
 			return err
 		}},
+		{"create node from cloud account", "POST", "/api/v1/orgs/acme/nodes", `{"name":"box","cloud_account_id":"acc1","region":"nyc1","size":"s-1vcpu-1gb"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateNode(ctx, "acme", CreateNodeRequest{Name: "box", CloudAccountID: "acc1", Region: "nyc1", Size: "s-1vcpu-1gb"})
+			return err
+		}},
 		{"delete node", "DELETE", "/api/v1/orgs/acme/nodes/n1", `{"destroy_server":true}`, func(ctx context.Context, c *Client) error { return c.DeleteNode(ctx, "acme", "n1", true) }},
+
+		{"cloud providers", "GET", "/api/v1/cloud/providers", "", func(ctx context.Context, c *Client) error { _, err := c.CloudProviders(ctx); return err }},
+		{"cloud accounts", "GET", "/api/v1/orgs/acme/cloud-accounts", "", func(ctx context.Context, c *Client) error { _, err := c.CloudAccounts(ctx, "acme"); return err }},
+		{"connect cloud api key", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"provider":"digitalocean","label":"prod","api_key":"secret"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAPIKey(ctx, "acme", "digitalocean", "prod", "secret")
+			return err
+		}},
+		{"begin cloud oauth", "POST", "/api/v1/orgs/acme/cloud-accounts/digitalocean/connect", "", func(ctx context.Context, c *Client) error {
+			_, _, err := c.BeginCloudOAuth(ctx, "acme", "digitalocean")
+			return err
+		}},
+		{"cloud connect ticket", "GET", "/api/v1/orgs/acme/cloud-accounts/connect/t1", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudConnectTicket(ctx, "acme", "t1")
+			return err
+		}},
+		{"delete cloud account", "DELETE", "/api/v1/orgs/acme/cloud-accounts/acc1", "", func(ctx context.Context, c *Client) error { return c.DeleteCloudAccount(ctx, "acme", "acc1") }},
+		{"cloud regions", "GET", "/api/v1/orgs/acme/cloud-accounts/acc1/regions", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudRegions(ctx, "acme", "acc1")
+			return err
+		}},
+		{"cloud sizes", "GET", "/api/v1/orgs/acme/cloud-accounts/acc1/sizes", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudSizes(ctx, "acme", "acc1", "nyc1")
+			return err
+		}},
 
 		{"volumes", "GET", "/api/v1/orgs/acme/volumes", "", func(ctx context.Context, c *Client) error { _, err := c.Volumes(ctx, "acme"); return err }},
 		{"volume", "GET", "/api/v1/orgs/acme/volumes/data", "", func(ctx context.Context, c *Client) error { _, err := c.Volume(ctx, "acme", "data"); return err }},
@@ -105,6 +133,24 @@ func TestEndpoints(t *testing.T) {
 				t.Error(err)
 			}
 		})
+	}
+}
+
+// CloudSizes builds its query with url.Values, not string concatenation;
+// this pins the resulting encoding the way TestEndpoints can't (it only
+// checks the path).
+func TestCloudSizesEncodesTheRegionQuery(t *testing.T) {
+	var gotQuery string
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Write([]byte(`null`)) //nolint:errcheck
+	})
+
+	if _, err := c.CloudSizes(context.Background(), "acme", "acc1", "nyc 1"); err != nil {
+		t.Fatal(err)
+	}
+	if gotQuery != "region=nyc+1" {
+		t.Errorf("query = %q", gotQuery)
 	}
 }
 
