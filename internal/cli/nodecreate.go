@@ -22,10 +22,15 @@ var nodePollInterval = 3 * time.Second
 
 // stdinIsTTY says whether standard input is a terminal, which is what tells
 // `node create` it may prompt for a missing --region or --size instead of
-// failing outright. A package var so tests, whose stdin is a strings.Reader,
-// can force it either way.
+// failing outright. It must run before stdin is wrapped in a bufio.Reader,
+// which hides the *os.File. A package var so tests, whose stdin is a
+// strings.Reader, can force it either way.
 var stdinIsTTY = func(cmd *cobra.Command) bool {
-	f, ok := cmd.InOrStdin().(*os.File)
+	in := cmd.InOrStdin()
+	if in == os.Stdin {
+		return term.IsTerminal(int(os.Stdin.Fd()))
+	}
+	f, ok := in.(*os.File)
 	return ok && term.IsTerminal(int(f.Fd()))
 }
 
@@ -49,13 +54,14 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 				return errors.New("pass exactly one of --cloud or --host")
 			}
 
+			// Asked before the wrap below, which hides the *os.File the check
+			// needs.
+			tty := stdinIsTTY(cmd)
+
 			// A single bufio.Reader shared for the life of the command: a fresh
 			// one per prompt would swallow whatever the previous prompt's read
 			// already buffered off stdin (see prompt's doc comment), which would
 			// lose the answer to --size right after --region was asked.
-			// bufio.NewReader is a no-op wrap once this has already run once,
-			// since it returns the same *bufio.Reader back when it is already
-			// one of sufficient size.
 			cmd.SetIn(bufio.NewReader(cmd.InOrStdin()))
 
 			name := args[0]
@@ -72,7 +78,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 				accountLabel = account.Label
 
 				if region == "" {
-					if !stdinIsTTY(cmd) {
+					if !tty {
 						return errors.New("--region is required (not a terminal to prompt)")
 					}
 					regions, err := app.Portal().CloudRegions(cmd.Context(), org, account.ID)
@@ -89,7 +95,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 				headerRegion = region
 
 				if size == "" {
-					if !stdinIsTTY(cmd) {
+					if !tty {
 						return errors.New("--size is required (not a terminal to prompt)")
 					}
 					sizes, err := app.Portal().CloudSizes(cmd.Context(), org, account.ID, region)
@@ -166,9 +172,17 @@ func regionChoiceLabel(r portal.CloudRegion) string {
 
 // sizeChoiceLabel is a portal.CloudSize as one line of a `pick` prompt,
 // reusing the same row shown by `goship cloud sizes` so the two never drift.
+// A price the catalog lacks is left out rather than shown as a bare dash.
 func sizeChoiceLabel(s portal.CloudSize) string {
 	row := newSizeRow(s)
-	return fmt.Sprintf("%s — %d vCPU, %s RAM, %s disk, %s/mo (GoShip %s/mo)", row.Slug, row.VCPU, row.Memory, row.Disk, row.Provider, row.GoShip)
+	label := fmt.Sprintf("%s — %d vCPU, %s RAM, %s disk", row.Slug, row.VCPU, row.Memory, row.Disk)
+	if s.PriceMonthly != nil {
+		label += ", " + row.Provider
+	}
+	if s.Band != nil {
+		label += " (GoShip " + row.GoShip + ")"
+	}
+	return label
 }
 
 // pick shows items numbered on stderr and reads a choice from stdin.

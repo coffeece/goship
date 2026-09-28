@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -90,6 +92,21 @@ func TestNodeCreateMissingSizeWithoutTTYErrors(t *testing.T) {
 	}
 }
 
+// runWithStderr is run with a context and a stdin of the test's choosing,
+// handing back stderr too — where prompts and follow notes go.
+func runWithStderr(t *testing.T, ctx context.Context, in io.Reader, args ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	var out, errOut strings.Builder
+	root := NewRoot("test")
+	root.SetArgs(args)
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SetIn(in)
+
+	err = root.ExecuteContext(ctx)
+	return out.String(), errOut.String(), err
+}
+
 func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 	orig := stdinIsTTY
 	stdinIsTTY = func(*cobra.Command) bool { return true }
@@ -103,7 +120,8 @@ func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/regions":
 			w.Write([]byte(`[{"slug":"nyc1","label":"New York 1","country":"US"},{"slug":"nyc3","label":"New York 3","country":"US"}]`)) //nolint:errcheck
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/sizes":
-			w.Write([]byte(`[{"slug":"s-1vcpu-1gb","vcpu":1,"memory_mb":1024,"disk_gb":25},{"slug":"s-2vcpu-4gb","vcpu":2,"memory_mb":4096,"disk_gb":80}]`)) //nolint:errcheck
+			w.Write([]byte(`[{"slug":"s-1vcpu-1gb","vcpu":1,"memory_mb":1024,"disk_gb":25,"price_monthly":48,"currency":"USD","band":{"slug":"b1","price_cents":9900,"currency":"BRL"}},` +
+				`{"slug":"s-2vcpu-4gb","vcpu":2,"memory_mb":4096,"disk_gb":80}]`)) //nolint:errcheck
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
 			json.NewDecoder(r.Body).Decode(&body)                              //nolint:errcheck
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
@@ -112,7 +130,8 @@ func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 		}
 	})
 
-	if _, err := run(t, "2\n1\n", "node", "create", "n1", "--cloud", "acme-do", "--no-wait"); err != nil {
+	_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("2\n1\n"), "node", "create", "n1", "--cloud", "acme-do", "--no-wait")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if body["region"] != "nyc3" {
@@ -120,6 +139,53 @@ func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 	}
 	if body["size"] != "s-1vcpu-1gb" {
 		t.Errorf("size = %v, want the first in the list (s-1vcpu-1gb)", body["size"])
+	}
+	if !strings.Contains(stderr, "s-1vcpu-1gb — 1 vCPU, 1 GB RAM, 25 GB disk, US$ 48/mo (GoShip R$ 99,00/mo)") {
+		t.Errorf("priced size line missing from the prompt:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "s-2vcpu-4gb — 2 vCPU, 4 GB RAM, 80 GB disk\n") {
+		t.Errorf("unpriced size should end at its disk:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "/mo/mo") || strings.Contains(stderr, "-/mo") {
+		t.Errorf("prompt doubles or dangles the /mo suffix:\n%s", stderr)
+	}
+}
+
+// Regression: stdin used to be wrapped in a bufio.Reader before the TTY check,
+// which then never saw an *os.File and refused to prompt on a real terminal.
+func TestNodeCreateChecksTTYBeforeWrappingStdin(t *testing.T) {
+	in := strings.NewReader("1\n1\n")
+	orig := stdinIsTTY
+	calls := 0
+	stdinIsTTY = func(cmd *cobra.Command) bool {
+		calls++
+		if got := cmd.InOrStdin(); got != io.Reader(in) {
+			t.Errorf("stdinIsTTY saw %T, want the reader the command was given", got)
+		}
+		return true
+	}
+	t.Cleanup(func() { stdinIsTTY = orig })
+
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/regions":
+			w.Write([]byte(`[{"slug":"nyc3","label":"New York 3","country":"US"}]`)) //nolint:errcheck
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/sizes":
+			w.Write([]byte(`[{"slug":"s-1vcpu-1gb","vcpu":1,"memory_mb":1024,"disk_gb":25}]`)) //nolint:errcheck
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	if _, _, err := runWithStderr(t, context.Background(), in, "node", "create", "n1", "--cloud", "acme-do", "--no-wait"); err != nil {
+		t.Fatal(err)
+	}
+	if calls == 0 {
+		t.Error("stdinIsTTY was never asked")
 	}
 }
 
