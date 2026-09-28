@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -350,6 +351,79 @@ func TestResolveCloudAccountAmbiguousAndMissing(t *testing.T) {
 	}
 }
 
+func TestCloudSizesJSONKeepsRawNumbers(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod-do"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts/acc-1/sizes":
+			w.Write([]byte(`[{"slug":"s-2vcpu-4gb","vcpu":2,"memory_mb":4096,"disk_gb":80,"price_monthly":48,"currency":"USD"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	out, err := run(t, "", "cloud", "sizes", "prod-do", "--region", "nyc3", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"price_monthly"`, `"memory_mb"`, "4096"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in JSON:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "/mo") {
+		t.Errorf("JSON carries display strings:\n%s", out)
+	}
+}
+
+// Only admins may list an org's cloud accounts; --all must not fail on the
+// orgs where you are only a member.
+func TestCloudListAllSkipsForbiddenOrgs(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/cloud-accounts":
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"admins only"}`)) //nolint:errcheck
+		case "/api/v1/orgs/globex/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"globex-do"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "cloud", "list", "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "globex") || !strings.Contains(out, "globex-do") {
+		t.Errorf("output should show the org that answered:\n%s", out)
+	}
+	if !strings.Contains(stderr, "games") {
+		t.Errorf("stderr should say which org was skipped: %q", stderr)
+	}
+}
+
+// Every other lister still fails on a 403: skipping is opt-in.
+func TestOrgListAllStillFailsOnForbiddenElsewhere(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"games"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusForbidden)
+		}
+	})
+	os.Unsetenv("GOSHIP_ORG")
+
+	if _, err := run(t, "", "apps", "--all"); err == nil {
+		t.Fatal("apps --all should still fail on a 403")
+	}
+}
+
 // oauthAPI answers `cloud connect digitalocean`, handing each ticket poll to
 // poll.
 func oauthAPI(t *testing.T, poll http.HandlerFunc) {
@@ -519,5 +593,24 @@ func TestCloudConnectAPIKeyJSONRendersTheAccount(t *testing.T) {
 	var account portal.CloudAccount
 	if err := json.Unmarshal([]byte(out), &account); err != nil || account.ID != "acc-1" {
 		t.Errorf("want the account as JSON, got %q (%v)", out, err)
+	}
+}
+
+func TestResolveCloudAccountNamesAKnownProvider(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[]`)) //nolint:errcheck
+		case "/api/v1/cloud/providers":
+			w.Write([]byte(`[{"name":"digitalocean","label":"DigitalOcean","kind":"oauth","status":"available"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	_, err := run(t, "", "cloud", "regions", "digitalocean")
+	want := "no DigitalOcean account connected; run `goship cloud connect digitalocean`"
+	if err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %q", err, want)
 	}
 }

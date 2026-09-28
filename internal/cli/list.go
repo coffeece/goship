@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"slices"
 
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
@@ -13,7 +15,8 @@ import (
 // listing shows the current org; --all spans every org you belong to, grouped
 // under each slug — as does having no org selected, since demanding
 // `org use` first for a read is friction.
-func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string) ([]T, error)) *cobra.Command {
+func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string) ([]T, error), opts ...orgListOption) *cobra.Command {
+	skipForbidden := slices.Contains(opts, skipForbiddenOrgs)
 	var all bool
 	cmd := &cobra.Command{
 		Use:   use,
@@ -37,6 +40,10 @@ func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client
 			sections := make([]section[T], 0, len(orgs))
 			for _, o := range orgs {
 				items, err := fetch(client, ctx, o.Slug)
+				if skipForbidden && portal.IsForbidden(err) {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Skipping org %s: your role there cannot see this.\n", o.Slug)
+					continue
+				}
 				if err != nil {
 					return err
 				}
@@ -48,6 +55,13 @@ func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client
 	cmd.Flags().BoolVarP(&all, "all", "A", false, "list across every organization you belong to")
 	return cmd
 }
+
+// orgListOption tunes newOrgListCmd for a noun that needs it.
+type orgListOption int
+
+// skipForbiddenOrgs leaves an org that answers 403 out of an --all listing,
+// with a note on stderr, instead of failing the whole listing on it.
+const skipForbiddenOrgs orgListOption = iota + 1
 
 // section is one group of a listing that spans several places: an org, or a
 // placement. key names it in JSON, title above its table.

@@ -48,7 +48,9 @@ func newCloudCmd(app *App) *cobra.Command {
 		},
 	}
 
-	list := newOrgListCmd(app, "list", "List cloud accounts connected in the current organization, or --all of them", (*portal.Client).CloudAccounts)
+	// Only an org's admins may see its cloud accounts, so --all skips the orgs
+	// where you are a member rather than failing on the first.
+	list := newOrgListCmd(app, "list", "List cloud accounts connected in the current organization, or --all of them", (*portal.Client).CloudAccounts, skipForbiddenOrgs)
 
 	cmd.AddCommand(providers, list, newCloudConnectCmd(app), newCloudRegionsCmd(app), newCloudSizesCmd(app), newCloudDisconnectCmd(app))
 	return cmd
@@ -275,6 +277,10 @@ func newCloudSizesCmd(app *App) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		// JSON is for scripts: the raw numbers, not the table's display strings.
+		if app.Global.Output == render.JSON {
+			return app.Renderer().Render(sizes)
+		}
 		rows := make([]sizeRow, len(sizes))
 		for i, s := range sizes {
 			rows[i] = newSizeRow(s)
@@ -378,6 +384,13 @@ func resolveCloudAccount(ctx context.Context, client *portal.Client, org, ref st
 	case 1:
 		return &byProvider[0], nil
 	case 0:
+		if providers, err := client.CloudProviders(ctx); err == nil {
+			for _, p := range providers {
+				if p.Name == ref {
+					return nil, fmt.Errorf("no %s account connected; run `goship cloud connect %s`", p.Label, p.Name)
+				}
+			}
+		}
 		return nil, fmt.Errorf("no cloud account %q in org %q; run `goship cloud connect <provider>`", ref, org)
 	default:
 		labels := make([]string, len(byProvider))
