@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strconv"
 	"time"
@@ -38,6 +39,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 	var cloudRef, region, size, host, sshUser, sshKeyFile string
 	var port int
 	var noWait bool
+	var timeout time.Duration
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -52,6 +54,9 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			if (cloudRef == "") == (host == "") {
 				return errors.New("pass exactly one of --cloud or --host")
+			}
+			if err := rejectMixedFlags(cmd, cloudRef != ""); err != nil {
+				return err
 			}
 
 			// Asked before the wrap below, which hides the *os.File the check
@@ -142,13 +147,16 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "Creating node %s on %s (%s, %s)\n", name, accountLabel, headerRegion, headerSize)
 			if noWait {
 				return app.Renderer().Message(
-					"Node %s requested; not waiting for it to come up (--no-wait). `goship node info %s` shows progress.",
-					created.Name, created.Name)
+					"Node %s requested; not waiting for it to come up (--no-wait). `goship nodes` shows its status.",
+					created.Name)
 			}
 
 			ctx, stop := interruptible(cmd.Context())
 			defer stop()
-			return followNode(ctx, app.Portal(), cmd.OutOrStdout(), app.Global.Verbose, org, created.ID)
+			return followNode(ctx, app.Portal(), followOpts{
+				out: cmd.OutOrStdout(), errw: cmd.ErrOrStderr(), verbose: app.Global.Verbose,
+				org: org, id: created.ID, name: created.Name, timeout: timeout,
+			})
 		}),
 	}
 
@@ -161,6 +169,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 	f.StringVar(&sshUser, "ssh-user", "root", "SSH user")
 	f.StringVar(&sshKeyFile, "ssh-key", "", "path to a private key with access to the host")
 	f.BoolVar(&noWait, "no-wait", false, "return once the machine is requested, without following provisioning")
+	f.DurationVar(&timeout, "timeout", 30*time.Minute, "how long to follow provisioning before giving up; 0 follows until it ends (the node keeps provisioning either way)")
 
 	return cmd
 }
@@ -185,6 +194,21 @@ func sizeChoiceLabel(s portal.CloudSize) string {
 	return label
 }
 
+// rejectMixedFlags refuses flags that only mean something on the other path,
+// rather than silently ignoring them.
+func rejectMixedFlags(cmd *cobra.Command, cloud bool) error {
+	other, only := []string{"port", "ssh-user", "ssh-key"}, "--host"
+	if !cloud {
+		other, only = []string{"region", "size"}, "--cloud"
+	}
+	for _, name := range other {
+		if cmd.Flags().Changed(name) {
+			return fmt.Errorf("--%s only applies with %s", name, only)
+		}
+	}
+	return nil
+}
+
 // pick shows items numbered on stderr and reads a choice from stdin.
 func pick[T any](cmd *cobra.Command, label string, items []T, show func(T) string) (T, error) {
 	var zero T
@@ -207,51 +231,131 @@ func pick[T any](cmd *cobra.Command, label string, items []T, show func(T) strin
 	return items[n-1], nil
 }
 
+// maxPollRetries is how many transient failures in a row a polling loop
+// rides out before it gives up.
+const maxPollRetries = 3
+
+// pollRetrier lets a polling loop ride out a flaky network or a 5xx from the
+// API, while anything the API refused outright (a 4xx) still ends it at once.
+type pollRetrier struct {
+	errw   io.Writer
+	failed int
+}
+
+// retry reports whether err is worth another poll, noting it on stderr.
+func (r *pollRetrier) retry(err error) bool {
+	if !transient(err) || r.failed >= maxPollRetries {
+		return false
+	}
+	r.failed++
+	fmt.Fprintf(r.errw, "%v; retrying…\n", err)
+	return true
+}
+
+func (r *pollRetrier) ok() { r.failed = 0 }
+
+func transient(err error) bool {
+	var apiErr *portal.Error
+	if errors.As(err, &apiErr) {
+		return apiErr.Status >= 500
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
+// errFollowTimeout is the cause a follow's context carries when --timeout,
+// not Ctrl-C, ended it.
+var errFollowTimeout = errors.New("follow timed out")
+
+type followOpts struct {
+	out, errw io.Writer
+	verbose   bool
+	org, id   string
+	name      string
+	timeout   time.Duration
+}
+
 // followNode polls a newly created node until it comes up or fails, driving a
 // progress view the same way a deploy's steps are drawn: one line per stage.
-func followNode(ctx context.Context, client *portal.Client, out io.Writer, verbose bool, org, id string) error {
-	p := newProgress(out, verbose)
+// Ending the follow early — Ctrl-C or --timeout — leaves the node
+// provisioning, so neither marks the running stage failed.
+func followNode(ctx context.Context, client *portal.Client, o followOpts) error {
+	if o.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, o.timeout, errFollowTimeout)
+		defer cancel()
+	}
+
+	p := newProgress(o.out, o.verbose)
+	retrier := &pollRetrier{errw: o.errw}
 	last := ""
 	ticker := time.NewTicker(nodePollInterval)
 	defer ticker.Stop()
 
+	stopped := func() error {
+		p.Finish(portal.ErrStreamCut)
+		if errors.Is(context.Cause(ctx), errFollowTimeout) {
+			return fmt.Errorf("stopped following node %s after %s (--timeout); it keeps provisioning — run `goship node info %s`", o.name, o.timeout, o.name)
+		}
+		fmt.Fprintf(o.errw, "Stopped following; the node keeps provisioning — run `goship node info %s`\n", o.name)
+		return nil
+	}
+
 	for {
-		n, err := client.Node(ctx, org, id)
-		if err != nil {
+		n, err := client.Node(ctx, o.org, o.id)
+		switch {
+		case err != nil && ctx.Err() != nil:
+			return stopped()
+		case err != nil && retrier.retry(err):
+		case err != nil:
 			p.Finish(err)
 			return err
-		}
+		default:
+			retrier.ok()
+			if n.Stage != last {
+				if last != "" {
+					p.Done(last, "")
+				}
+				if n.Stage != "" {
+					p.Begin(n.Stage)
+				}
+				last = n.Stage
+			}
 
-		if n.Stage != last {
-			if last != "" {
+			switch n.Status {
+			case "active":
 				p.Done(last, "")
+				p.Finish(nil)
+				fmt.Fprintf(o.out, "Node %s is ready. Pool %s.\n", n.Name, n.PoolName)
+				return nil
+			case "error":
+				p.Finish(errors.New(n.ErrorMessage))
+				// The reason belongs in the follow output itself, not only in
+				// the error cobra prints once the command unwinds.
+				if n.ErrorMessage != "" {
+					fmt.Fprintln(o.out, n.ErrorMessage)
+				}
+				return nodeFailure(n)
 			}
-			if n.Stage != "" {
-				p.Begin(n.Stage)
-			}
-			last = n.Stage
-		}
-
-		switch n.Status {
-		case "active":
-			p.Done(last, "")
-			p.Finish(nil)
-			fmt.Fprintf(out, "Node %s is ready. Pool %s.\n", n.Name, n.PoolName)
-			return nil
-		case "error":
-			p.Finish(errors.New(n.ErrorMessage))
-			// The reason belongs in the follow output itself, not only in the
-			// error cobra prints once the command unwinds.
-			fmt.Fprintln(out, n.ErrorMessage)
-			return fmt.Errorf("node %s failed while %s: %s", n.Name, stageTitle(n.Stage), n.ErrorMessage)
 		}
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return stopped()
 		case <-ticker.C:
 		}
 	}
+}
+
+func nodeFailure(n *portal.Node) error {
+	msg := "node " + n.Name + " failed"
+	if n.Stage != "" {
+		msg += " while " + stageTitle(n.Stage)
+	}
+	if n.ErrorMessage != "" {
+		msg += ": " + n.ErrorMessage
+	}
+	return errors.New(msg)
 }
 
 // stageTitle is the reader-facing name for one of a node's provisioning

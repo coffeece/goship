@@ -189,6 +189,175 @@ func TestNodeCreateChecksTTYBeforeWrappingStdin(t *testing.T) {
 	}
 }
 
+func TestNodeCreateRejectsFlagsOfTheOtherPath(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+	})
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--host", "203.0.113.5", "--ssh-key", "k", "--region", "nyc3"}, "--region only applies with --cloud"},
+		{[]string{"--host", "203.0.113.5", "--ssh-key", "k", "--size", "s"}, "--size only applies with --cloud"},
+		{[]string{"--cloud", "acme-do", "--port", "2222"}, "--port only applies with --host"},
+		{[]string{"--cloud", "acme-do", "--ssh-user", "ubuntu"}, "--ssh-user only applies with --host"},
+		{[]string{"--cloud", "acme-do", "--ssh-key", "k"}, "--ssh-key only applies with --host"},
+	} {
+		_, err := run(t, "", append([]string{"node", "create", "n1"}, tc.args...)...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: got %v, want %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+func TestNodeCreateNoWaitPointsAtNodes(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	out, err := run(t, "", "node", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s", "--no-wait")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "`goship nodes`") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+// followAPI answers the create-and-follow calls of `node create --cloud`,
+// handing each poll of the node to poll.
+func followAPI(t *testing.T, poll http.HandlerFunc) {
+	t.Helper()
+	origInterval := nodePollInterval
+	nodePollInterval = time.Millisecond
+	t.Cleanup(func() { nodePollInterval = origInterval })
+
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"creating_machine"}`)) //nolint:errcheck
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/nodes/n1":
+			poll(w, r)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+}
+
+var followArgs = []string{"node", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s-1vcpu-1gb"}
+
+func TestNodeCreateFollowRidesOutTransientErrors(t *testing.T) {
+	polls := 0
+	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		if polls <= 2 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Write([]byte(`{"id":"n1","name":"n1","status":"active","pool_name":"pool-n1"}`)) //nolint:errcheck
+	})
+
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), followArgs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "ready") {
+		t.Errorf("output = %q", out)
+	}
+	if strings.Count(stderr, "retrying") != 2 {
+		t.Errorf("want one retry note per 502, stderr = %q", stderr)
+	}
+}
+
+func TestNodeCreateFollowGivesUpAfterRepeatedErrors(t *testing.T) {
+	polls := 0
+	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		w.WriteHeader(http.StatusBadGateway)
+	})
+
+	_, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), followArgs...)
+	if err == nil {
+		t.Fatal("expected an error after repeated 502s")
+	}
+	if polls != maxPollRetries+1 {
+		t.Errorf("polls = %d, want %d", polls, maxPollRetries+1)
+	}
+}
+
+func TestNodeCreateFollowStopsAtOnceOnClientError(t *testing.T) {
+	polls := 0
+	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"node not found"}`)) //nolint:errcheck
+	})
+
+	_, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), followArgs...)
+	if err == nil || !strings.Contains(err.Error(), "node not found") {
+		t.Fatalf("got %v", err)
+	}
+	if polls != 1 {
+		t.Errorf("polls = %d, want a 404 to end the follow at once", polls)
+	}
+}
+
+func TestNodeCreateFollowTimesOut(t *testing.T) {
+	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"installing_k3s"}`)) //nolint:errcheck
+	})
+
+	_, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), append(followArgs, "--timeout", "20ms")...)
+	if err == nil || !strings.Contains(err.Error(), "--timeout") || !strings.Contains(err.Error(), "goship node info n1") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// Ctrl-C ends the follow, not the node: nothing failed, so it exits 0.
+func TestNodeCreateInterruptedFollowIsNotAFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		cancel()
+		w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"installing_k3s"}`)) //nolint:errcheck
+	})
+
+	out, stderr, err := runWithStderr(t, ctx, strings.NewReader(""), followArgs...)
+	if err != nil {
+		t.Fatalf("got %v, want a clean exit", err)
+	}
+	if !strings.Contains(stderr, "Stopped following; the node keeps provisioning — run `goship node info n1`") {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if strings.Contains(out, "✗") {
+		t.Errorf("a stopped follow must not mark a step failed: %q", out)
+	}
+}
+
+func TestNodeCreateFollowFailureWithoutStageOrReason(t *testing.T) {
+	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"id":"n1","name":"n1","status":"error","stage":""}`)) //nolint:errcheck
+	})
+
+	out, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), followArgs...)
+	if err == nil || err.Error() != "node n1 failed" {
+		t.Fatalf("got %v, want exactly %q", err, "node n1 failed")
+	}
+	if strings.Contains(out, "\n\n") {
+		t.Errorf("an empty reason should not print a blank line: %q", out)
+	}
+}
+
 func TestNodeCreateFollowsUntilActive(t *testing.T) {
 	origInterval := nodePollInterval
 	nodePollInterval = time.Millisecond
