@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/coffeece/goship/internal/oauthlogin"
 	"github.com/coffeece/goship/internal/portal"
+	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -86,6 +88,9 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 
 		switch p.Kind {
 		case "oauth":
+			if label != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "--label ignored: label is set from your %s team; rename it in the dashboard.\n", p.Label)
+			}
 			return connectCloudOAuth(cmd, app, org, p)
 		case "api_key":
 			return connectCloudAPIKey(cmd, app, org, p, accountLabel, apiKeyStdin)
@@ -122,31 +127,45 @@ func connectCloudOAuth(cmd *cobra.Command, app *App, org string, p *portal.Cloud
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "Opening your browser to connect %s. If nothing opens, visit:\n\n  %s\n", p.Label, authorizeURL)
+	fmt.Fprintf(cmd.ErrOrStderr(), "Opening your browser to connect %s. If nothing opens, visit:\n\n  %s\n\n"+
+		"Sign in to GoShip in that browser if asked, then open the link again.\n", p.Label, authorizeURL)
 	_ = openURL(authorizeURL)
 
+	// The deadline or Ctrl-C can land mid-request, so the HTTP call fails
+	// with its own wrapped context error rather than the select below ever
+	// seeing ctx.Done(); both are reported the same way.
+	ended := func() error {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("timed out waiting to connect %s: %w", p.Label, ctx.Err())
+		}
+		return fmt.Errorf("cancelled connecting %s", p.Label)
+	}
+
+	retrier := &pollRetrier{errw: cmd.ErrOrStderr()}
 	ticker := time.NewTicker(ticketPollInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting to connect %s: %w", p.Label, ctx.Err())
+			return ended()
 		case <-ticker.C:
 			t, err := app.Portal().CloudConnectTicket(ctx, org, ticket)
-			if err != nil {
-				// The deadline can land mid-request: the HTTP call then fails
-				// with its own wrapped context error rather than the select
-				// above ever seeing ctx.Done(). Report it the same way either
-				// way.
-				if ctx.Err() != nil {
-					return fmt.Errorf("timed out waiting to connect %s: %w", p.Label, ctx.Err())
-				}
+			switch {
+			case err != nil && ctx.Err() != nil:
+				return ended()
+			case err != nil && retrier.retry(err):
+				continue
+			case err != nil:
 				return err
 			}
+			retrier.ok()
 			switch t.Status {
 			case "done":
 				if t.Account == nil {
 					return app.Renderer().Message("Connected %s.", p.Label)
+				}
+				if app.Global.Output == render.JSON {
+					return app.Renderer().Render(t.Account)
 				}
 				return app.Renderer().Message("Connected %s as %q.", p.Label, t.Account.Label)
 			case "failed":
@@ -160,33 +179,49 @@ func connectCloudOAuth(cmd *cobra.Command, app *App, org string, p *portal.Cloud
 }
 
 func connectCloudAPIKey(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, label string, stdinKey bool) error {
-	apiKey, err := readCloudAPIKey(cmd, stdinKey)
+	apiKey, err := readCloudAPIKey(cmd, p, stdinKey)
 	if err != nil {
 		return err
+	}
+	if apiKey == "" {
+		return errors.New("api key is empty")
 	}
 	account, err := app.Portal().ConnectCloudAPIKey(cmd.Context(), org, p.Name, label, apiKey)
 	if err != nil {
 		return err
 	}
+	if app.Global.Output == render.JSON {
+		return app.Renderer().Render(account)
+	}
 	return app.Renderer().Message("Connected %s as %q.", p.Label, account.Label)
 }
 
-// readCloudAPIKey never lets the key touch the terminal's scrollback: it
-// comes from stdin under --api-key-stdin, or a hidden prompt on a TTY.
-// Neither is available, it says so instead of guessing.
-func readCloudAPIKey(cmd *cobra.Command, stdinKey bool) (string, error) {
-	if stdinKey {
-		line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
-		if err != nil && line == "" {
-			return "", err
+// readCloudAPIKey never lets the key touch the terminal's scrollback: on a
+// terminal it is a hidden prompt (even under --api-key-stdin, since a
+// terminal is not a pipe), otherwise it is read from stdin under
+// --api-key-stdin. Neither is available, it says so instead of guessing.
+func readCloudAPIKey(cmd *cobra.Command, p *portal.CloudProvider, stdinKey bool) (string, error) {
+	if in, ok := cmd.InOrStdin().(*os.File); ok && term.IsTerminal(int(in.Fd())) {
+		errw := cmd.ErrOrStderr()
+		if p.KeyDocsURL != "" {
+			fmt.Fprintf(errw, "Create a %s API key at %s\n", p.Label, p.KeyDocsURL)
 		}
-		return strings.TrimSpace(line), nil
+		fmt.Fprintf(errw, "%s API key: ", p.Label)
+		data, err := term.ReadPassword(int(in.Fd()))
+		fmt.Fprintln(errw)
+		return strings.TrimSpace(string(data)), err
 	}
-	in, _ := cmd.InOrStdin().(*os.File)
-	if in == nil || !term.IsTerminal(int(in.Fd())) {
+	if !stdinKey {
 		return "", errors.New("pass --api-key-stdin")
 	}
-	return promptPassword(bufio.NewReader(in), in, cmd.ErrOrStderr())
+	line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	if err != nil && line == "" {
+		if errors.Is(err, io.EOF) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
 }
 
 func newCloudRegionsCmd(app *App) *cobra.Command {

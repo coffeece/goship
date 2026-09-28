@@ -349,3 +349,175 @@ func TestResolveCloudAccountAmbiguousAndMissing(t *testing.T) {
 		t.Fatalf("missing ref should point at connect, got %v", err)
 	}
 }
+
+// oauthAPI answers `cloud connect digitalocean`, handing each ticket poll to
+// poll.
+func oauthAPI(t *testing.T, poll http.HandlerFunc) {
+	t.Helper()
+	origInterval := ticketPollInterval
+	ticketPollInterval = time.Millisecond
+	t.Cleanup(func() { ticketPollInterval = origInterval })
+
+	origOpen := openURL
+	openURL = func(string) error { return nil }
+	t.Cleanup(func() { openURL = origOpen })
+
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/cloud/providers":
+			w.Write([]byte(`[{"name":"digitalocean","label":"DigitalOcean","kind":"oauth","status":"available"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/cloud-accounts/digitalocean/connect":
+			w.Write([]byte(`{"authorize_url":"https://goship.example/orgs/acme/settings/cloud-accounts/connect/tix-1","ticket":"tix-1"}`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts/connect/tix-1":
+			poll(w, r)
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+}
+
+const doneTicket = `{"status":"done","account":{"id":"acc-1","provider":"digitalocean","label":"prod-do"}}`
+
+func TestCloudConnectOAuthRidesOutTransientErrors(t *testing.T) {
+	polls := 0
+	oauthAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		if polls <= 2 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Write([]byte(doneTicket)) //nolint:errcheck
+	})
+
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "cloud", "connect", "digitalocean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "prod-do") {
+		t.Errorf("output = %q", out)
+	}
+	if strings.Count(stderr, "retrying") != 2 {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if !strings.Contains(stderr, "Sign in to GoShip in that browser if asked, then open the link again.") {
+		t.Errorf("hint should explain the sign-in detour: %q", stderr)
+	}
+}
+
+func TestCloudConnectOAuthGivesUpAfterRepeatedErrors(t *testing.T) {
+	polls := 0
+	oauthAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		w.WriteHeader(http.StatusBadGateway)
+	})
+
+	if _, err := run(t, "", "cloud", "connect", "digitalocean"); err == nil {
+		t.Fatal("expected an error after repeated 502s")
+	}
+	if polls != maxPollRetries+1 {
+		t.Errorf("polls = %d, want %d", polls, maxPollRetries+1)
+	}
+}
+
+func TestCloudConnectOAuthStopsAtOnceOnClientError(t *testing.T) {
+	polls := 0
+	oauthAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"ticket not found"}`)) //nolint:errcheck
+	})
+
+	_, err := run(t, "", "cloud", "connect", "digitalocean")
+	if err == nil || !strings.Contains(err.Error(), "ticket not found") {
+		t.Fatalf("got %v", err)
+	}
+	if polls != 1 {
+		t.Errorf("polls = %d, want a 404 to end the wait at once", polls)
+	}
+}
+
+func TestCloudConnectOAuthCtrlCSaysCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	oauthAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		cancel()
+		w.Write([]byte(`{"status":"pending"}`)) //nolint:errcheck
+	})
+
+	_, _, err := runWithStderr(t, ctx, strings.NewReader(""), "cloud", "connect", "digitalocean")
+	if err == nil || !strings.Contains(err.Error(), "cancelled") || strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestCloudConnectOAuthJSONRendersTheAccount(t *testing.T) {
+	oauthAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(doneTicket)) //nolint:errcheck
+	})
+
+	out, err := run(t, "", "cloud", "connect", "digitalocean", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var account portal.CloudAccount
+	if err := json.Unmarshal([]byte(out), &account); err != nil || account.ID != "acc-1" {
+		t.Errorf("want the account as JSON, got %q (%v)", out, err)
+	}
+}
+
+func TestCloudConnectOAuthNotesIgnoredLabel(t *testing.T) {
+	oauthAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(doneTicket)) //nolint:errcheck
+	})
+
+	_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "cloud", "connect", "digitalocean", "--label", "mine")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr, "label is set from your DigitalOcean team; rename it in the dashboard") {
+		t.Errorf("stderr = %q", stderr)
+	}
+}
+
+func hetznerAPI(t *testing.T, posted *bool) {
+	t.Helper()
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/cloud/providers":
+			w.Write([]byte(`[{"name":"hetzner","label":"Hetzner","kind":"api_key","status":"available"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/cloud-accounts":
+			*posted = true
+			w.Write([]byte(`{"id":"acc-1","provider":"hetzner","label":"Hetzner"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+}
+
+func TestCloudConnectAPIKeyRejectsEmptyKey(t *testing.T) {
+	for _, stdin := range []string{"", "\n", "   \n"} {
+		posted := false
+		hetznerAPI(t, &posted)
+		_, err := run(t, stdin, "cloud", "connect", "hetzner", "--api-key-stdin")
+		if err == nil || err.Error() != "api key is empty" {
+			t.Errorf("stdin %q: got %v", stdin, err)
+		}
+		if posted {
+			t.Errorf("stdin %q: an empty key reached the API", stdin)
+		}
+	}
+}
+
+func TestCloudConnectAPIKeyJSONRendersTheAccount(t *testing.T) {
+	posted := false
+	hetznerAPI(t, &posted)
+
+	out, err := run(t, "hz-secret\n", "cloud", "connect", "hetzner", "--api-key-stdin", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var account portal.CloudAccount
+	if err := json.Unmarshal([]byte(out), &account); err != nil || account.ID != "acc-1" {
+		t.Errorf("want the account as JSON, got %q (%v)", out, err)
+	}
+}
