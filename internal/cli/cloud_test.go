@@ -614,3 +614,144 @@ func TestResolveCloudAccountNamesAKnownProvider(t *testing.T) {
 		t.Fatalf("got %v, want %q", err, want)
 	}
 }
+
+const awsProviderJSON = `[{"name":"aws","label":"AWS","kind":"federated","status":"available","accepts_api_key":true}]`
+
+func awsAPI(t *testing.T, setupStatus int, connect func(body map[string]any) (int, string)) *map[string]any {
+	t.Helper()
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/cloud/providers":
+			w.Write([]byte(awsProviderJSON)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts/aws/setup":
+			w.WriteHeader(setupStatus)
+			if setupStatus == http.StatusOK {
+				w.Write([]byte(`{"launch_url":"https://console.aws.amazon.com/cloudformation/home#/stacks/quickcreate?x=1","external_id":"goship-org-1","goship_account_id":"111122223333"}`)) //nolint:errcheck
+			} else {
+				w.Write([]byte(`{"error":"not found"}`)) //nolint:errcheck
+			}
+		case "POST /api/v1/orgs/acme/cloud-accounts":
+			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+			status, resp := connect(body)
+			w.WriteHeader(status)
+			w.Write([]byte(resp)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	return &body
+}
+
+func okAccount(map[string]any) (int, string) {
+	return http.StatusCreated, `{"id":"acc-aws","provider":"aws","label":"123456789012","kind":"federated"}`
+}
+
+func TestCloudConnectAWSRoleARNFlagPostsTheRole(t *testing.T) {
+	body := awsAPI(t, http.StatusNotFound, okAccount)
+	out, err := run(t, "", "cloud", "connect", "aws", "--role-arn", "arn:aws:iam::123456789012:role/GoShipNodeRole")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if (*body)["role_arn"] != "arn:aws:iam::123456789012:role/GoShipNodeRole" || (*body)["provider"] != "aws" {
+		t.Errorf("body = %v", *body)
+	}
+	if _, has := (*body)["api_key"]; has {
+		t.Error("api_key must not be sent")
+	}
+	if !strings.Contains(out, "Connected AWS") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestCloudConnectAWSAccessKeysStdinPostsBothKeys(t *testing.T) {
+	body := awsAPI(t, http.StatusNotFound, okAccount)
+	out, err := run(t, "AKIA1\nverysecret\n", "cloud", "connect", "aws", "--access-keys-stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if (*body)["access_key_id"] != "AKIA1" || (*body)["secret_access_key"] != "verysecret" {
+		t.Errorf("body = %v", *body)
+	}
+	if strings.Contains(out, "verysecret") {
+		t.Error("the secret was echoed")
+	}
+}
+
+func TestCloudConnectAWSAccessKeysStdinNeedsTwoLines(t *testing.T) {
+	awsAPI(t, http.StatusNotFound, okAccount)
+	for _, stdin := range []string{"AKIA1\n", "AKIA1\n\n", ""} {
+		_, err := run(t, stdin, "cloud", "connect", "aws", "--access-keys-stdin")
+		if err == nil || !strings.Contains(err.Error(), "two lines") {
+			t.Errorf("stdin %q: error = %v, want 'two lines'", stdin, err)
+		}
+	}
+}
+
+func TestCloudConnectAWSWithoutTTYNeedsAFlag(t *testing.T) {
+	awsAPI(t, http.StatusOK, okAccount)
+	_, err := run(t, "", "cloud", "connect", "aws")
+	if err == nil || !strings.Contains(err.Error(), "--role-arn") || !strings.Contains(err.Error(), "--access-keys-stdin") {
+		t.Fatalf("error = %v, want both flags named", err)
+	}
+}
+
+func TestCloudConnectAWSRejectsBothFlags(t *testing.T) {
+	awsAPI(t, http.StatusNotFound, okAccount)
+	_, err := run(t, "AKIA1\ns\n", "cloud", "connect", "aws", "--role-arn", "arn:aws:iam::123456789012:role/GoShipNodeRole", "--access-keys-stdin")
+	if err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCloudConnectAWSSurfacesTheAPIMessage(t *testing.T) {
+	awsAPI(t, http.StatusNotFound, func(map[string]any) (int, string) {
+		return http.StatusBadRequest, `{"error":"a AWS recusou a função: confira se a stack GoShip foi criada com o external id goship-org-1"}`
+	})
+	_, err := run(t, "", "cloud", "connect", "aws", "--role-arn", "arn:aws:iam::123456789012:role/GoShipNodeRole")
+	if err == nil || !strings.Contains(err.Error(), "external id goship-org-1") {
+		t.Fatalf("error = %v, want the API message verbatim", err)
+	}
+}
+
+func TestBareARNTakesTheLastFieldOfAPastedRow(t *testing.T) {
+	for in, want := range map[string]string{
+		"arn:aws:iam::123456789012:role/GoShipNodeRole":              "arn:aws:iam::123456789012:role/GoShipNodeRole",
+		"  RoleArn\tarn:aws:iam::123456789012:role/GoShipNodeRole\n": "arn:aws:iam::123456789012:role/GoShipNodeRole",
+		"": "",
+	} {
+		if got := bareARN(in); got != want {
+			t.Errorf("bareARN(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCloudConnectAWSAcceptsAPastedOutputRow(t *testing.T) {
+	body := awsAPI(t, http.StatusNotFound, okAccount)
+	if _, err := run(t, "", "cloud", "connect", "aws", "--role-arn", "RoleArn  arn:aws:iam::123456789012:role/GoShipNodeRole"); err != nil {
+		t.Fatal(err)
+	}
+	if (*body)["role_arn"] != "arn:aws:iam::123456789012:role/GoShipNodeRole" {
+		t.Errorf("role_arn = %v", (*body)["role_arn"])
+	}
+}
+
+func TestCloudConnectOtherFederatedProviderIsUnsupported(t *testing.T) {
+	posted := false
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/cloud/providers":
+			w.Write([]byte(`[{"name":"gcp","label":"GCP","kind":"federated","status":"available"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/cloud-accounts":
+			posted = true
+		}
+	})
+	_, err := run(t, "", "cloud", "connect", "gcp", "--role-arn", "arn:aws:iam::123456789012:role/X")
+	if err == nil || !strings.Contains(err.Error(), "unsupported connection kind") {
+		t.Fatalf("error = %v", err)
+	}
+	if posted {
+		t.Error("nothing should be posted for an unsupported kind")
+	}
+}

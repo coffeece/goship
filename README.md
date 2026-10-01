@@ -123,7 +123,7 @@ goship deploy --env-file .env
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
 | `goship volume create\|info\|bind\|unbind\|rm` | persistent disks |
 | `goship node create\|info\|rm` | your own machines: create on a connected cloud or attach over SSH |
-| `goship cloud providers\|connect\|list\|regions\|sizes\|disconnect` | the cloud accounts your nodes run on |
+| `goship cloud providers\|connect\|list\|regions\|sizes\|disconnect` | the cloud accounts your nodes run on — AWS connects with `--role-arn` or `--access-keys-stdin` |
 | `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |

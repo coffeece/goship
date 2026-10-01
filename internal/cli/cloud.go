@@ -59,17 +59,23 @@ func newCloudCmd(app *App) *cobra.Command {
 func newCloudConnectCmd(app *App) *cobra.Command {
 	var label string
 	var apiKeyStdin bool
+	var roleARN string
+	var accessKeysStdin bool
 
 	cmd := &cobra.Command{
 		Use:   "connect <provider>",
 		Short: "Connect a cloud account",
 		Long: "Connects a cloud account so `goship node create --cloud` can provision\n" +
 			"machines on it. An OAuth provider opens the browser; an API-key provider\n" +
-			"reads the key from stdin (--api-key-stdin) or prompts for it.",
+			"reads the key from stdin (--api-key-stdin) or prompts for it.\n" +
+			"AWS connects through an IAM role (--role-arn, or a guided flow in a terminal) or, as a\n" +
+			"fallback, access keys read from stdin (--access-keys-stdin).",
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&label, "label", "", "name for the account (defaults to the provider's name)")
 	cmd.Flags().BoolVar(&apiKeyStdin, "api-key-stdin", false, "read the API key from stdin instead of prompting")
+	cmd.Flags().StringVar(&roleARN, "role-arn", "", "AWS: the RoleArn output of the GoShip CloudFormation stack")
+	cmd.Flags().BoolVar(&accessKeysStdin, "access-keys-stdin", false, "AWS: read the access key id and secret from stdin, one per line")
 
 	cmd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 		p, err := findCloudProvider(cmd.Context(), app.Portal(), args[0])
@@ -96,6 +102,11 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 			return connectCloudOAuth(cmd, app, org, p)
 		case "api_key":
 			return connectCloudAPIKey(cmd, app, org, p, accountLabel, apiKeyStdin)
+		case "federated":
+			if p.Name == "aws" {
+				return connectCloudAWS(cmd, app, org, p, accountLabel, roleARN, accessKeysStdin)
+			}
+			return fmt.Errorf("cloud provider %s has an unsupported connection kind %q", p.Name, p.Kind)
 		default:
 			return fmt.Errorf("cloud provider %s has an unsupported connection kind %q", p.Name, p.Kind)
 		}
@@ -192,10 +203,7 @@ func connectCloudAPIKey(cmd *cobra.Command, app *App, org string, p *portal.Clou
 	if err != nil {
 		return err
 	}
-	if app.Global.Output == render.JSON {
-		return app.Renderer().Render(account)
-	}
-	return app.Renderer().Message("Connected %s as %q.", p.Label, account.Label)
+	return reportConnected(cmd, app, p, account)
 }
 
 // readCloudAPIKey never lets the key touch the terminal's scrollback: on a
@@ -399,4 +407,129 @@ func resolveCloudAccount(ctx context.Context, client *portal.Client, org, ref st
 		}
 		return nil, fmt.Errorf("more than one %s account in org %q: %s; pass the account's id or label", ref, org, strings.Join(labels, ", "))
 	}
+}
+
+// connectCloudAWS connects AWS. Flags win; in a terminal with no flag it
+// walks the person through the role path (browser + pasted ARN) or, when
+// this GoShip cannot assume roles, prompts for access keys.
+func connectCloudAWS(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, label, roleARN string, keysStdin bool) error {
+	errw := cmd.ErrOrStderr()
+	roleARN = bareARN(roleARN)
+	if roleARN != "" && keysStdin {
+		return errors.New("pass --role-arn or --access-keys-stdin, not both")
+	}
+
+	connectRole := func(arn string) error {
+		account, err := app.Portal().ConnectCloudAWSRole(cmd.Context(), org, label, arn)
+		if err != nil {
+			return err
+		}
+		return reportConnected(cmd, app, p, account)
+	}
+	connectKeys := func(id, secret string) error {
+		account, err := app.Portal().ConnectCloudAWSKeys(cmd.Context(), org, label, id, secret)
+		if err != nil {
+			return err
+		}
+		return reportConnected(cmd, app, p, account)
+	}
+
+	switch {
+	case roleARN != "":
+		return connectRole(roleARN)
+	case keysStdin:
+		id, secret, err := readAccessKeys(cmd, true)
+		if err != nil {
+			return err
+		}
+		return connectKeys(id, secret)
+	}
+
+	in, ok := cmd.InOrStdin().(*os.File)
+	if !ok || !term.IsTerminal(int(in.Fd())) {
+		return errors.New("pass --role-arn (the stack's RoleArn output) or --access-keys-stdin")
+	}
+
+	setup, err := app.Portal().CloudAWSSetup(cmd.Context(), org)
+	if err != nil {
+		return err
+	}
+	if setup == nil {
+		fmt.Fprintln(errw, "IAM role connect is not available on this GoShip; using access keys.")
+		id, secret, err := readAccessKeys(cmd, false)
+		if err != nil {
+			return err
+		}
+		return connectKeys(id, secret)
+	}
+
+	fmt.Fprintf(errw, "Opening the AWS console to create the GoShip role. If nothing opens, visit:\n\n  %s\n\n"+
+		"External ID: %s\nGoShip account: %s\n\nCreate the stack, then paste its RoleArn output here.\n", setup.LaunchURL, setup.ExternalID, setup.GoShipAccountID)
+	_ = openURL(setup.LaunchURL)
+	fmt.Fprint(errw, "Role ARN: ")
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && line == "" {
+		return fmt.Errorf("reading the role ARN: %w", err)
+	}
+	arn := bareARN(line)
+	if arn == "" {
+		return errors.New("role ARN is empty")
+	}
+	return connectRole(arn)
+}
+
+// reportConnected prints the outcome the way the other connect paths do.
+func reportConnected(cmd *cobra.Command, app *App, p *portal.CloudProvider, account *portal.CloudAccount) error {
+	if app.Global.Output == render.JSON {
+		return app.Renderer().Render(account)
+	}
+	return app.Renderer().Message("Connected %s as %q.", p.Label, account.Label)
+}
+
+// bareARN takes the ARN out of whatever was pasted: a bare ARN, or a whole
+// "RoleArn  arn:aws:..." row copied from the stack's Outputs tab.
+func bareARN(s string) string {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[len(fields)-1]
+}
+
+// readAccessKeys reads the key id and the secret: hidden prompts on a
+// terminal, else exactly two lines from stdin under --access-keys-stdin.
+func readAccessKeys(cmd *cobra.Command, stdin bool) (id, secret string, err error) {
+	if in, ok := cmd.InOrStdin().(*os.File); ok && term.IsTerminal(int(in.Fd())) {
+		errw := cmd.ErrOrStderr()
+		fmt.Fprint(errw, "AWS access key ID: ")
+		idBytes, err := term.ReadPassword(int(in.Fd()))
+		fmt.Fprintln(errw)
+		if err != nil {
+			return "", "", err
+		}
+		fmt.Fprint(errw, "AWS secret access key: ")
+		secretBytes, err := term.ReadPassword(int(in.Fd()))
+		fmt.Fprintln(errw)
+		if err != nil {
+			return "", "", err
+		}
+		id, secret = strings.TrimSpace(string(idBytes)), strings.TrimSpace(string(secretBytes))
+	} else {
+		if !stdin {
+			return "", "", errors.New("pass --access-keys-stdin")
+		}
+		sc := bufio.NewScanner(cmd.InOrStdin())
+		var lines []string
+		for sc.Scan() && len(lines) < 2 {
+			lines = append(lines, strings.TrimSpace(sc.Text()))
+		}
+		if len(lines) != 2 {
+			return "", "", errors.New("expected two lines on stdin: the access key id, then the secret access key")
+		}
+		id, secret = lines[0], lines[1]
+	}
+	if id == "" || secret == "" {
+		return "", "", errors.New("expected two lines on stdin: the access key id, then the secret access key")
+	}
+	return id, secret, nil
 }
