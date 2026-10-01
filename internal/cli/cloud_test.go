@@ -880,3 +880,15 @@ func TestCloudConnectAWSOneClickRejectsALabel(t *testing.T) {
 		t.Errorf("began %d one-click connects despite the label", calls.begins)
 	}
 }
+
+func TestCloudConnectAWSOneClickPrintsTheAnyRegionFallback(t *testing.T) {
+	stubOneClickEnv(t)
+	oneClickAPI(t, []string{"done"})
+	_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "cloud", "connect", "aws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr, "https://console.aws.amazon.com/x") || !strings.Contains(stderr, "goship cloud connect aws --role-arn") {
+		t.Errorf("stderr lacks the any-region fallback: %q", stderr)
+	}
+}

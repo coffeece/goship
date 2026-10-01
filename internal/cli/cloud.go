@@ -464,7 +464,7 @@ func connectCloudAWS(cmd *cobra.Command, app *App, org string, p *portal.CloudPr
 		if label != "" {
 			return errors.New("--label only works with --role-arn or --access-keys-stdin")
 		}
-		return connectCloudAWSOneClick(cmd, app, org, p)
+		return connectCloudAWSOneClick(cmd, app, org, p, setup)
 	}
 
 	if setup == nil {
@@ -495,7 +495,7 @@ var awsConnectTimeout = 30 * time.Minute
 
 // connectCloudAWSOneClick opens the console with the GoShip stack prefilled
 // and waits for the stack to report back — nothing to paste.
-func connectCloudAWSOneClick(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider) error {
+func connectCloudAWSOneClick(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, setup *portal.AWSSetup) error {
 	ctx, stop := interruptible(cmd.Context())
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, awsConnectTimeout)
@@ -507,7 +507,10 @@ func connectCloudAWSOneClick(cmd *cobra.Command, app *App, org string, p *portal
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "Opening the AWS console. If nothing opens, visit:\n\n  %s\n\n"+
 		"Tick \"I acknowledge that AWS CloudFormation might create IAM resources with custom names\" and click Create stack.\n"+
-		"The stack lives in Ohio (us-east-2); the role works in every region. Waiting for AWS (about a minute)…\n", launchURL)
+		"The stack lives in Ohio (us-east-2); the role works in every region.\n"+
+		"Your company blocks us-east-2? Create the stack in another region: %s\n"+
+		"and run goship cloud connect aws --role-arn <RoleArn>.\n\n"+
+		"Waiting for AWS (about a minute)…\n", launchURL, setup.LaunchURL)
 	_ = openURL(launchURL)
 	return waitForTicket(ctx, cmd, app, org, p, ticket)
 }
