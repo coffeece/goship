@@ -452,17 +452,19 @@ func connectCloudAWS(cmd *cobra.Command, app *App, org string, p *portal.CloudPr
 		return connectKeys(id, secret)
 	}
 
+	if !stdinIsTTY(cmd) {
+		return errors.New("pass --role-arn (the stack's RoleArn output) or --access-keys-stdin")
+	}
 	setup, err := app.Portal().CloudAWSSetup(cmd.Context(), org)
 	if err != nil {
 		return err
 	}
 	if setup != nil && setup.OneClick {
+		// The stack names the account; the begin call takes no label.
+		if label != "" {
+			return errors.New("--label only works with --role-arn or --access-keys-stdin")
+		}
 		return connectCloudAWSOneClick(cmd, app, org, p)
-	}
-
-	in, ok := cmd.InOrStdin().(*os.File)
-	if !ok || !term.IsTerminal(int(in.Fd())) {
-		return errors.New("pass --role-arn (the stack's RoleArn output) or --access-keys-stdin")
 	}
 
 	if setup == nil {
@@ -478,7 +480,7 @@ func connectCloudAWS(cmd *cobra.Command, app *App, org string, p *portal.CloudPr
 		"External ID: %s\nGoShip account: %s\n\nCreate the stack, then paste its RoleArn output here.\n", setup.LaunchURL, setup.ExternalID, setup.GoShipAccountID)
 	_ = openURL(setup.LaunchURL)
 	fmt.Fprint(errw, "Role ARN: ")
-	line, err := bufio.NewReader(in).ReadString('\n')
+	line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
 	if err != nil && line == "" {
 		return fmt.Errorf("reading the role ARN: %w", err)
 	}

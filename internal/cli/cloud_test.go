@@ -11,6 +11,7 @@ import (
 
 	"github.com/coffeece/goship/internal/config"
 	"github.com/coffeece/goship/internal/portal"
+	"github.com/spf13/cobra"
 )
 
 func TestCloudProvidersLists(t *testing.T) {
@@ -774,20 +775,29 @@ func TestCloudConnectOtherFederatedProviderIsUnsupported(t *testing.T) {
 	}
 }
 
+type oneClickCalls struct{ polls, begins int }
+
 func oneClickAPI(t *testing.T, statuses []string) *int {
 	t.Helper()
-	polls := 0
+	return &oneClickAPICounting(t, statuses).polls
+}
+
+func oneClickAPICounting(t *testing.T, statuses []string) *oneClickCalls {
+	t.Helper()
+	calls := &oneClickCalls{}
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		polls := calls.polls
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/cloud/providers":
 			w.Write([]byte(awsProviderJSON)) //nolint:errcheck
 		case "GET /api/v1/orgs/acme/cloud-accounts/aws/setup":
 			w.Write([]byte(`{"launch_url":"https://console.aws.amazon.com/x","external_id":"goship-o","goship_account_id":"111122223333","one_click":true}`)) //nolint:errcheck
 		case "POST /api/v1/orgs/acme/cloud-accounts/aws/connect":
+			calls.begins++
 			w.Write([]byte(`{"launch_url":"https://us-east-2.console.aws.amazon.com/oneclick","ticket":"tk-1"}`)) //nolint:errcheck
 		case "GET /api/v1/orgs/acme/cloud-accounts/connect/tk-1":
 			s := statuses[min(polls, len(statuses)-1)]
-			polls++
+			calls.polls++
 			if s == "done" {
 				w.Write([]byte(`{"status":"done","account":{"id":"acc-aws","provider":"aws","label":"549298577267"}}`)) //nolint:errcheck
 				return
@@ -798,13 +808,14 @@ func oneClickAPI(t *testing.T, statuses []string) *int {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	})
-	return &polls
+	return calls
 }
 
 func stubOneClickEnv(t *testing.T) *string {
-	origInterval, origOpen := ticketPollInterval, openURL
-	t.Cleanup(func() { ticketPollInterval, openURL = origInterval, origOpen })
+	origInterval, origOpen, origTTY := ticketPollInterval, openURL, stdinIsTTY
+	t.Cleanup(func() { ticketPollInterval, openURL, stdinIsTTY = origInterval, origOpen, origTTY })
 	ticketPollInterval = time.Millisecond
+	stdinIsTTY = func(*cobra.Command) bool { return true }
 	opened := new(string)
 	openURL = func(u string) error { *opened = u; return nil }
 	return opened
@@ -842,5 +853,30 @@ func TestCloudConnectAWSOneClickReportsAFailedTicket(t *testing.T) {
 	oneClickAPI(t, []string{"failed"})
 	if _, err := run(t, "", "cloud", "connect", "aws"); err == nil || !strings.Contains(err.Error(), "expirou") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCloudConnectAWSOneClickWithoutTTYNeedsAFlag(t *testing.T) {
+	stubOneClickEnv(t)
+	stdinIsTTY = func(*cobra.Command) bool { return false }
+	calls := oneClickAPICounting(t, []string{"done"})
+	_, err := run(t, "", "cloud", "connect", "aws")
+	if err == nil || !strings.Contains(err.Error(), "--role-arn") || !strings.Contains(err.Error(), "--access-keys-stdin") {
+		t.Fatalf("error = %v, want both flags named", err)
+	}
+	if calls.begins != 0 {
+		t.Errorf("began %d one-click connects without a terminal", calls.begins)
+	}
+}
+
+func TestCloudConnectAWSOneClickRejectsALabel(t *testing.T) {
+	stubOneClickEnv(t)
+	calls := oneClickAPICounting(t, []string{"done"})
+	_, err := run(t, "", "cloud", "connect", "aws", "--label", "prod")
+	if err == nil || !strings.Contains(err.Error(), "--label only works with --role-arn or --access-keys-stdin") {
+		t.Fatalf("error = %v", err)
+	}
+	if calls.begins != 0 {
+		t.Errorf("began %d one-click connects despite the label", calls.begins)
 	}
 }
