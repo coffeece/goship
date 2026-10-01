@@ -72,7 +72,7 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 			"fallback, access keys read from stdin (--access-keys-stdin).",
 		Args: cobra.ExactArgs(1),
 	}
-	cmd.Flags().StringVar(&label, "label", "", "name for the account (defaults to the provider's name)")
+	cmd.Flags().StringVar(&label, "label", "", "name for the account (defaults to the provider's name; for AWS, the account id)")
 	cmd.Flags().BoolVar(&apiKeyStdin, "api-key-stdin", false, "read the API key from stdin instead of prompting")
 	cmd.Flags().StringVar(&roleARN, "role-arn", "", "AWS: the RoleArn output of the GoShip CloudFormation stack")
 	cmd.Flags().BoolVar(&accessKeysStdin, "access-keys-stdin", false, "AWS: read the access key id and secret from stdin, one per line")
@@ -104,7 +104,7 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 			return connectCloudAPIKey(cmd, app, org, p, accountLabel, apiKeyStdin)
 		case "federated":
 			if p.Name == "aws" {
-				return connectCloudAWS(cmd, app, org, p, accountLabel, roleARN, accessKeysStdin)
+				return connectCloudAWS(cmd, app, org, p, label, roleARN, accessKeysStdin)
 			}
 			return fmt.Errorf("cloud provider %s has an unsupported connection kind %q", p.Name, p.Kind)
 		default:

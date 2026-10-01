@@ -665,6 +665,23 @@ func TestCloudConnectAWSRoleARNFlagPostsTheRole(t *testing.T) {
 	}
 }
 
+func TestCloudConnectAWSLabelIsLeftToThePortalUnlessGiven(t *testing.T) {
+	body := awsAPI(t, http.StatusNotFound, okAccount)
+	arn := "arn:aws:iam::123456789012:role/GoShipNodeRole"
+	if _, err := run(t, "", "cloud", "connect", "aws", "--role-arn", arn); err != nil {
+		t.Fatal(err)
+	}
+	if label, has := (*body)["label"]; !has || label != "" {
+		t.Errorf("label = %v (present %v), want empty so the portal defaults it", label, has)
+	}
+	if _, err := run(t, "", "cloud", "connect", "aws", "--role-arn", arn, "--label", "prod-aws"); err != nil {
+		t.Fatal(err)
+	}
+	if (*body)["label"] != "prod-aws" {
+		t.Errorf("label = %v, want prod-aws", (*body)["label"])
+	}
+}
+
 func TestCloudConnectAWSAccessKeysStdinPostsBothKeys(t *testing.T) {
 	body := awsAPI(t, http.StatusNotFound, okAccount)
 	out, err := run(t, "AKIA1\nverysecret\n", "cloud", "connect", "aws", "--access-keys-stdin")
