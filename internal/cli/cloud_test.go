@@ -734,8 +734,9 @@ func TestCloudConnectAWSSurfacesTheAPIMessage(t *testing.T) {
 
 func TestBareARNTakesTheLastFieldOfAPastedRow(t *testing.T) {
 	for in, want := range map[string]string{
-		"arn:aws:iam::123456789012:role/GoShipNodeRole":              "arn:aws:iam::123456789012:role/GoShipNodeRole",
-		"  RoleArn\tarn:aws:iam::123456789012:role/GoShipNodeRole\n": "arn:aws:iam::123456789012:role/GoShipNodeRole",
+		"arn:aws:iam::123456789012:role/GoShipNodeRole":                                "arn:aws:iam::123456789012:role/GoShipNodeRole",
+		"  RoleArn\tarn:aws:iam::123456789012:role/GoShipNodeRole\n":                   "arn:aws:iam::123456789012:role/GoShipNodeRole",
+		"RoleArn  arn:aws:iam::123456789012:role/GoShipNodeRole  Paste this in GoShip": "arn:aws:iam::123456789012:role/GoShipNodeRole",
 		"": "",
 	} {
 		if got := bareARN(in); got != want {

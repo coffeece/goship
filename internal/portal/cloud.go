@@ -21,7 +21,8 @@ type CloudAccount struct {
 	ID           string     `json:"id" table:"ID"`
 	Provider     string     `json:"provider" table:"PROVIDER"`
 	Label        string     `json:"label" table:"LABEL"`
-	Kind         string     `json:"kind"`
+	Kind         string     `json:"kind" table:"KIND"`
+	RoleARN      string     `json:"role_arn,omitempty"`
 	Status       string     `json:"status" table:"STATUS"`
 	NodeCount    int        `json:"node_count" table:"NODES"`
 	ErrorMessage string     `json:"error_message,omitempty"`

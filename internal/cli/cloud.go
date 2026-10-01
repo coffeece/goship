@@ -493,6 +493,11 @@ func bareARN(s string) string {
 	if len(fields) == 0 {
 		return ""
 	}
+	for _, f := range fields {
+		if strings.HasPrefix(f, "arn:aws:iam::") {
+			return f
+		}
+	}
 	return fields[len(fields)-1]
 }
 
@@ -523,13 +528,13 @@ func readAccessKeys(cmd *cobra.Command, stdin bool) (id, secret string, err erro
 		for sc.Scan() && len(lines) < 2 {
 			lines = append(lines, strings.TrimSpace(sc.Text()))
 		}
-		if len(lines) != 2 {
+		if len(lines) != 2 || lines[0] == "" || lines[1] == "" {
 			return "", "", errors.New("expected two lines on stdin: the access key id, then the secret access key")
 		}
 		id, secret = lines[0], lines[1]
 	}
 	if id == "" || secret == "" {
-		return "", "", errors.New("expected two lines on stdin: the access key id, then the secret access key")
+		return "", "", errors.New("the access key id and the secret access key are both required")
 	}
 	return id, secret, nil
 }
