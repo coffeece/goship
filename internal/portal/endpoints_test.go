@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -96,6 +97,15 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.CloudSizes(ctx, "acme", "acc1", "nyc1")
 			return err
 		}},
+		{"aws setup", "GET", "/api/v1/orgs/acme/cloud-accounts/aws/setup", "", func(ctx context.Context, c *Client) error { _, err := c.CloudAWSSetup(ctx, "acme"); return err }},
+		{"connect aws role", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"label":"prod","provider":"aws","role_arn":"arn:aws:iam::123456789012:role/GoShipNodeRole"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAWSRole(ctx, "acme", "prod", "arn:aws:iam::123456789012:role/GoShipNodeRole")
+			return err
+		}},
+		{"connect aws keys", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"access_key_id":"AKIA1","label":"","provider":"aws","secret_access_key":"s"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAWSKeys(ctx, "acme", "", "AKIA1", "s")
+			return err
+		}},
 
 		{"volumes", "GET", "/api/v1/orgs/acme/volumes", "", func(ctx context.Context, c *Client) error { _, err := c.Volumes(ctx, "acme"); return err }},
 		{"volume", "GET", "/api/v1/orgs/acme/volumes/data", "", func(ctx context.Context, c *Client) error { _, err := c.Volume(ctx, "acme", "data"); return err }},
@@ -151,6 +161,19 @@ func TestCloudSizesEncodesTheRegionQuery(t *testing.T) {
 	}
 	if gotQuery != "region=nyc+1" {
 		t.Errorf("query = %q", gotQuery)
+	}
+}
+
+func TestCloudAWSSetupTreats404AsUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"not found"}`)) //nolint:errcheck
+	}))
+	t.Cleanup(srv.Close)
+	c := New(srv.URL, "tok")
+	s, err := c.CloudAWSSetup(context.Background(), "acme")
+	if err != nil || s != nil {
+		t.Fatalf("CloudAWSSetup() = %+v, %v; want nil, nil", s, err)
 	}
 }
 
