@@ -68,8 +68,9 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 		Long: "Connects a cloud account so `goship node create --cloud` can provision\n" +
 			"machines on it. An OAuth provider opens the browser; an API-key provider\n" +
 			"reads the key from stdin (--api-key-stdin) or prompts for it.\n" +
-			"AWS connects through an IAM role (--role-arn, or a guided flow in a terminal) or, as a\n" +
-			"fallback, access keys read from stdin (--access-keys-stdin).",
+			"AWS with no flags opens the console with the GoShip stack prefilled and waits for it\n" +
+			"(when this GoShip supports it); otherwise it connects through an IAM role (--role-arn,\n" +
+			"or a guided flow in a terminal) or, as a fallback, access keys read from stdin (--access-keys-stdin).",
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&label, "label", "", "name for the account (defaults to the provider's name; for AWS, the account id)")
@@ -143,7 +144,13 @@ func connectCloudOAuth(cmd *cobra.Command, app *App, org string, p *portal.Cloud
 	fmt.Fprintf(cmd.ErrOrStderr(), "Opening your browser to connect %s. If nothing opens, visit:\n\n  %s\n\n"+
 		"Sign in to GoShip in that browser if asked, then open the link again.\n", p.Label, authorizeURL)
 	_ = openURL(authorizeURL)
+	return waitForTicket(ctx, cmd, app, org, p, ticket)
+}
 
+// waitForTicket polls a connect ticket until it settles; ctx carries the
+// caller's deadline and Ctrl-C. "pending" and "connecting" both mean keep
+// waiting.
+func waitForTicket(ctx context.Context, cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, ticket string) error {
 	// The deadline or Ctrl-C can land mid-request, so the HTTP call fails
 	// with its own wrapped context error rather than the select below ever
 	// seeing ctx.Done(); both are reported the same way.
@@ -445,15 +452,19 @@ func connectCloudAWS(cmd *cobra.Command, app *App, org string, p *portal.CloudPr
 		return connectKeys(id, secret)
 	}
 
+	setup, err := app.Portal().CloudAWSSetup(cmd.Context(), org)
+	if err != nil {
+		return err
+	}
+	if setup != nil && setup.OneClick {
+		return connectCloudAWSOneClick(cmd, app, org, p)
+	}
+
 	in, ok := cmd.InOrStdin().(*os.File)
 	if !ok || !term.IsTerminal(int(in.Fd())) {
 		return errors.New("pass --role-arn (the stack's RoleArn output) or --access-keys-stdin")
 	}
 
-	setup, err := app.Portal().CloudAWSSetup(cmd.Context(), org)
-	if err != nil {
-		return err
-	}
 	if setup == nil {
 		fmt.Fprintln(errw, "IAM role connect is not available on this GoShip; using access keys.")
 		id, secret, err := readAccessKeys(cmd, false)
@@ -476,6 +487,27 @@ func connectCloudAWS(cmd *cobra.Command, app *App, org string, p *portal.CloudPr
 		return errors.New("role ARN is empty")
 	}
 	return connectRole(arn)
+}
+
+var awsConnectTimeout = 30 * time.Minute
+
+// connectCloudAWSOneClick opens the console with the GoShip stack prefilled
+// and waits for the stack to report back — nothing to paste.
+func connectCloudAWSOneClick(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider) error {
+	ctx, stop := interruptible(cmd.Context())
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, awsConnectTimeout)
+	defer cancel()
+
+	launchURL, ticket, err := app.Portal().BeginCloudAWSConnect(ctx, org)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "Opening the AWS console. If nothing opens, visit:\n\n  %s\n\n"+
+		"Tick \"I acknowledge that AWS CloudFormation might create IAM resources with custom names\" and click Create stack.\n"+
+		"The stack lives in Ohio (us-east-2); the role works in every region. Waiting for AWS (about a minute)…\n", launchURL)
+	_ = openURL(launchURL)
+	return waitForTicket(ctx, cmd, app, org, p, ticket)
 }
 
 // reportConnected prints the outcome the way the other connect paths do.

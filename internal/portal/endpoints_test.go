@@ -84,6 +84,10 @@ func TestEndpoints(t *testing.T) {
 			_, _, err := c.BeginCloudOAuth(ctx, "acme", "digitalocean")
 			return err
 		}},
+		{"begin aws connect", "POST", "/api/v1/orgs/acme/cloud-accounts/aws/connect", "", func(ctx context.Context, c *Client) error {
+			_, _, err := c.BeginCloudAWSConnect(ctx, "acme")
+			return err
+		}},
 		{"cloud connect ticket", "GET", "/api/v1/orgs/acme/cloud-accounts/connect/t1", "", func(ctx context.Context, c *Client) error {
 			_, err := c.CloudConnectTicket(ctx, "acme", "t1")
 			return err

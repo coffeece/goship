@@ -773,3 +773,74 @@ func TestCloudConnectOtherFederatedProviderIsUnsupported(t *testing.T) {
 		t.Error("nothing should be posted for an unsupported kind")
 	}
 }
+
+func oneClickAPI(t *testing.T, statuses []string) *int {
+	t.Helper()
+	polls := 0
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/cloud/providers":
+			w.Write([]byte(awsProviderJSON)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts/aws/setup":
+			w.Write([]byte(`{"launch_url":"https://console.aws.amazon.com/x","external_id":"goship-o","goship_account_id":"111122223333","one_click":true}`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/cloud-accounts/aws/connect":
+			w.Write([]byte(`{"launch_url":"https://us-east-2.console.aws.amazon.com/oneclick","ticket":"tk-1"}`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts/connect/tk-1":
+			s := statuses[min(polls, len(statuses)-1)]
+			polls++
+			if s == "done" {
+				w.Write([]byte(`{"status":"done","account":{"id":"acc-aws","provider":"aws","label":"549298577267"}}`)) //nolint:errcheck
+				return
+			}
+			w.Write([]byte(`{"status":"` + s + `","error":"GoShip: expirou"}`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	return &polls
+}
+
+func stubOneClickEnv(t *testing.T) *string {
+	origInterval, origOpen := ticketPollInterval, openURL
+	t.Cleanup(func() { ticketPollInterval, openURL = origInterval, origOpen })
+	ticketPollInterval = time.Millisecond
+	opened := new(string)
+	openURL = func(u string) error { *opened = u; return nil }
+	return opened
+}
+
+func TestCloudConnectAWSOneClickOpensTheConsoleAndWaits(t *testing.T) {
+	opened := stubOneClickEnv(t)
+	polls := oneClickAPI(t, []string{"pending", "pending", "done"})
+	out, err := run(t, "", "cloud", "connect", "aws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *opened != "https://us-east-2.console.aws.amazon.com/oneclick" || *polls != 3 {
+		t.Errorf("opened %q after %d polls", *opened, *polls)
+	}
+	if !strings.Contains(out, "Connected AWS") || !strings.Contains(out, "549298577267") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestCloudConnectAWSOneClickKeepsPollingWhileConnecting(t *testing.T) {
+	stubOneClickEnv(t)
+	polls := oneClickAPI(t, []string{"pending", "connecting", "done"})
+	out, err := run(t, "", "cloud", "connect", "aws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *polls != 3 || !strings.Contains(out, "549298577267") {
+		t.Errorf("polls = %d, output = %q", *polls, out)
+	}
+}
+
+func TestCloudConnectAWSOneClickReportsAFailedTicket(t *testing.T) {
+	stubOneClickEnv(t)
+	oneClickAPI(t, []string{"failed"})
+	if _, err := run(t, "", "cloud", "connect", "aws"); err == nil || !strings.Contains(err.Error(), "expirou") {
+		t.Fatalf("error = %v", err)
+	}
+}

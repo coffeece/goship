@@ -61,6 +61,7 @@ type AWSSetup struct {
 	LaunchURL       string `json:"launch_url"`
 	ExternalID      string `json:"external_id"`
 	GoShipAccountID string `json:"goship_account_id"`
+	OneClick        bool   `json:"one_click"`
 }
 
 func (c *Client) CloudProviders(ctx context.Context) ([]CloudProvider, error) {
@@ -115,6 +116,19 @@ func (c *Client) BeginCloudOAuth(ctx context.Context, org, provider string) (aut
 		return "", "", err
 	}
 	return result.AuthorizeURL, result.Ticket, nil
+}
+
+// BeginCloudAWSConnect starts a one-click AWS connect: the console link the
+// customer opens, and the ticket that completes when the stack reports back.
+func (c *Client) BeginCloudAWSConnect(ctx context.Context, org string) (launchURL, ticket string, err error) {
+	var out struct {
+		LaunchURL string `json:"launch_url"`
+		Ticket    string `json:"ticket"`
+	}
+	if err := c.post(ctx, cloudAccountsPath(org)+"/aws/connect", nil, &out); err != nil {
+		return "", "", err
+	}
+	return out.LaunchURL, out.Ticket, nil
 }
 
 func (c *Client) CloudConnectTicket(ctx context.Context, org, ticket string) (*ConnectTicket, error) {
