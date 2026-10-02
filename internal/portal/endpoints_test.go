@@ -110,6 +110,14 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.ConnectCloudAWSKeys(ctx, "acme", "", "AKIA1", "s")
 			return err
 		}},
+		{"begin gcp connect", "POST", "/api/v1/orgs/acme/cloud-accounts/gcp/connect", "", func(ctx context.Context, c *Client) error {
+			_, err := c.BeginCloudGCPConnect(ctx, "acme")
+			return err
+		}},
+		{"connect gcp", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"label":"prod","project_number":"123456789","provider":"gcp"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudGCP(ctx, "acme", "prod", "123456789")
+			return err
+		}},
 
 		{"volumes", "GET", "/api/v1/orgs/acme/volumes", "", func(ctx context.Context, c *Client) error { _, err := c.Volumes(ctx, "acme"); return err }},
 		{"volume", "GET", "/api/v1/orgs/acme/volumes/data", "", func(ctx context.Context, c *Client) error { _, err := c.Volume(ctx, "acme", "data"); return err }},

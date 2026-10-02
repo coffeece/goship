@@ -23,6 +23,7 @@ type CloudAccount struct {
 	Label        string     `json:"label" table:"LABEL"`
 	Kind         string     `json:"kind" table:"KIND"`
 	RoleARN      string     `json:"role_arn,omitempty"`
+	ProjectID    string     `json:"project_id,omitempty"`
 	Status       string     `json:"status" table:"STATUS"`
 	NodeCount    int        `json:"node_count" table:"NODES"`
 	ErrorMessage string     `json:"error_message,omitempty"`
@@ -129,6 +130,27 @@ func (c *Client) BeginCloudAWSConnect(ctx context.Context, org string) (launchUR
 		return "", "", err
 	}
 	return out.LaunchURL, out.Ticket, nil
+}
+
+// GCPConnectStart is a guided Google Cloud connect: the setup command, the
+// Cloud Shell to run it in, and the ticket that completes when the script
+// reports back.
+type GCPConnectStart struct {
+	Ticket   string `json:"ticket"`
+	Command  string `json:"command"`
+	ShellURL string `json:"shell_url"`
+}
+
+func (c *Client) BeginCloudGCPConnect(ctx context.Context, org string) (*GCPConnectStart, error) {
+	var start GCPConnectStart
+	return &start, c.post(ctx, cloudAccountsPath(org)+"/gcp/connect", nil, &start)
+}
+
+// ConnectCloudGCP connects a Google Cloud project whose setup already ran.
+func (c *Client) ConnectCloudGCP(ctx context.Context, org, label, projectNumber string) (*CloudAccount, error) {
+	var account CloudAccount
+	body := map[string]any{"provider": "gcp", "label": label, "project_number": projectNumber}
+	return &account, c.post(ctx, cloudAccountsPath(org), body, &account)
 }
 
 func (c *Client) CloudConnectTicket(ctx context.Context, org, ticket string) (*ConnectTicket, error) {
