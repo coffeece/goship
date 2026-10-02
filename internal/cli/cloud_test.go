@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -761,12 +763,12 @@ func TestCloudConnectOtherFederatedProviderIsUnsupported(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/cloud/providers":
-			w.Write([]byte(`[{"name":"gcp","label":"GCP","kind":"federated","status":"available"}]`)) //nolint:errcheck
+			w.Write([]byte(`[{"name":"azure","label":"Azure","kind":"federated","status":"available"}]`)) //nolint:errcheck
 		case "POST /api/v1/orgs/acme/cloud-accounts":
 			posted = true
 		}
 	})
-	_, err := run(t, "", "cloud", "connect", "gcp", "--role-arn", "arn:aws:iam::123456789012:role/X")
+	_, err := run(t, "", "cloud", "connect", "azure", "--role-arn", "arn:aws:iam::123456789012:role/X")
 	if err == nil || !strings.Contains(err.Error(), "unsupported connection kind") {
 		t.Fatalf("error = %v", err)
 	}
@@ -890,5 +892,171 @@ func TestCloudConnectAWSOneClickPrintsTheAnyRegionFallback(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "https://console.aws.amazon.com/x") || !strings.Contains(stderr, "goship cloud connect aws --role-arn") {
 		t.Errorf("stderr lacks the any-region fallback: %q", stderr)
+	}
+}
+
+const gcpProviderJSON = `[{"name":"gcp","label":"Google Cloud","kind":"federated","status":"available"}]`
+
+const gcpCommand = "curl -fsSL https://goship.sh/gcp/connect.sh | bash -s -- org-1 tk-1"
+
+type gcpCalls struct {
+	begins, polls int
+	connectBody   map[string]any
+}
+
+func gcpAPI(t *testing.T, statuses []string) *gcpCalls {
+	t.Helper()
+	calls := &gcpCalls{}
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/cloud/providers":
+			w.Write([]byte(gcpProviderJSON)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/cloud-accounts/gcp/connect":
+			calls.begins++
+			w.Write([]byte(`{"ticket":"tk-1","command":"` + gcpCommand + `","shell_url":"https://shell.cloud.google.com/?show=terminal"}`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts/connect/tk-1":
+			s := statuses[min(calls.polls, len(statuses)-1)]
+			calls.polls++
+			if s == "done" {
+				w.Write([]byte(`{"status":"done","account":{"id":"acc-gcp","provider":"gcp","label":"acme-prod"}}`)) //nolint:errcheck
+				return
+			}
+			w.Write([]byte(`{"status":"` + s + `","error":"GoShip: expirou"}`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/cloud-accounts":
+			json.NewDecoder(r.Body).Decode(&calls.connectBody)                                           //nolint:errcheck
+			w.Write([]byte(`{"id":"acc-gcp","provider":"gcp","label":"prod","project_id":"acme-prod"}`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	return calls
+}
+
+type gcpEnv struct {
+	opened string
+	ran    []string
+	runErr error
+}
+
+// stubGCPEnv stands in for the terminal, the browser, gcloud and the shell.
+func stubGCPEnv(t *testing.T, account string) *gcpEnv {
+	t.Helper()
+	origInterval, origOpen, origTTY, origAccount, origRun := ticketPollInterval, openURL, stdinIsTTY, gcloudAccount, runSetup
+	t.Cleanup(func() {
+		ticketPollInterval, openURL, stdinIsTTY, gcloudAccount, runSetup = origInterval, origOpen, origTTY, origAccount, origRun
+	})
+	env := &gcpEnv{}
+	ticketPollInterval = time.Millisecond
+	stdinIsTTY = func(*cobra.Command) bool { return true }
+	openURL = func(u string) error { env.opened = u; return nil }
+	gcloudAccount = func(context.Context) string { return account }
+	runSetup = func(_ context.Context, command string, _, _ io.Writer) error {
+		env.ran = append(env.ran, command)
+		return env.runErr
+	}
+	return env
+}
+
+func TestCloudConnectGCPRunsTheSetupLocallyWhenGcloudIsSignedIn(t *testing.T) {
+	env := stubGCPEnv(t, "dev@acme.test")
+	calls := gcpAPI(t, []string{"done"})
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("y\n"), "cloud", "connect", "gcp", "--project", "acme-prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(env.ran) != 1 || env.ran[0] != gcpCommand+" --project acme-prod" {
+		t.Errorf("ran %q, want the API's command with the project", env.ran)
+	}
+	if env.opened != "" {
+		t.Errorf("opened %q: nothing to open when the script runs here", env.opened)
+	}
+	if !strings.Contains(stderr, "dev@acme.test") || !strings.Contains(stderr, "No key is created") {
+		t.Errorf("stderr must say what will run and as whom: %q", stderr)
+	}
+	if !strings.Contains(out, "Connected Google Cloud") || !strings.Contains(out, "acme-prod") || calls.begins != 1 {
+		t.Errorf("output = %q, begins = %d", out, calls.begins)
+	}
+}
+
+func TestCloudConnectGCPPointsAtCloudShellWithoutGcloud(t *testing.T) {
+	env := stubGCPEnv(t, "")
+	calls := gcpAPI(t, []string{"pending", "connecting", "done"})
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "cloud", "connect", "gcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.opened != "https://shell.cloud.google.com/?show=terminal" || len(env.ran) != 0 {
+		t.Errorf("opened %q, ran %q", env.opened, env.ran)
+	}
+	if !strings.Contains(stderr, gcpCommand) {
+		t.Errorf("stderr must print the command: %q", stderr)
+	}
+	if calls.polls != 3 || !strings.Contains(out, "acme-prod") {
+		t.Errorf("polls = %d, output = %q", calls.polls, out)
+	}
+}
+
+func TestCloudConnectGCPDecliningTheLocalRunStillWaits(t *testing.T) {
+	env := stubGCPEnv(t, "dev@acme.test")
+	gcpAPI(t, []string{"done"})
+	if _, _, err := runWithStderr(t, context.Background(), strings.NewReader("n\n"), "cloud", "connect", "gcp"); err != nil {
+		t.Fatal(err)
+	}
+	if len(env.ran) != 0 || env.opened == "" {
+		t.Errorf("ran %q, opened %q: a no must fall back to Cloud Shell", env.ran, env.opened)
+	}
+}
+
+func TestCloudConnectGCPReportsAFailedSetup(t *testing.T) {
+	env := stubGCPEnv(t, "dev@acme.test")
+	env.runErr = errors.New("exit status 1")
+	calls := gcpAPI(t, []string{"done"})
+	_, _, err := runWithStderr(t, context.Background(), strings.NewReader("y\n"), "cloud", "connect", "gcp")
+	if err == nil || !strings.Contains(err.Error(), "setup script failed") {
+		t.Fatalf("error = %v", err)
+	}
+	if calls.polls != 0 {
+		t.Error("a failed setup must not wait on the ticket")
+	}
+}
+
+func TestCloudConnectGCPProjectNumberConnectsDirectly(t *testing.T) {
+	env := stubGCPEnv(t, "dev@acme.test")
+	stdinIsTTY = func(*cobra.Command) bool { return false }
+	calls := gcpAPI(t, []string{"done"})
+	out, err := run(t, "", "cloud", "connect", "gcp", "--project-number", "123456789", "--label", "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.connectBody["provider"] != "gcp" || calls.connectBody["project_number"] != "123456789" || calls.connectBody["label"] != "prod" {
+		t.Errorf("body = %v", calls.connectBody)
+	}
+	if calls.begins != 0 || len(env.ran) != 0 || !strings.Contains(out, "Connected Google Cloud") {
+		t.Errorf("begins = %d, ran = %q, output = %q", calls.begins, env.ran, out)
+	}
+}
+
+func TestCloudConnectGCPRefusesWhatItCannotDo(t *testing.T) {
+	for name, tc := range map[string]struct {
+		tty  bool
+		args []string
+		want string
+	}{
+		"no terminal":         {false, []string{"cloud", "connect", "gcp"}, "--project-number"},
+		"label when guided":   {true, []string{"cloud", "connect", "gcp", "--label", "prod"}, "--label only works with --project-number"},
+		"both project flags":  {true, []string{"cloud", "connect", "gcp", "--project", "acme-prod", "--project-number", "1"}, "not both"},
+		"shell in project id": {true, []string{"cloud", "connect", "gcp", "--project", "x; rm -rf /"}, "not a Google Cloud project id"},
+	} {
+		env := stubGCPEnv(t, "dev@acme.test")
+		stdinIsTTY = func(*cobra.Command) bool { return tc.tty }
+		calls := gcpAPI(t, []string{"done"})
+		_, err := run(t, "y\n", tc.args...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error = %v, want %q", name, err, tc.want)
+		}
+		if calls.begins != 0 || len(env.ran) != 0 {
+			t.Errorf("%s: began %d connects, ran %q", name, calls.begins, env.ran)
+		}
 	}
 }

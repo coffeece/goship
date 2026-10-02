@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +30,36 @@ var ticketPollInterval = 2 * time.Second
 // browser round trip before the CLI gives up; a package var so tests don't
 // wait for the real thing.
 var oauthConnectTimeout = 10 * time.Minute
+
+// gcloudAccount reports the account gcloud is signed in as, or "" when
+// gcloud (or the bash and curl the setup command needs) is missing or
+// signed out. runSetup runs the setup command. Package vars so tests need
+// no gcloud and run no shell.
+var gcloudAccount = func(ctx context.Context) string {
+	for _, tool := range []string{"gcloud", "bash", "curl"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			return ""
+		}
+	}
+	out, err := exec.CommandContext(ctx, "gcloud", "auth", "list", "--filter=status:ACTIVE", "--format=value(account)").Output()
+	if err != nil {
+		return ""
+	}
+	account, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	return account
+}
+
+var runSetup = func(ctx context.Context, command string, stdout, stderr io.Writer) error {
+	c := exec.CommandContext(ctx, "bash", "-c", command)
+	c.Stdout, c.Stderr = stdout, stderr
+	return c.Run()
+}
+
+// gcpProjectID is Google's own rule for a project id. It is checked because
+// --project is appended to a shell command.
+var gcpProjectID = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+
+var gcpConnectTimeout = 30 * time.Minute
 
 func newCloudCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
@@ -61,6 +93,7 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 	var apiKeyStdin bool
 	var roleARN string
 	var accessKeysStdin bool
+	var project, projectNumber string
 
 	cmd := &cobra.Command{
 		Use:   "connect <provider>",
@@ -70,13 +103,18 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 			"reads the key from stdin (--api-key-stdin) or prompts for it.\n" +
 			"AWS with no flags opens the console with the GoShip stack prefilled and waits for it\n" +
 			"(when this GoShip supports it); otherwise it connects through an IAM role (--role-arn,\n" +
-			"or a guided flow in a terminal) or, as a fallback, access keys read from stdin (--access-keys-stdin).",
+			"or a guided flow in a terminal) or, as a fallback, access keys read from stdin (--access-keys-stdin).\n" +
+			"\nGoogle Cloud with no flags runs GoShip's setup script with your local gcloud (after asking),\n" +
+			"or prints the command to run in Cloud Shell, and waits for it. --project-number connects a\n" +
+			"project that is already set up.",
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&label, "label", "", "name for the account (defaults to the provider's name; for AWS, the account id)")
 	cmd.Flags().BoolVar(&apiKeyStdin, "api-key-stdin", false, "read the API key from stdin instead of prompting")
 	cmd.Flags().StringVar(&roleARN, "role-arn", "", "AWS: the RoleArn output of the GoShip CloudFormation stack")
 	cmd.Flags().BoolVar(&accessKeysStdin, "access-keys-stdin", false, "AWS: read the access key id and secret from stdin, one per line")
+	cmd.Flags().StringVar(&project, "project", "", "Google Cloud: the project id to set up (the script asks when omitted)")
+	cmd.Flags().StringVar(&projectNumber, "project-number", "", "Google Cloud: connect a project already set up, by its number")
 
 	cmd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 		p, err := findCloudProvider(cmd.Context(), app.Portal(), args[0])
@@ -104,8 +142,11 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 		case "api_key":
 			return connectCloudAPIKey(cmd, app, org, p, accountLabel, apiKeyStdin)
 		case "federated":
-			if p.Name == "aws" {
+			switch p.Name {
+			case "aws":
 				return connectCloudAWS(cmd, app, org, p, label, roleARN, accessKeysStdin)
+			case "gcp":
+				return connectCloudGCP(cmd, app, org, p, label, project, projectNumber)
 			}
 			return fmt.Errorf("cloud provider %s has an unsupported connection kind %q", p.Name, p.Kind)
 		default:
@@ -574,4 +615,61 @@ func readAccessKeys(cmd *cobra.Command, stdin bool) (id, secret string, err erro
 		return "", "", errors.New("the access key id and the secret access key are both required")
 	}
 	return id, secret, nil
+}
+
+// connectCloudGCP connects a Google Cloud project. --project-number is the
+// direct path for a project already set up. Otherwise it starts a ticket
+// and gets the setup script run: here, with the person's own gcloud, or in
+// Cloud Shell, and waits for the script to report back.
+func connectCloudGCP(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, label, project, projectNumber string) error {
+	if project != "" && projectNumber != "" {
+		return errors.New("pass --project or --project-number, not both")
+	}
+	if project != "" && !gcpProjectID.MatchString(project) {
+		return fmt.Errorf("%q is not a Google Cloud project id", project)
+	}
+	if projectNumber != "" {
+		account, err := app.Portal().ConnectCloudGCP(cmd.Context(), org, label, projectNumber)
+		if err != nil {
+			return err
+		}
+		return reportConnected(cmd, app, p, account)
+	}
+	if !stdinIsTTY(cmd) {
+		return errors.New("pass --project-number for a project already set up, or run this in a terminal")
+	}
+	// The project names the account; the guided flow takes no label.
+	if label != "" {
+		return errors.New("--label only works with --project-number")
+	}
+
+	ctx, stop := interruptible(cmd.Context())
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, gcpConnectTimeout)
+	defer cancel()
+
+	start, err := app.Portal().BeginCloudGCPConnect(ctx, org)
+	if err != nil {
+		return err
+	}
+	command := start.Command
+	if project != "" {
+		command += " --project " + project
+	}
+
+	errw := cmd.ErrOrStderr()
+	if account := gcloudAccount(ctx); account != "" {
+		fmt.Fprintf(errw, "GoShip's setup script creates, in your Google Cloud project, a workload identity pool that\n"+
+			"trusts GoShip for this organization only, and two custom roles. No key is created or stored.\n\n  %s\n\n", command)
+		if confirm(cmd, app.Global.Yes, "Run it now with gcloud as %s?", account) == nil {
+			if err := runSetup(ctx, command, errw, errw); err != nil {
+				return fmt.Errorf("the setup script failed: %w", err)
+			}
+			return waitForTicket(ctx, cmd, app, org, p, start.Ticket)
+		}
+	}
+	fmt.Fprintf(errw, "Opening Cloud Shell. If nothing opens, visit:\n\n  %s\n\nRun this there:\n\n  %s\n\n"+
+		"Waiting for Google Cloud (about a minute after the command finishes)…\n", start.ShellURL, command)
+	_ = openURL(start.ShellURL)
+	return waitForTicket(ctx, cmd, app, org, p, start.Ticket)
 }
