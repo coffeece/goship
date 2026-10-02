@@ -897,7 +897,10 @@ func TestCloudConnectAWSOneClickPrintsTheAnyRegionFallback(t *testing.T) {
 
 const gcpProviderJSON = `[{"name":"gcp","label":"Google Cloud","kind":"federated","status":"available"}]`
 
-const gcpCommand = "curl -fsSL https://goship.sh/gcp/connect.sh | bash -s -- org-1 tk-1"
+const (
+	gcpTicket  = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	gcpCommand = "curl -fsSL https://goship.sh/gcp/connect.sh | bash -s -- org-1 " + gcpTicket
+)
 
 type gcpCalls struct {
 	begins, polls int
@@ -906,15 +909,27 @@ type gcpCalls struct {
 
 func gcpAPI(t *testing.T, statuses []string) *gcpCalls {
 	t.Helper()
+	return gcpAPIWithCommand(t, statuses, gcpCommand)
+}
+
+// gcpAPIWithCommand is gcpAPI answering the connect with command.
+func gcpAPIWithCommand(t *testing.T, statuses []string, command string) *gcpCalls {
+	t.Helper()
 	calls := &gcpCalls{}
+	begin, err := json.Marshal(map[string]string{
+		"ticket": gcpTicket, "command": command, "shell_url": "https://shell.cloud.google.com/?show=terminal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/cloud/providers":
 			w.Write([]byte(gcpProviderJSON)) //nolint:errcheck
 		case "POST /api/v1/orgs/acme/cloud-accounts/gcp/connect":
 			calls.begins++
-			w.Write([]byte(`{"ticket":"tk-1","command":"` + gcpCommand + `","shell_url":"https://shell.cloud.google.com/?show=terminal"}`)) //nolint:errcheck
-		case "GET /api/v1/orgs/acme/cloud-accounts/connect/tk-1":
+			w.Write(begin) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts/connect/" + gcpTicket:
 			s := statuses[min(calls.polls, len(statuses)-1)]
 			calls.polls++
 			if s == "done" {
@@ -976,6 +991,40 @@ func TestCloudConnectGCPRunsTheSetupLocallyWhenGcloudIsSignedIn(t *testing.T) {
 	}
 	if !strings.Contains(out, "Connected Google Cloud") || !strings.Contains(out, "acme-prod") || calls.begins != 1 {
 		t.Errorf("output = %q, begins = %d", out, calls.begins)
+	}
+}
+
+// The CLI pipes a command from the API into bash; anything beyond the one
+// shape the API sends must never run.
+func TestCloudConnectGCPRefusesAnUnexpectedSetupCommand(t *testing.T) {
+	for name, command := range map[string]string{
+		"chained":      gcpCommand + "; rm -rf /",
+		"second pipe":  gcpCommand + " | sh",
+		"newline":      gcpCommand + "\nrm -rf /",
+		"short ticket": "curl -fsSL https://goship.sh/gcp/connect.sh | bash -s -- org-1 tk-1",
+		"other script": "curl -fsSL https://goship.sh/evil.sh | bash -s -- org-1 " + gcpTicket,
+	} {
+		env := stubGCPEnv(t, "dev@acme.test")
+		calls := gcpAPIWithCommand(t, []string{"done"}, command)
+		_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("y\n"), "cloud", "connect", "gcp")
+		if err == nil || !strings.Contains(err.Error(), "unexpected shape") || !strings.Contains(err.Error(), "update") {
+			t.Errorf("%s: error = %v, want the unexpected-shape refusal", name, err)
+		}
+		if len(env.ran) != 0 || calls.polls != 0 || strings.Contains(stderr, "Run it now") {
+			t.Errorf("%s: ran %q, polled %d, stderr %q: nothing may run and nothing may be asked", name, env.ran, calls.polls, stderr)
+		}
+	}
+}
+
+func TestCloudConnectGCPYesRunsAWellFormedCommandWithoutAPrompt(t *testing.T) {
+	env := stubGCPEnv(t, "dev@acme.test")
+	gcpAPI(t, []string{"done"})
+	_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "cloud", "connect", "gcp", "--yes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(env.ran) != 1 || env.ran[0] != gcpCommand || strings.Contains(stderr, "Run it now") {
+		t.Errorf("ran %q, stderr %q: want the command run with no prompt", env.ran, stderr)
 	}
 }
 

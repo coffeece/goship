@@ -59,6 +59,10 @@ var runSetup = func(ctx context.Context, command string, stdout, stderr io.Write
 // --project is appended to a shell command.
 var gcpProjectID = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
 
+// gcpSetupCommand is the one shape of setup command the CLI will pipe into
+// bash; anything else from the API is refused unrun.
+var gcpSetupCommand = regexp.MustCompile(`^curl -fsSL https?://[A-Za-z0-9.-]+(:[0-9]+)?/gcp/connect\.sh \| bash -s -- [a-z0-9-]+ [a-f0-9]{64}( --project [a-z][a-z0-9-]{4,28}[a-z0-9])?$`)
+
 var gcpConnectTimeout = 30 * time.Minute
 
 func newCloudCmd(app *App) *cobra.Command {
@@ -659,6 +663,9 @@ func connectCloudGCP(cmd *cobra.Command, app *App, org string, p *portal.CloudPr
 
 	errw := cmd.ErrOrStderr()
 	if account := gcloudAccount(ctx); account != "" {
+		if !gcpSetupCommand.MatchString(command) {
+			return errors.New("the setup command from the API has an unexpected shape; update the goship CLI")
+		}
 		fmt.Fprintf(errw, "GoShip's setup script creates, in your Google Cloud project, a workload identity pool that\n"+
 			"trusts GoShip for this organization only, and two custom roles. No key is created or stored.\n\n  %s\n\n", command)
 		if confirm(cmd, app.Global.Yes, "Run it now with gcloud as %s?", account) == nil {
