@@ -25,8 +25,10 @@ type Project struct {
 	Org      string `yaml:"org"`
 	Platform string `yaml:"platform"`
 	Plan     string `yaml:"plan"`
-	// Node places the app on one of the organization's own machines. A
-	// node-placed app is never billed, so it needs no plan.
+	// Node places the app on one of the organization's own machines, or on
+	// GoShip's servers with "goship". Unset, the organization's default
+	// placement decides. A node-placed app is never billed, so it needs no
+	// plan.
 	Node string            `yaml:"node"`
 	Env  map[string]string `yaml:"env"`
 	// Dockerfile names a container file to build from instead of letting a

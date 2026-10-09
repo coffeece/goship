@@ -59,4 +59,22 @@ func (c *Client) DeleteNode(ctx context.Context, org, id string, destroyServer b
 // overriding the organization's default placement.
 const SharedPlacement = "shared"
 
+// Placement is where an organization's new apps go when the create request
+// names no node. Target is nil when that is GoShip's servers.
+type Placement struct {
+	Mode   string           `json:"mode"`
+	NodeID string           `json:"node_id,omitempty"`
+	Target *PlacementTarget `json:"target"`
+}
+
+type PlacementTarget struct {
+	NodeID   string `json:"node_id"`
+	NodeName string `json:"node_name"`
+}
+
+func (c *Client) Placement(ctx context.Context, org string) (*Placement, error) {
+	var p Placement
+	return &p, c.get(ctx, orgPath(org, "/placement"), &p)
+}
+
 func nodesPath(org string) string { return orgPath(org, "/nodes") }

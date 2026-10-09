@@ -18,7 +18,7 @@ type DeployArgs struct {
 	App        string            `json:"app,omitempty" jsonschema:"app name; defaults to goship.yml's app, then the directory name"`
 	Platform   string            `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; inferred from the files present when omitted"`
 	Plan       string            `json:"plan,omitempty" jsonschema:"plan slug for a new app; a free plan is picked only when the org has one"`
-	Node       string            `json:"node,omitempty" jsonschema:"run a new app on this node of the organization's own (never billed)"`
+	Node       string            `json:"node,omitempty" jsonschema:"run a new app on this node of the organization's own (never billed), or goship for GoShip's servers; omitted, the organization's default placement decides"`
 	Dockerfile string            `json:"dockerfile,omitempty" jsonschema:"build from this container file instead of a platform"`
 	Message    string            `json:"message,omitempty" jsonschema:"release message"`
 	Env        map[string]string `json:"env,omitempty" jsonschema:"private variables applied before the build"`

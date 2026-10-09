@@ -103,6 +103,10 @@ app-small-sandboxed        Small               500    512      included
 
 `goship deploy --node do-server1` with no plan takes the pool's default; `--plan`
 picks any size the pool admits, including the one sized to the whole node.
+Without `--node`, a new app goes where the organization's default placement
+points: its oldest active node when it has one, unless the owner chose otherwise
+in the dashboard's settings. `--node goship` (or `node: goship`) picks GoShip's
+servers for one app.
 
 `org` pins the organization for the whole project, so a repo always deploys to
 the same place regardless of what `goship org use` last selected. It applies to

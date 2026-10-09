@@ -22,7 +22,7 @@ type CreateAppArgs struct {
 	Name     string `json:"name" jsonschema:"app name: lowercase letters, digits and hyphens"`
 	Platform string `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; omit for an app built from a Dockerfile"`
 	Plan     string `json:"plan,omitempty" jsonschema:"plan slug from goship_list_plans; required unless the org has a free plan or node is set"`
-	Node     string `json:"node,omitempty" jsonschema:"name of one of the organization's own nodes to run the app on (never billed)"`
+	Node     string `json:"node,omitempty" jsonschema:"name of one of the organization's own nodes to run the app on (never billed), or goship for GoShip's servers; omitted, the organization's default placement decides"`
 }
 
 type ScaleArgs struct {
@@ -48,13 +48,14 @@ func (r *registry) apps() {
 	tool(r, "goship_create_app", "Create an app without deploying it. goship_deploy creates the app itself when it is missing, so this is only for creating ahead of a deploy.", write,
 		func(ctx context.Context, c *portal.Client, org string, in CreateAppArgs) (*portal.App, error) {
 			req := portal.CreateAppRequest{Name: in.Name, Platform: in.Platform, Plan: in.Plan}
-			if in.Node != "" {
-				id, err := deploy.ResolveNode(ctx, c, org, in.Node)
-				if err != nil {
-					return nil, err
-				}
-				req.NodeID = &id
-			} else if in.Plan == "" {
+			nodeID, _, err := deploy.PlaceNewApp(ctx, c, org, in.Node)
+			if err != nil {
+				return nil, err
+			}
+			if nodeID != "" {
+				req.NodeID = &nodeID
+			}
+			if !deploy.OnNode(nodeID) && in.Plan == "" {
 				chosen, err := deploy.ChoosePlan(ctx, c, org)
 				if err != nil {
 					return nil, err

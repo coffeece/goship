@@ -158,12 +158,16 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		if platformSource != "" {
 			origin += ", " + platformSource
 		}
+		nodeID, where, err := PlaceNewApp(ctx, client, org, node)
+		if err != nil {
+			return nil, err
+		}
 		// On your own hardware there is nothing to bill, so the API applies
 		// the free plan itself when none is named. Asking the user to pick
 		// from the paid catalogue would be wrong.
 		switch {
-		case node != "":
-			origin += ", on your node"
+		case OnNode(nodeID):
+			origin += ", " + where
 		case plan == "":
 			chosen, err := ChoosePlan(ctx, client, org)
 			if err != nil {
@@ -174,12 +178,8 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		}
 		r.Begin("create")
 		req := portal.CreateAppRequest{Name: name, Platform: platform, Plan: plan}
-		if node != "" {
-			id, err := ResolveNode(ctx, client, org, node)
-			if err != nil {
-				return nil, err
-			}
-			req.NodeID = &id
+		if nodeID != "" {
+			req.NodeID = &nodeID
 		}
 		if _, err := client.CreateApp(ctx, org, req); err != nil {
 			return nil, err
