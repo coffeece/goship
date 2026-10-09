@@ -1,0 +1,13 @@
+{
+  "name": "goship",
+  "description": "Deploy and operate apps on GoShip from Claude Code: the goship MCP server, a deploy skill and /goship:deploy.",
+  "version": "0.4.0",
+  "author": {
+    "name": "Coffeece",
+    "email": "hello@goship.sh"
+  },
+  "homepage": "https://goship.sh",
+  "repository": "https://github.com/coffeece/goship",
+  "license": "MIT",
+  "keywords": ["goship", "deploy", "paas", "mcp", "postgres"]
+}

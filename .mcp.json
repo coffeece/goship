@@ -1,0 +1,6 @@
+{
+  "goship": {
+    "command": "goship",
+    "args": ["mcp"]
+  }
+}

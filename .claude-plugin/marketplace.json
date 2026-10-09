@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "coffeece",
+  "owner": {
+    "name": "Coffeece",
+    "email": "hello@goship.sh"
+  },
+  "metadata": {
+    "description": "Claude Code plugins by Coffeece",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "goship",
+      "source": "./",
+      "description": "Deploy and operate apps on GoShip: MCP tools, a deploy skill and /goship:deploy.",
+      "category": "deployment",
+      "strict": false
+    }
+  ]
+}
