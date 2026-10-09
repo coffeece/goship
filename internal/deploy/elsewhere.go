@@ -1,4 +1,4 @@
-package cli
+package deploy
 
 import (
 	"context"
@@ -8,14 +8,14 @@ import (
 	"github.com/coffeece/goship/internal/portal"
 )
 
-// appInOtherOrgs looks for an app of the same name in the caller's other
+// AppInOtherOrgs looks for an app of the same name in the caller's other
 // organizations. Deploy creates whatever it cannot find, so without this a
 // wrong --org silently produces a second app of the same name somewhere else
 // instead of deploying the one the user meant.
 //
 // Best effort: a failure here must not block a legitimate create, so errors
 // return no matches rather than propagating.
-func appInOtherOrgs(ctx context.Context, client *portal.Client, current, name string) []string {
+func AppInOtherOrgs(ctx context.Context, client *portal.Client, current, name string) []string {
 	orgs, err := client.Orgs(ctx)
 	if err != nil {
 		return nil
@@ -33,7 +33,7 @@ func appInOtherOrgs(ctx context.Context, client *portal.Client, current, name st
 	return found
 }
 
-func elsewhereError(name, current string, orgs []string, forbidden bool) error {
+func ElsewhereError(name, current string, orgs []string, forbidden bool) error {
 	problem := fmt.Sprintf("no app %q in org %q", name, current)
 	switch {
 	case current == "":

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/coffeece/goship/internal/config"
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
@@ -151,7 +152,7 @@ func NewRoot(version string) *cobra.Command {
 				return err
 			}
 			app.Config = cfg
-			if proj, _, err := loadProject("."); err == nil {
+			if proj, _, err := deploy.LoadProject("."); err == nil {
 				app.ProjectOrg = proj.Org
 			}
 			return nil

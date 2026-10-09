@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/spf13/cobra"
 )
 
@@ -41,10 +42,10 @@ func newInitCmd(app *App) *cobra.Command {
 			}
 
 			name := appNameFor(dir)
-			platform, evidence := detectPlatform(dir)
+			platform, evidence := deploy.DetectPlatform(dir)
 			var dockerfile string
 			if platform == "" {
-				dockerfile = detectDockerfile(dir)
+				dockerfile = deploy.DetectDockerfile(dir)
 			}
 
 			// The selected org is local state, so init still needs no network.
@@ -76,7 +77,7 @@ func newInitCmd(app *App) *cobra.Command {
 				return r.Message("  build:    %s (no platform needed — your container file builds the image)", dockerfile)
 			default:
 				return r.Message("  platform: left empty — no %s or Dockerfile here, so set it yourself (%s)",
-					signalFiles(), knownPlatforms())
+					deploy.SignalFiles(), deploy.KnownPlatforms())
 			}
 		},
 	}

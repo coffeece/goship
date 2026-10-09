@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/coffeece/goship/internal/deploy"
 )
 
 func TestDetectPlatform(t *testing.T) {
@@ -33,7 +35,7 @@ func TestDetectPlatform(t *testing.T) {
 				write(t, filepath.Join(dir, f), "")
 			}
 
-			got, why := detectPlatform(dir)
+			got, why := deploy.DetectPlatform(dir)
 			if got != tc.want || why != tc.wantWhy {
 				t.Errorf("detectPlatform = (%q, %q), want (%q, %q)", got, why, tc.want, tc.wantWhy)
 			}
@@ -47,19 +49,19 @@ func TestDetectPlatformIgnoresDirectories(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "go.mod"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := detectPlatform(dir); got != "" {
+	if got, _ := deploy.DetectPlatform(dir); got != "" {
 		t.Errorf("got %q, want no detection", got)
 	}
 }
 
 func TestErrorTextNamesWhatToPass(t *testing.T) {
 	for _, want := range []string{"go", "python", "nodejs", "static"} {
-		if !strings.Contains(knownPlatforms(), want) {
-			t.Errorf("knownPlatforms() = %q, missing %q", knownPlatforms(), want)
+		if !strings.Contains(deploy.KnownPlatforms(), want) {
+			t.Errorf("deploy.KnownPlatforms() = %q, missing %q", deploy.KnownPlatforms(), want)
 		}
 	}
-	if !strings.Contains(signalFiles(), "go.mod") || !strings.Contains(signalFiles(), "package.json") {
-		t.Errorf("signalFiles() = %q", signalFiles())
+	if !strings.Contains(deploy.SignalFiles(), "go.mod") || !strings.Contains(deploy.SignalFiles(), "package.json") {
+		t.Errorf("deploy.SignalFiles() = %q", deploy.SignalFiles())
 	}
 }
 
@@ -73,7 +75,7 @@ func TestDetectDockerfile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			write(t, filepath.Join(dir, tc.file), "")
-			if got := detectDockerfile(dir); got != tc.want {
+			if got := deploy.DetectDockerfile(dir); got != tc.want {
 				t.Errorf("detectDockerfile = %q, want %q", got, tc.want)
 			}
 		})
@@ -85,7 +87,7 @@ func TestDetectDockerfileIgnoresDirectories(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "Dockerfile"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := detectDockerfile(dir); got != "" {
+	if got := deploy.DetectDockerfile(dir); got != "" {
 		t.Errorf("got %q, want no detection", got)
 	}
 }

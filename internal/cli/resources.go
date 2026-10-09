@@ -1,36 +1,12 @@
 package cli
 
 import (
-	"context"
-	"fmt"
 	"os"
-	"strings"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/spf13/cobra"
 )
-
-// resolveNode turns what a person types — the node's name, usually — into
-// the id the API keys on. Ids are accepted too, so nothing that worked keeps
-// working only by accident. Names are unique within an organization (each
-// backs a pool named after it), so there is no ambiguity to resolve.
-func resolveNode(ctx context.Context, client *portal.Client, org, ref string) (string, error) {
-	nodes, err := client.Nodes(ctx, org)
-	if err != nil {
-		return "", err
-	}
-	names := make([]string, 0, len(nodes))
-	for _, n := range nodes {
-		if n.ID == ref || n.Name == ref {
-			return n.ID, nil
-		}
-		names = append(names, n.Name)
-	}
-	if len(names) == 0 {
-		return "", fmt.Errorf("no node %q: org %q has no nodes yet — `goship node create` makes one", ref, org)
-	}
-	return "", fmt.Errorf("no node %q in org %q; you have: %s", ref, org, strings.Join(names, ", "))
-}
 
 // newDomainsCmd is the plural lister, matching `apps`.
 func newDomainsCmd(app *App) *cobra.Command {
@@ -130,7 +106,7 @@ func newVolumeCmd(app *App) *cobra.Command {
 	create.Flags().IntVar(&size, "size", 5, "capacity in GiB")
 	_ = create.MarkFlagRequired("node")
 	create.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		nodeID, err := resolveNode(cmd.Context(), app.Portal(), org, node)
+		nodeID, err := deploy.ResolveNode(cmd.Context(), app.Portal(), org, node)
 		if err != nil {
 			return err
 		}
@@ -265,7 +241,7 @@ func newNodeCmd(app *App) *cobra.Command {
 		Short: "Show a node",
 		Args:  cobra.ExactArgs(1),
 		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			id, err := resolveNode(cmd.Context(), app.Portal(), org, args[0])
+			id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), org, args[0])
 			if err != nil {
 				return err
 			}
@@ -286,7 +262,7 @@ func newNodeCmd(app *App) *cobra.Command {
 	var destroy bool
 	remove.Flags().BoolVar(&destroy, "destroy-server", false, "also destroy the machine at the cloud provider")
 	remove.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		id, err := resolveNode(cmd.Context(), app.Portal(), org, args[0])
+		id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), org, args[0])
 		if err != nil {
 			return err
 		}

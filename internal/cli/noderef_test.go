@@ -3,14 +3,17 @@ package cli
 import (
 	"context"
 
+	"github.com/coffeece/goship/internal/deploy"
+
 	"encoding/json"
-	"github.com/coffeece/goship/internal/config"
-	"github.com/coffeece/goship/internal/portal"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/coffeece/goship/internal/config"
+	"github.com/coffeece/goship/internal/portal"
 )
 
 const twoNodes = `[{"id":"25b640dc-5b91-49e8-ac21-1409efd47375","name":"do-server1","status":"active"},
@@ -30,13 +33,13 @@ func TestResolveNode(t *testing.T) {
 		{"do-server1", "25b640dc-5b91-49e8-ac21-1409efd47375"},
 		{"9f3c0000-0000-0000-0000-000000000001", "9f3c0000-0000-0000-0000-000000000001"},
 	} {
-		got, err := resolveNode(context.Background(), client, "acme", tc.ref)
+		got, err := deploy.ResolveNode(context.Background(), client, "acme", tc.ref)
 		if err != nil || got != tc.want {
-			t.Errorf("resolveNode(%q) = %q, %v; want %q", tc.ref, got, err, tc.want)
+			t.Errorf("deploy.ResolveNode(%q) = %q, %v; want %q", tc.ref, got, err, tc.want)
 		}
 	}
 
-	_, err = resolveNode(context.Background(), client, "acme", "nope")
+	_, err = deploy.ResolveNode(context.Background(), client, "acme", "nope")
 	if err == nil || !strings.Contains(err.Error(), "do-server1") || !strings.Contains(err.Error(), "homelab") {
 		t.Errorf("an unknown ref should list what exists, got %v", err)
 	}

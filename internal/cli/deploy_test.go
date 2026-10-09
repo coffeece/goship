@@ -11,11 +11,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coffeece/goship/internal/deploy"
+
 	"github.com/coffeece/goship/internal/portal"
 )
 
 func TestLoadProjectIsOptional(t *testing.T) {
-	p, name, err := loadProject(t.TempDir())
+	p, name, err := deploy.LoadProject(t.TempDir())
 	if err != nil || p.App != "" || name != "" {
 		t.Fatalf("a directory with no config must not be an error: %v", err)
 	}
@@ -23,12 +25,12 @@ func TestLoadProjectIsOptional(t *testing.T) {
 
 // Both spellings are accepted; the dotted form is what people reach for.
 func TestLoadProjectAcceptsEveryName(t *testing.T) {
-	for _, name := range projectFiles {
+	for _, name := range deploy.ProjectFiles {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			write(t, filepath.Join(dir, name), "app: api\nplatform: go\nenv:\n  LOG_LEVEL: debug\n")
 
-			p, got, err := loadProject(dir)
+			p, got, err := deploy.LoadProject(dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -47,7 +49,7 @@ func TestLoadProjectPrefersTheUndottedName(t *testing.T) {
 	write(t, filepath.Join(dir, ".goship.yaml"), "app: dotted\n")
 	write(t, filepath.Join(dir, "goship.yaml"), "app: plain\n")
 
-	p, name, err := loadProject(dir)
+	p, name, err := deploy.LoadProject(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +62,7 @@ func TestParseEnvFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
 	write(t, path, "# comment\n\nexport TOKEN=abc123\nQUOTED=\"a b\"\nURL=https://a?b=c\n")
 
-	env, err := parseEnvFile(path)
+	env, err := deploy.ParseEnvFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +84,7 @@ func TestParseEnvFileRejectsGarbage(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
 	write(t, path, "NOT_A_PAIR\n")
 
-	if _, err := parseEnvFile(path); err == nil {
+	if _, err := deploy.ParseEnvFile(path); err == nil {
 		t.Fatal("expected an error")
 	}
 }
@@ -464,7 +466,7 @@ func TestPublicURL(t *testing.T) {
 		{"nothing to show", portal.App{}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := publicURL(&tc.app); got != tc.want {
+			if got := deploy.PublicURL(&tc.app); got != tc.want {
 				t.Errorf("publicURL = %q, want %q", got, tc.want)
 			}
 		})
@@ -785,7 +787,7 @@ func TestLoadProjectToleratesThePlatformSection(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "goship.yaml"), "app: blog\nplatform: python\nhealthcheck:\n  path: /healthz\nhooks:\n  build:\n    - make assets\nprocesses:\n  - name: web\n    command: gunicorn app:app\n")
 
-	p, _, err := loadProject(dir)
+	p, _, err := deploy.LoadProject(dir)
 	if err != nil {
 		t.Fatalf("loadProject: %v", err)
 	}

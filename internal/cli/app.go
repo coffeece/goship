@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
@@ -43,7 +44,7 @@ func appCreateCmd(app *App) *cobra.Command {
 		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			req.Name = args[0]
 			if node != "" {
-				id, err := resolveNode(cmd.Context(), app.Portal(), org, node)
+				id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), org, node)
 				if err != nil {
 					return err
 				}

@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -14,85 +12,14 @@ import (
 	"sync/atomic"
 
 	"github.com/coffeece/goship/internal/archive"
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v3"
 )
 
 // projectFiles are the optional config names, in the order they are tried.
 // Nothing requires one: every value in it can be passed as a flag or inferred.
 var projectFiles = []string{"goship.yaml", "goship.yml", ".goship.yaml", ".goship.yml"}
-
-// project is the optional config in a project root. Flags win over it.
-type project struct {
-	App string `yaml:"app"`
-	// Org pins the organization for the project, so a repo that belongs to one
-	// org does not depend on whatever `goship org use` was last pointed at.
-	Org      string `yaml:"org"`
-	Platform string `yaml:"platform"`
-	Plan     string `yaml:"plan"`
-	// Node places the app on one of the organization's own machines. A
-	// node-placed app is never billed, so it needs no plan.
-	Node string            `yaml:"node"`
-	Env  map[string]string `yaml:"env"`
-	// Dockerfile names a container file to build from instead of letting a
-	// platform build the source. Mutually exclusive with platform.
-	Dockerfile string `yaml:"dockerfile"`
-}
-
-// loadProject reads the first config file that exists, returning its name so
-// messages can say which one was used. A directory with none is not an error.
-func loadProject(dir string) (*project, string, error) {
-	for _, name := range projectFiles {
-		path := filepath.Join(dir, name)
-		data, err := os.ReadFile(path)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, "", err
-		}
-		p := &project{}
-		if err := yaml.Unmarshal(data, p); err != nil {
-			return nil, "", fmt.Errorf("parsing %s: %w", path, err)
-		}
-		return p, name, nil
-	}
-	return &project{}, "", nil
-}
-
-// parseEnvFile reads a dotenv-style file: KEY=VALUE per line, # comments and
-// blank lines ignored, surrounding quotes stripped.
-func parseEnvFile(path string) (map[string]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close() //nolint:errcheck
-
-	env := map[string]string{}
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			return nil, fmt.Errorf("%s: expected KEY=VALUE, got %q", path, line)
-		}
-		env[strings.TrimSpace(key)] = unquote(strings.TrimSpace(value))
-	}
-	return env, scanner.Err()
-}
-
-func unquote(s string) string {
-	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
-		return s[1 : len(s)-1]
-	}
-	return s
-}
 
 func newDeployCmd(app *App) *cobra.Command {
 	var appName, platform, plan, envFile, message, dockerfile, node string
@@ -122,7 +49,7 @@ func newDeployCmd(app *App) *cobra.Command {
 			p := newProgress(cmd.OutOrStdout(), app.Global.Verbose)
 			defer func() { p.Finish(err) }()
 
-			proj, projFile, err := loadProject(dir)
+			proj, projFile, err := deploy.LoadProject(dir)
 			if err != nil {
 				return err
 			}
@@ -141,10 +68,10 @@ func newDeployCmd(app *App) *cobra.Command {
 			}
 			org, err := app.Org(cmd.Context())
 			if err != nil {
-				owners := appInOtherOrgs(cmd.Context(), client, "", name)
+				owners := deploy.AppInOtherOrgs(cmd.Context(), client, "", name)
 				if len(owners) != 1 {
 					if len(owners) > 1 {
-						return elsewhereError(name, "", owners, false)
+						return deploy.ElsewhereError(name, "", owners, false)
 					}
 					return err
 				}
@@ -162,7 +89,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				platform, platformSource = proj.Platform, "from "+projFile
 			default:
 				var file string
-				if platform, file = detectPlatform(dir); file != "" {
+				if platform, file = deploy.DetectPlatform(dir); file != "" {
 					platformSource = "detected from " + file
 				}
 			}
@@ -171,7 +98,7 @@ func newDeployCmd(app *App) *cobra.Command {
 			// decides the build when no platform does.
 			dockerfile = firstNonEmpty(dockerfile, proj.Dockerfile)
 			if platform == "" && dockerfile == "" {
-				if found := detectDockerfile(dir); found != "" {
+				if found := deploy.DetectDockerfile(dir); found != "" {
 					dockerfile, platformSource = found, "detected from "+found
 				}
 			}
@@ -194,8 +121,8 @@ func newDeployCmd(app *App) *cobra.Command {
 				p.Header("Deploying %s", name)
 			}
 			if lookupErr != nil {
-				if others := appInOtherOrgs(cmd.Context(), client, org, name); len(others) > 0 {
-					return elsewhereError(name, org, others, portal.IsForbidden(lookupErr))
+				if others := deploy.AppInOtherOrgs(cmd.Context(), client, org, name); len(others) > 0 {
+					return deploy.ElsewhereError(name, org, others, portal.IsForbidden(lookupErr))
 				}
 				if portal.IsForbidden(lookupErr) {
 					return lookupErr
@@ -203,7 +130,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				if platform == "" && dockerfile == "" {
 					return fmt.Errorf(
 						"cannot tell what %q is built with: none of %s or a Dockerfile found in %s.\nPass --platform (%s)",
-						name, signalFiles(), dir, knownPlatforms())
+						name, deploy.SignalFiles(), dir, deploy.KnownPlatforms())
 				}
 				// An app with no platform is built by its container file.
 				origin := platform
@@ -220,7 +147,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				case node != "":
 					origin += ", on your node"
 				case plan == "":
-					chosen, err := choosePlan(cmd.Context(), client, org)
+					chosen, err := deploy.ChoosePlan(cmd.Context(), client, org)
 					if err != nil {
 						return err
 					}
@@ -230,7 +157,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				p.Begin("create")
 				req := portal.CreateAppRequest{Name: name, Platform: platform, Plan: plan}
 				if node != "" {
-					id, err := resolveNode(cmd.Context(), client, org, node)
+					id, err := deploy.ResolveNode(cmd.Context(), client, org, node)
 					if err != nil {
 						return err
 					}
@@ -245,7 +172,7 @@ func newDeployCmd(app *App) *cobra.Command {
 			env := map[string]string{}
 			maps.Copy(env, proj.Env)
 			if envFile != "" {
-				fromFile, err := parseEnvFile(envFile)
+				fromFile, err := deploy.ParseEnvFile(envFile)
 				if err != nil {
 					return err
 				}
@@ -283,7 +210,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				return buildErr
 			}
 			if deployed, appErr := client.App(cmd.Context(), org, name); appErr == nil {
-				if url := publicURL(deployed); url != "" {
+				if url := deploy.PublicURL(deployed); url != "" {
 					p.Summary(url)
 				}
 			}
@@ -415,20 +342,4 @@ func mustAbs(dir string) string {
 		return dir
 	}
 	return abs
-}
-
-// publicURL is the address to show after a deploy: a custom domain when the
-// app has one, otherwise the platform address it always has.
-func publicURL(a *portal.App) string {
-	if len(a.CNames) > 0 {
-		return "https://" + strings.TrimPrefix(strings.TrimPrefix(a.CNames[0], "https://"), "http://")
-	}
-	if len(a.Addresses) > 0 {
-		// The platform reports its address without a scheme; every app is served over https.
-		if !strings.Contains(a.Addresses[0], "://") {
-			return "https://" + a.Addresses[0]
-		}
-		return a.Addresses[0]
-	}
-	return ""
 }

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/coffeece/goship/internal/deploy"
 )
 
 func initIn(t *testing.T, files ...string) (dir, out string, err error) {
@@ -28,7 +30,7 @@ func TestInitOutputRoundTripsThroughLoadProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, name, err := loadProject(dir)
+	p, name, err := deploy.LoadProject(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +51,7 @@ func TestInitLeavesThePlatformEmptyWhenItCannotTell(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, _, err := loadProject(dir)
+	p, _, err := deploy.LoadProject(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +80,7 @@ func TestInitRefusesToClobber(t *testing.T) {
 	if _, err := run(t, "", "init", dir); err == nil {
 		t.Fatal("expected init to refuse")
 	}
-	p, _, _ := loadProject(dir)
+	p, _, _ := deploy.LoadProject(dir)
 	if p.Plan != "app-large" {
 		t.Errorf("the existing file was modified: %+v", p)
 	}
@@ -86,7 +88,7 @@ func TestInitRefusesToClobber(t *testing.T) {
 	if _, err := run(t, "", "init", dir, "--force"); err != nil {
 		t.Fatal(err)
 	}
-	if p, _, _ := loadProject(dir); p.Plan != "" {
+	if p, _, _ := deploy.LoadProject(dir); p.Plan != "" {
 		t.Errorf("--force should have replaced it, got %+v", p)
 	}
 }
@@ -94,7 +96,7 @@ func TestInitRefusesToClobber(t *testing.T) {
 // Any of the accepted spellings counts as existing, or init would write a
 // second file that loadProject then ignores in favour of the first.
 func TestInitSeesEveryConfigSpelling(t *testing.T) {
-	for _, name := range projectFiles {
+	for _, name := range deploy.ProjectFiles {
 		t.Run(name, func(t *testing.T) {
 			isolateConfig(t)
 			dir := filepath.Join(t.TempDir(), "widget")
@@ -135,7 +137,7 @@ func TestInitRecordsADockerfileBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, _, err := loadProject(dir)
+	p, _, err := deploy.LoadProject(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +160,7 @@ func TestInitPrefersThePlatformOverADockerfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p, _, _ := loadProject(dir)
+	p, _, _ := deploy.LoadProject(dir)
 	if p.Platform != "go" || p.Dockerfile != "" {
 		t.Errorf("got platform=%q dockerfile=%q", p.Platform, p.Dockerfile)
 	}
@@ -177,7 +179,7 @@ func TestInitRecordsTheSelectedOrg(t *testing.T) {
 	if _, err := run(t, "", "init", dir); err != nil {
 		t.Fatal(err)
 	}
-	p, _, err := loadProject(dir)
+	p, _, err := deploy.LoadProject(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +195,7 @@ func TestInitLeavesTheOrgEmptyWhenNoneIsSelected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _, _ := loadProject(dir)
+	p, _, _ := deploy.LoadProject(dir)
 	if p.Org != "" {
 		t.Errorf("org = %q, want it empty", p.Org)
 	}

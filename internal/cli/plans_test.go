@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 )
 
@@ -99,7 +100,7 @@ func TestPlanPriceWording(t *testing.T) {
 		{portal.Plan{Billed: false, PriceCents: 0}, "included"},
 		{portal.Plan{Billed: true, PriceCents: 1990}, "R$ 19.90/mo"},
 	} {
-		if got := price(tc.p); got != tc.want {
+		if got := deploy.Price(tc.p); got != tc.want {
 			t.Errorf("%+v → %q, want %q", tc.p, got, tc.want)
 		}
 	}
