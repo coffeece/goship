@@ -1,7 +1,7 @@
 {
   "name": "goship",
   "description": "Deploy and operate apps on GoShip from Claude Code: the goship MCP server, a deploy skill and /goship:deploy.",
-  "version": "0.4.0",
+  "version": "0.3.0",
   "author": {
     "name": "Coffeece",
     "email": "hello@goship.sh"
