@@ -58,7 +58,7 @@ func TestDeployUsesTheOrgDefaultNode(t *testing.T) {
 }
 
 func TestDeployOnSharedDefaultChoosesAPlan(t *testing.T) {
-	created, plansAsked, _ := deployNewApp(t, `{"mode":"shared","target":null}`)
+	created, plansAsked, _ := deployNewApp(t, `{"mode":"goship","target":null}`)
 
 	if _, ok := created["node_id"]; ok {
 		t.Errorf("node_id = %v, want none", created["node_id"])
@@ -71,8 +71,8 @@ func TestDeployOnSharedDefaultChoosesAPlan(t *testing.T) {
 func TestDeployNodeGoshipOverridesTheDefault(t *testing.T) {
 	created, plansAsked, _ := deployNewApp(t, `{"mode":"auto","target":{"node_id":"n-prod","node_name":"prod"}}`, "--node", "goship")
 
-	if created["node_id"] != portal.SharedPlacement {
-		t.Errorf("node_id = %v, want %q", created["node_id"], portal.SharedPlacement)
+	if created["node_id"] != portal.GoShipPlacement {
+		t.Errorf("node_id = %v, want %q", created["node_id"], portal.GoShipPlacement)
 	}
 	if !plansAsked {
 		t.Error("GoShip's servers need a plan")

@@ -14,8 +14,8 @@ func TestCreateAppFollowsTheDefaultPlacement(t *testing.T) {
 		args                                map[string]any
 	}{
 		{"default node", `{"mode":"auto","target":{"node_id":"n-prod","node_name":"prod"}}`, "n-prod", "", map[string]any{"name": "web", "platform": "go"}},
-		{"shared default", `{"mode":"shared","target":null}`, "", "app-free", map[string]any{"name": "web", "platform": "go"}},
-		{"node goship", `{"mode":"auto","target":{"node_id":"n-prod","node_name":"prod"}}`, "shared", "app-free", map[string]any{"name": "web", "platform": "go", "node": "goship"}},
+		{"goship default", `{"mode":"goship","target":null}`, "", "app-free", map[string]any{"name": "web", "platform": "go"}},
+		{"node goship", `{"mode":"auto","target":{"node_id":"n-prod","node_name":"prod"}}`, "goship", "app-free", map[string]any{"name": "web", "platform": "go", "node": "goship"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var created map[string]any

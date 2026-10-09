@@ -55,9 +55,9 @@ func (c *Client) DeleteNode(ctx context.Context, org, id string, destroyServer b
 	return c.delete(ctx, nodesPath(org)+"/"+esc(id), map[string]any{"destroy_server": destroyServer})
 }
 
-// SharedPlacement is the node_id that asks for GoShip's servers explicitly,
+// GoShipPlacement is the node_id that asks for GoShip's servers explicitly,
 // overriding the organization's default placement.
-const SharedPlacement = "shared"
+const GoShipPlacement = "goship"
 
 // Placement is where an organization's new apps go when the create request
 // names no node. Target is nil when that is GoShip's servers.
