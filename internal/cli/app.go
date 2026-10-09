@@ -44,7 +44,7 @@ func appCreateCmd(app *App) *cobra.Command {
 		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			req.Name = args[0]
 			if node != "" {
-				id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), org, node)
+				id, err := deploy.ResolvePlacement(cmd.Context(), app.Portal(), org, node)
 				if err != nil {
 					return err
 				}
@@ -61,7 +61,7 @@ func appCreateCmd(app *App) *cobra.Command {
 	f.StringVar(&req.Platform, "platform", "", "platform: go, python, nodejs or static (required)")
 	f.StringVar(&req.Plan, "plan", "", "plan slug; required on GoShip's servers, app-small on a node when omitted")
 	f.StringVar(&req.Description, "description", "", "human description")
-	f.StringVar(&node, "node", "", "run on one of your own nodes, by name (BYON)")
+	f.StringVar(&node, "node", "", "run on one of your own nodes, by name, or goship for GoShip's servers (default: the org's default placement)")
 	_ = cmd.MarkFlagRequired("platform")
 
 	return cmd

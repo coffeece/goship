@@ -27,3 +27,21 @@ func ResolveNode(ctx context.Context, client *portal.Client, org, ref string) (s
 	}
 	return "", fmt.Errorf("no node %q in org %q; you have: %s", ref, org, strings.Join(names, ", "))
 }
+
+// ResolvePlacement is ResolveNode for where an app runs: "goship" also names
+// GoShip's servers, unless one of the organization's nodes is called that.
+func ResolvePlacement(ctx context.Context, client *portal.Client, org, ref string) (string, error) {
+	if ref != "goship" {
+		return ResolveNode(ctx, client, org, ref)
+	}
+	nodes, err := client.Nodes(ctx, org)
+	if err != nil {
+		return "", err
+	}
+	for _, n := range nodes {
+		if n.Name == ref {
+			return n.ID, nil
+		}
+	}
+	return portal.SharedPlacement, nil
+}

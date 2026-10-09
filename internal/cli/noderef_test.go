@@ -71,3 +71,34 @@ func TestDeployNodeByNameSendsTheID(t *testing.T) {
 		t.Errorf("node_id = %v, want the id resolved from the name", created["node_id"])
 	}
 }
+
+func TestResolvePlacementGoshipMeansSharedServers(t *testing.T) {
+	nodes := twoNodes
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(nodes)) //nolint:errcheck
+	})
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := portal.New(cfg.Endpoint(), "")
+	ctx := context.Background()
+
+	if got, err := deploy.ResolvePlacement(ctx, client, "acme", "goship"); err != nil || got != portal.SharedPlacement {
+		t.Errorf("ResolvePlacement(goship) = %q, %v; want %q", got, err, portal.SharedPlacement)
+	}
+	if got, err := deploy.ResolvePlacement(ctx, client, "acme", "do-server1"); err != nil || got != "25b640dc-5b91-49e8-ac21-1409efd47375" {
+		t.Errorf("ResolvePlacement(do-server1) = %q, %v; want the node's id", got, err)
+	}
+	if _, err := deploy.ResolveNode(ctx, client, "acme", "goship"); err == nil {
+		t.Error("ResolveNode(goship) must not name GoShip's servers: node commands need a real node")
+	}
+	nodes = `[]`
+	if got, err := deploy.ResolvePlacement(ctx, client, "acme", "goship"); err != nil || got != portal.SharedPlacement {
+		t.Errorf("ResolvePlacement(goship) without nodes = %q, %v; want %q", got, err, portal.SharedPlacement)
+	}
+	nodes = `[{"id":"n-goship","name":"goship","status":"active"}]`
+	if got, _ := deploy.ResolvePlacement(ctx, client, "acme", "goship"); got != "n-goship" {
+		t.Errorf("ResolvePlacement(goship) = %q, want the node named goship", got)
+	}
+}
