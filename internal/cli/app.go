@@ -59,7 +59,7 @@ func appCreateCmd(app *App) *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&req.Platform, "platform", "", "platform: go, python, nodejs or static (required)")
-	f.StringVar(&req.Plan, "plan", "", "plan slug; the org default when omitted")
+	f.StringVar(&req.Plan, "plan", "", "plan slug; required on GoShip's servers, app-small on a node when omitted")
 	f.StringVar(&req.Description, "description", "", "human description")
 	f.StringVar(&node, "node", "", "run on one of your own nodes, by name (BYON)")
 	_ = cmd.MarkFlagRequired("platform")
