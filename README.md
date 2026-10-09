@@ -20,8 +20,16 @@ Deploying api · go
 ## Install
 
 ```sh
-go install github.com/coffeece/goship/cmd/goship@latest
+curl -fsSL https://raw.githubusercontent.com/coffeece/goship/main/install.sh | sh
 ```
+
+It picks the latest release for your OS and architecture, verifies the
+checksum and installs to `/usr/local/bin` (or `~/.local/bin` when that is not
+writable). `GOSHIP_VERSION=v0.3.0` pins a release and `GOSHIP_INSTALL_DIR`
+picks the directory. Windows: download the zip from the
+[releases page](https://github.com/coffeece/goship/releases/latest). With a
+Go toolchain, `go install github.com/coffeece/goship/cmd/goship@latest` works
+too.
 
 ## Getting started
 
