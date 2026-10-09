@@ -128,6 +128,7 @@ goship deploy --env-file .env
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
 | `goship tokens` / `goship token create\|rm` | list / manage API tokens for CI |
+| `goship mcp` | serve all of the above to an AI agent over MCP (see below) |
 
 Run `goship <command> --help` for flags.
 
@@ -156,6 +157,26 @@ node: it keeps provisioning, and `goship node info <name>` shows where it got to
 printed. `--verbose` (`-v`) shows the complete log as it arrives instead, and
 works on every command (it also logs HTTP requests to stderr). Output that is
 not a terminal gets one line per step, without colour or redraws.
+
+## AI agents
+
+`goship mcp` serves everything above as [MCP](https://modelcontextprotocol.io)
+tools over stdio, using the login this machine already has. Claude Code users
+get the server, a deploy skill and `/goship:deploy` in one install:
+
+```
+/plugin install goship --marketplace coffeece/goship
+```
+
+Any other MCP client runs `goship mcp` as a stdio server:
+
+```json
+{ "mcpServers": { "goship": { "command": "goship", "args": ["mcp"] } } }
+```
+
+Tools are named after the commands (`goship_list_apps`, `goship_deploy`,
+`goship_logs`…). Deletes are marked destructive and ask the agent to confirm
+with you first; `login`, `cloud connect` and `shell` stay in the terminal.
 
 ## Configuration
 
