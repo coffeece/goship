@@ -26,8 +26,8 @@ Find out, asking only for what is not already known:
 - **Project**: `goship_list_projects` shows the organization's; one project
   needs no choice. Pass `project` to the tools, or set `project:` in goship.yml.
 - **Placement**: the shared cluster (billed per unit by plan) or one of the
-  organization's own nodes (`goship_list_nodes`; apps there are not billed).
-- **Plan**: `goship_list_plans` shows what the org can pick and the price.
+  project's own nodes (`goship_list_nodes`; apps there are not billed).
+- **Plan**: `goship_list_plans` shows what the project can pick and the price.
   A plan with `billed: false` is free to choose. Never pick a paid plan
   without the user saying which.
 
@@ -39,7 +39,7 @@ Before touching anything, determine and report:
    `go.mod` → go, `pyproject.toml` / `requirements.txt` / `Pipfile` /
    `setup.py` → python, `package.json` → nodejs, `index.html` → static. A
    `Dockerfile` / `Containerfile` is the fallback when no marker matches, and
-   is required for apps on the organization's own nodes.
+   is required for apps on the project's own nodes.
 2. **Entry point** and how it is started (a Procfile, `processes:` in
    `goship.yaml`, or the platform default).
 3. **Port**: the app must listen on `0.0.0.0:8888`, or read `$PORT`.
