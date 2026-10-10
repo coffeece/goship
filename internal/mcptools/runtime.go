@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 )
 
@@ -38,7 +39,7 @@ const (
 
 func (r *registry) runtime() {
 	tool(r, "goship_logs", "Read an app's recent log lines. Never follows; call again for newer lines.", read,
-		func(ctx context.Context, c *portal.Client, org string, in LogsArgs) (LogList, error) {
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in LogsArgs) (LogList, error) {
 			lines := in.Lines
 			switch {
 			case lines <= 0:
@@ -47,18 +48,18 @@ func (r *registry) runtime() {
 				lines = maxLogLines
 			}
 			out := LogList{Entries: []portal.LogEntry{}}
-			err := c.Logs(ctx, org, in.App, portal.LogOptions{Lines: lines, Source: in.Source, Units: in.Units}, func(e portal.LogEntry) error {
+			err := c.Logs(ctx, t.Org, t.Project, in.App, portal.LogOptions{Lines: lines, Source: in.Source, Units: in.Units}, func(e portal.LogEntry) error {
 				out.Entries = append(out.Entries, e)
 				return nil
 			})
 			return out, err
 		})
 	tool(r, "goship_run", "Run a one-off command in the app's image and return its output. Capped at 10 minutes.", write,
-		func(ctx context.Context, c *portal.Client, org string, in RunArgs) (RunResult, error) {
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in RunArgs) (RunResult, error) {
 			ctx, cancel := context.WithTimeout(ctx, runTimeout)
 			defer cancel()
 			var buf bytes.Buffer
-			err := c.Run(ctx, org, in.App, in.Command, in.Once, in.Isolated, &buf)
+			err := c.Run(ctx, t.Org, t.Project, in.App, in.Command, in.Once, in.Isolated, &buf)
 			return RunResult{Output: buf.String()}, err
 		})
 }

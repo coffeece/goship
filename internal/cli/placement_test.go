@@ -17,9 +17,9 @@ func deployNewApp(t *testing.T, placement string, args ...string) (created map[s
 	t.Helper()
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/v1/orgs/acme/placement":
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/placement":
 			w.Write([]byte(placement)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(twoNodes)) //nolint:errcheck
 		case strings.HasSuffix(r.URL.Path, "/available-plans"):
 			plansAsked = true

@@ -46,7 +46,7 @@ func TestDeployUploadsTheArchiveLastAndCopiesTheOutput(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("tarball"), Message: "fix", Dockerfile: "FROM scratch"}, printOutput(&out))
+	err := c.Deploy(context.Background(), "acme", "clave", "blog", DeployRequest{Archive: strings.NewReader("tarball"), Message: "fix", Dockerfile: "FROM scratch"}, printOutput(&out))
 	if err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestStreamReportsAFailedOperation(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	err := c.Rollback(context.Background(), "acme", "blog", "v3", printOutput(&out))
+	err := c.Rollback(context.Background(), "acme", "clave", "blog", "v3", printOutput(&out))
 	var opErr *OperationError
 	if !errors.As(err, &opErr) || opErr.Message != "deploy failed: exit status 1" {
 		t.Fatalf("error = %v, want the API's account of the failure", err)
@@ -81,7 +81,7 @@ func TestStreamWithoutAResultIsAFailure(t *testing.T) {
 		fmt.Fprintln(w, `{"type":"output","data":"---> building\n"}`)
 	})
 
-	err := c.Run(context.Background(), "acme", "blog", "true", true, false, io.Discard)
+	err := c.Run(context.Background(), "acme", "clave", "blog", "true", true, false, io.Discard)
 	if !errors.Is(err, ErrStreamCut) {
 		t.Errorf("error = %v, want ErrStreamCut", err)
 	}
@@ -93,7 +93,7 @@ func TestStreamRefusedUpFrontIsAnAPIError(t *testing.T) {
 		fmt.Fprintln(w, `{"error":"data conflict: app \"blog\" is paused — wake it up before deploying"}`)
 	})
 
-	err := c.Deploy(context.Background(), "acme", "blog", DeployRequest{Archive: strings.NewReader("x")}, printOutput(io.Discard))
+	err := c.Deploy(context.Background(), "acme", "clave", "blog", DeployRequest{Archive: strings.NewReader("x")}, printOutput(io.Discard))
 	var apiErr *Error
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict || !strings.Contains(apiErr.Message, "paused") {
 		t.Errorf("error = %v", err)
@@ -110,7 +110,7 @@ func TestLogsPassesTheOptionsAndEveryLine(t *testing.T) {
 	})
 
 	var got []string
-	err := c.Logs(context.Background(), "acme", "blog", LogOptions{Lines: 5, Follow: true, Source: "web", Units: []string{"u1"}}, func(l LogEntry) error {
+	err := c.Logs(context.Background(), "acme", "clave", "blog", LogOptions{Lines: 5, Follow: true, Source: "web", Units: []string{"u1"}}, func(l LogEntry) error {
 		got = append(got, l.Source+":"+l.Message)
 		return nil
 	})
@@ -137,7 +137,7 @@ func TestReleaseEventsCarryTheirStep(t *testing.T) {
 	})
 
 	var got []ReleaseEvent
-	err := c.Rollback(context.Background(), "acme", "blog", "v7", func(ev ReleaseEvent) error {
+	err := c.Rollback(context.Background(), "acme", "clave", "blog", "v7", func(ev ReleaseEvent) error {
 		got = append(got, ev)
 		return nil
 	})

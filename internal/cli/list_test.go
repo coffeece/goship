@@ -11,10 +11,10 @@ import (
 // Plural nouns list, and each lists under the current org like `apps` does.
 func TestPluralListersUseTheCurrentOrg(t *testing.T) {
 	for _, tc := range []struct{ cmd, path string }{
-		{"dbs", "/api/v1/orgs/acme/databases"},
+		{"dbs", "/api/v1/orgs/acme/projects/clave/databases"},
 		{"domains", "/api/v1/orgs/acme/domains"},
-		{"volumes", "/api/v1/orgs/acme/volumes"},
-		{"nodes", "/api/v1/orgs/acme/nodes"},
+		{"volumes", "/api/v1/orgs/acme/projects/clave/volumes"},
+		{"nodes", "/api/v1/orgs/acme/projects/clave/nodes"},
 	} {
 		t.Run(tc.cmd, func(t *testing.T) {
 			var gotPath string
@@ -32,15 +32,21 @@ func TestPluralListersUseTheCurrentOrg(t *testing.T) {
 	}
 }
 
-func TestDBsAllSpansEveryOrg(t *testing.T) {
+func TestDBsAllSpansEveryProject(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/databases":
+		case "/api/v1/orgs/games/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/globex/projects":
+			w.Write([]byte(`[{"slug":"default"},{"slug":"labs"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/projects/default/databases":
 			w.Write([]byte(`[{"name":"scores"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/databases":
+		case "/api/v1/orgs/globex/projects/default/databases":
 			w.Write([]byte(`[{"name":"mail"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/globex/projects/labs/databases":
+			w.Write([]byte(`[{"name":"scratch"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -54,20 +60,34 @@ func TestDBsAllSpansEveryOrg(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, out)
 	}
-	if len(got["games"]) != 1 || got["games"][0]["name"] != "scores" ||
-		len(got["globex"]) != 1 || got["globex"][0]["name"] != "mail" {
+	if len(got) != 3 || got["games/default"][0]["name"] != "scores" ||
+		got["globex/default"][0]["name"] != "mail" || got["globex/labs"][0]["name"] != "scratch" {
 		t.Errorf("got %v", got)
+	}
+
+	out, err = run(t, "", "dbs", "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"games/default", "globex/default", "globex/labs", "scratch"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing section %q:\n%s", want, out)
+		}
 	}
 }
 
-func TestDBsWithNoOrgListsEverything(t *testing.T) {
+// With several projects and none selected, a read lists them all instead of
+// demanding `project use` first.
+func TestDBsWithNoProjectListsEverything(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/databases":
+		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/projects/default/databases":
 			w.Write([]byte(`[{"name":"scores"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/databases":
+		case "/api/v1/orgs/globex/projects/default/databases":
 			w.Write([]byte(`[{"name":"mail"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -83,6 +103,27 @@ func TestDBsWithNoOrgListsEverything(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestListerUsesTheOnlyProjectWhenNoneIsSelected(t *testing.T) {
+	var gotPath string
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		default:
+			gotPath = r.URL.Path
+			w.Write([]byte(`[]`)) //nolint:errcheck
+		}
+	})
+	t.Setenv("GOSHIP_ORG", "acme")
+
+	if _, err := run(t, "", "apps"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/orgs/acme/projects/default/apps" {
+		t.Errorf("path = %q", gotPath)
 	}
 }
 

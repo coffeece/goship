@@ -17,38 +17,54 @@ func TestEndpoints(t *testing.T) {
 		name, method, path, body string
 		call                     func(context.Context, *Client) error
 	}{
-		{"apps", "GET", "/api/v1/orgs/my%20org/apps", "", func(ctx context.Context, c *Client) error { _, err := c.Apps(ctx, "my org"); return err }},
-		{"app", "GET", "/api/v1/orgs/acme/apps/my%20app", "", func(ctx context.Context, c *Client) error { _, err := c.App(ctx, "acme", "my app"); return err }},
-		{"create app", "POST", "/api/v1/orgs/acme/apps", `{"name":"api","platform":"go","node_id":"n 1"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateApp(ctx, "acme", CreateAppRequest{Name: "api", Platform: "go", NodeID: &node})
+		{"apps", "GET", "/api/v1/orgs/my%20org/projects/clave/apps", "", func(ctx context.Context, c *Client) error { _, err := c.Apps(ctx, "my org", "clave"); return err }},
+		{"app", "GET", "/api/v1/orgs/acme/projects/clave/apps/my%20app", "", func(ctx context.Context, c *Client) error {
+			_, err := c.App(ctx, "acme", "clave", "my app")
 			return err
 		}},
-		{"delete app", "DELETE", "/api/v1/orgs/acme/apps/api", "", func(ctx context.Context, c *Client) error { return c.DeleteApp(ctx, "acme", "api") }},
-		{"lifecycle", "POST", "/api/v1/orgs/acme/apps/api/restart", "", func(ctx context.Context, c *Client) error { return c.Lifecycle(ctx, "acme", "api", "restart") }},
-		{"scale", "PUT", "/api/v1/orgs/acme/apps/api/units", `{"units":3}`, func(ctx context.Context, c *Client) error { return c.ScaleApp(ctx, "acme", "api", 3) }},
-		{"plan", "PUT", "/api/v1/orgs/acme/apps/api/plan", `{"plan":"app-small"}`, func(ctx context.Context, c *Client) error { return c.SetAppPlan(ctx, "acme", "api", "app-small") }},
-		{"env", "GET", "/api/v1/orgs/acme/apps/api/env", "", func(ctx context.Context, c *Client) error { _, err := c.Env(ctx, "acme", "api"); return err }},
-		{"set env", "POST", "/api/v1/orgs/acme/apps/api/env", `{"envs":[{"name":"A","value":"1","public":false}],"no_restart":true}`, func(ctx context.Context, c *Client) error {
-			return c.SetEnv(ctx, "acme", "api", []EnvVar{{Name: "A", Value: "1"}}, true)
+		{"create app", "POST", "/api/v1/orgs/acme/projects/clave/apps", `{"name":"api","platform":"go","node_id":"n 1"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateApp(ctx, "acme", "clave", CreateAppRequest{Name: "api", Platform: "go", NodeID: &node})
+			return err
 		}},
-		{"unset env", "DELETE", "/api/v1/orgs/acme/apps/api/env", `{"envs":["A"],"no_restart":false}`, func(ctx context.Context, c *Client) error {
-			return c.UnsetEnv(ctx, "acme", "api", []string{"A"}, false)
+		{"delete app", "DELETE", "/api/v1/orgs/acme/projects/clave/apps/api", "", func(ctx context.Context, c *Client) error { return c.DeleteApp(ctx, "acme", "clave", "api") }},
+		{"lifecycle", "POST", "/api/v1/orgs/acme/projects/clave/apps/api/restart", "", func(ctx context.Context, c *Client) error { return c.Lifecycle(ctx, "acme", "clave", "api", "restart") }},
+		{"scale", "PUT", "/api/v1/orgs/acme/projects/clave/apps/api/units", `{"units":3}`, func(ctx context.Context, c *Client) error { return c.ScaleApp(ctx, "acme", "clave", "api", 3) }},
+		{"plan", "PUT", "/api/v1/orgs/acme/projects/clave/apps/api/plan", `{"plan":"app-small"}`, func(ctx context.Context, c *Client) error {
+			return c.SetAppPlan(ctx, "acme", "clave", "api", "app-small")
+		}},
+		{"env", "GET", "/api/v1/orgs/acme/projects/clave/apps/api/env", "", func(ctx context.Context, c *Client) error { _, err := c.Env(ctx, "acme", "clave", "api"); return err }},
+		{"set env", "POST", "/api/v1/orgs/acme/projects/clave/apps/api/env", `{"envs":[{"name":"A","value":"1","public":false}],"no_restart":true}`, func(ctx context.Context, c *Client) error {
+			return c.SetEnv(ctx, "acme", "clave", "api", []EnvVar{{Name: "A", Value: "1"}}, true)
+		}},
+		{"unset env", "DELETE", "/api/v1/orgs/acme/projects/clave/apps/api/env", `{"envs":["A"],"no_restart":false}`, func(ctx context.Context, c *Client) error {
+			return c.UnsetEnv(ctx, "acme", "clave", "api", []string{"A"}, false)
 		}},
 
-		{"databases", "GET", "/api/v1/orgs/acme/databases", "", func(ctx context.Context, c *Client) error { _, err := c.Databases(ctx, "acme"); return err }},
-		{"database", "GET", "/api/v1/orgs/acme/databases/shop", "", func(ctx context.Context, c *Client) error { _, err := c.Database(ctx, "acme", "shop"); return err }},
-		{"database stats", "GET", "/api/v1/orgs/acme/databases/shop/stats", "", func(ctx context.Context, c *Client) error { _, err := c.DatabaseStats(ctx, "acme", "shop"); return err }},
-		{"database users", "GET", "/api/v1/orgs/acme/databases/shop/users", "", func(ctx context.Context, c *Client) error { _, err := c.DatabaseUsers(ctx, "acme", "shop"); return err }},
-		{"create database user", "POST", "/api/v1/orgs/acme/databases/shop/users", `{"access_mode":"ro","username":"reader"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateDatabaseUser(ctx, "acme", "shop", "reader", "ro")
+		{"databases", "GET", "/api/v1/orgs/acme/projects/clave/databases", "", func(ctx context.Context, c *Client) error { _, err := c.Databases(ctx, "acme", "clave"); return err }},
+		{"database", "GET", "/api/v1/orgs/acme/projects/clave/databases/shop", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Database(ctx, "acme", "clave", "shop")
 			return err
 		}},
-		{"create database", "POST", "/api/v1/orgs/acme/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
-			return c.CreateDatabase(ctx, "acme", "shop", "starter", "")
+		{"database stats", "GET", "/api/v1/orgs/acme/projects/clave/databases/shop/stats", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseStats(ctx, "acme", "clave", "shop")
+			return err
 		}},
-		{"delete database", "DELETE", "/api/v1/orgs/acme/services/postgresql/instances/shop", "", func(ctx context.Context, c *Client) error { return c.DeleteDatabase(ctx, "acme", "shop") }},
-		{"bind database", "POST", "/api/v1/orgs/acme/services/postgresql/instances/shop/bind", `{"app_name":"api"}`, func(ctx context.Context, c *Client) error { return c.BindDatabase(ctx, "acme", "shop", "api") }},
-		{"unbind database", "DELETE", "/api/v1/orgs/acme/services/postgresql/instances/shop/bind/api", "", func(ctx context.Context, c *Client) error { return c.UnbindDatabase(ctx, "acme", "shop", "api") }},
+		{"database users", "GET", "/api/v1/orgs/acme/projects/clave/databases/shop/users", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseUsers(ctx, "acme", "clave", "shop")
+			return err
+		}},
+		{"create database user", "POST", "/api/v1/orgs/acme/projects/clave/databases/shop/users", `{"access_mode":"ro","username":"reader"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateDatabaseUser(ctx, "acme", "clave", "shop", "reader", "ro")
+			return err
+		}},
+		{"create database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
+			return c.CreateDatabase(ctx, "acme", "clave", "shop", "starter", "")
+		}},
+		{"delete database", "DELETE", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop", "", func(ctx context.Context, c *Client) error { return c.DeleteDatabase(ctx, "acme", "clave", "shop") }},
+		{"bind database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop/bind", `{"app_name":"api"}`, func(ctx context.Context, c *Client) error { return c.BindDatabase(ctx, "acme", "clave", "shop", "api") }},
+		{"unbind database", "DELETE", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop/bind/api", "", func(ctx context.Context, c *Client) error {
+			return c.UnbindDatabase(ctx, "acme", "clave", "shop", "api")
+		}},
 
 		{"org domains", "GET", "/api/v1/orgs/acme/domains", "", func(ctx context.Context, c *Client) error { _, err := c.OrgDomains(ctx, "acme"); return err }},
 		{"register domain", "POST", "/api/v1/orgs/acme/domains", `{"domain":"acme.dev"}`, func(ctx context.Context, c *Client) error {
@@ -57,87 +73,117 @@ func TestEndpoints(t *testing.T) {
 		}},
 		{"verify domain", "POST", "/api/v1/orgs/acme/domains/d1/verify", "", func(ctx context.Context, c *Client) error { return c.VerifyOrgDomain(ctx, "acme", "d1") }},
 		{"delete domain", "DELETE", "/api/v1/orgs/acme/domains/d1", "", func(ctx context.Context, c *Client) error { return c.DeleteOrgDomain(ctx, "acme", "d1") }},
-		{"add app domain", "POST", "/api/v1/orgs/acme/apps/api/domains", `{"domain":"api.acme.dev"}`, func(ctx context.Context, c *Client) error { return c.AddAppDomain(ctx, "acme", "api", "api.acme.dev") }},
-		{"remove app domain", "DELETE", "/api/v1/orgs/acme/apps/api/domains/api.acme.dev", "", func(ctx context.Context, c *Client) error {
-			return c.RemoveAppDomain(ctx, "acme", "api", "api.acme.dev")
+		{"add app domain", "POST", "/api/v1/orgs/acme/projects/clave/apps/api/domains", `{"domain":"api.acme.dev"}`, func(ctx context.Context, c *Client) error {
+			return c.AddAppDomain(ctx, "acme", "clave", "api", "api.acme.dev")
+		}},
+		{"remove app domain", "DELETE", "/api/v1/orgs/acme/projects/clave/apps/api/domains/api.acme.dev", "", func(ctx context.Context, c *Client) error {
+			return c.RemoveAppDomain(ctx, "acme", "clave", "api", "api.acme.dev")
 		}},
 
-		{"nodes", "GET", "/api/v1/orgs/acme/nodes", "", func(ctx context.Context, c *Client) error { _, err := c.Nodes(ctx, "acme"); return err }},
-		{"node", "GET", "/api/v1/orgs/acme/nodes/n1", "", func(ctx context.Context, c *Client) error { _, err := c.Node(ctx, "acme", "n1"); return err }},
-		{"create node", "POST", "/api/v1/orgs/acme/nodes", `{"name":"box","type":"vps","host":"10.0.0.1","port":22}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateNode(ctx, "acme", CreateNodeRequest{Name: "box", Type: "vps", Host: "10.0.0.1", Port: 22})
+		{"nodes", "GET", "/api/v1/orgs/acme/projects/clave/nodes", "", func(ctx context.Context, c *Client) error { _, err := c.Nodes(ctx, "acme", "clave"); return err }},
+		{"node", "GET", "/api/v1/orgs/acme/projects/clave/nodes/n1", "", func(ctx context.Context, c *Client) error { _, err := c.Node(ctx, "acme", "clave", "n1"); return err }},
+		{"create node", "POST", "/api/v1/orgs/acme/projects/clave/nodes", `{"name":"box","type":"vps","host":"10.0.0.1","port":22}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateNode(ctx, "acme", "clave", CreateNodeRequest{Name: "box", Type: "vps", Host: "10.0.0.1", Port: 22})
 			return err
 		}},
-		{"create node from cloud account", "POST", "/api/v1/orgs/acme/nodes", `{"name":"box","cloud_account_id":"acc1","region":"nyc1","size":"s-1vcpu-1gb"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateNode(ctx, "acme", CreateNodeRequest{Name: "box", CloudAccountID: "acc1", Region: "nyc1", Size: "s-1vcpu-1gb"})
+		{"create node from cloud account", "POST", "/api/v1/orgs/acme/projects/clave/nodes", `{"name":"box","cloud_account_id":"acc1","region":"nyc1","size":"s-1vcpu-1gb"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateNode(ctx, "acme", "clave", CreateNodeRequest{Name: "box", CloudAccountID: "acc1", Region: "nyc1", Size: "s-1vcpu-1gb"})
 			return err
 		}},
-		{"delete node", "DELETE", "/api/v1/orgs/acme/nodes/n1", `{"destroy_server":true}`, func(ctx context.Context, c *Client) error { return c.DeleteNode(ctx, "acme", "n1", true) }},
+		{"delete node", "DELETE", "/api/v1/orgs/acme/projects/clave/nodes/n1", `{"destroy_server":true}`, func(ctx context.Context, c *Client) error { return c.DeleteNode(ctx, "acme", "clave", "n1", true) }},
 
 		{"cloud providers", "GET", "/api/v1/cloud/providers", "", func(ctx context.Context, c *Client) error { _, err := c.CloudProviders(ctx); return err }},
-		{"cloud accounts", "GET", "/api/v1/orgs/acme/cloud-accounts", "", func(ctx context.Context, c *Client) error { _, err := c.CloudAccounts(ctx, "acme"); return err }},
-		{"connect cloud api key", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"provider":"digitalocean","label":"prod","api_key":"secret"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudAPIKey(ctx, "acme", "digitalocean", "prod", "secret")
+		{"cloud accounts", "GET", "/api/v1/orgs/acme/projects/clave/cloud-accounts", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudAccounts(ctx, "acme", "clave")
 			return err
 		}},
-		{"begin cloud oauth", "POST", "/api/v1/orgs/acme/cloud-accounts/digitalocean/connect", "", func(ctx context.Context, c *Client) error {
-			_, _, err := c.BeginCloudOAuth(ctx, "acme", "digitalocean")
+		{"connect cloud api key", "POST", "/api/v1/orgs/acme/projects/clave/cloud-accounts", `{"provider":"digitalocean","label":"prod","api_key":"secret"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAPIKey(ctx, "acme", "clave", "digitalocean", "prod", "secret")
 			return err
 		}},
-		{"begin aws connect", "POST", "/api/v1/orgs/acme/cloud-accounts/aws/connect", "", func(ctx context.Context, c *Client) error {
-			_, _, err := c.BeginCloudAWSConnect(ctx, "acme")
+		{"begin cloud oauth", "POST", "/api/v1/orgs/acme/projects/clave/cloud-accounts/digitalocean/connect", "", func(ctx context.Context, c *Client) error {
+			_, _, err := c.BeginCloudOAuth(ctx, "acme", "clave", "digitalocean")
 			return err
 		}},
-		{"cloud connect ticket", "GET", "/api/v1/orgs/acme/cloud-accounts/connect/t1", "", func(ctx context.Context, c *Client) error {
-			_, err := c.CloudConnectTicket(ctx, "acme", "t1")
+		{"begin aws connect", "POST", "/api/v1/orgs/acme/projects/clave/cloud-accounts/aws/connect", "", func(ctx context.Context, c *Client) error {
+			_, _, err := c.BeginCloudAWSConnect(ctx, "acme", "clave")
 			return err
 		}},
-		{"delete cloud account", "DELETE", "/api/v1/orgs/acme/cloud-accounts/acc1", "", func(ctx context.Context, c *Client) error { return c.DeleteCloudAccount(ctx, "acme", "acc1") }},
-		{"cloud regions", "GET", "/api/v1/orgs/acme/cloud-accounts/acc1/regions", "", func(ctx context.Context, c *Client) error {
-			_, err := c.CloudRegions(ctx, "acme", "acc1")
+		{"cloud connect ticket", "GET", "/api/v1/orgs/acme/projects/clave/cloud-accounts/connect/t1", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudConnectTicket(ctx, "acme", "clave", "t1")
 			return err
 		}},
-		{"cloud sizes", "GET", "/api/v1/orgs/acme/cloud-accounts/acc1/sizes", "", func(ctx context.Context, c *Client) error {
-			_, err := c.CloudSizes(ctx, "acme", "acc1", "nyc1")
+		{"delete cloud account", "DELETE", "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc1", "", func(ctx context.Context, c *Client) error { return c.DeleteCloudAccount(ctx, "acme", "clave", "acc1") }},
+		{"cloud regions", "GET", "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc1/regions", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudRegions(ctx, "acme", "clave", "acc1")
 			return err
 		}},
-		{"aws setup", "GET", "/api/v1/orgs/acme/cloud-accounts/aws/setup", "", func(ctx context.Context, c *Client) error { _, err := c.CloudAWSSetup(ctx, "acme"); return err }},
-		{"connect aws role", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"label":"prod","provider":"aws","role_arn":"arn:aws:iam::123456789012:role/GoShipNodeRole"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudAWSRole(ctx, "acme", "prod", "arn:aws:iam::123456789012:role/GoShipNodeRole")
+		{"cloud sizes", "GET", "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc1/sizes", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudSizes(ctx, "acme", "clave", "acc1", "nyc1")
 			return err
 		}},
-		{"connect aws keys", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"access_key_id":"AKIA1","label":"","provider":"aws","secret_access_key":"s"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudAWSKeys(ctx, "acme", "", "AKIA1", "s")
+		{"aws setup", "GET", "/api/v1/orgs/acme/projects/clave/cloud-accounts/aws/setup", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudAWSSetup(ctx, "acme", "clave")
 			return err
 		}},
-		{"begin gcp connect", "POST", "/api/v1/orgs/acme/cloud-accounts/gcp/connect", "", func(ctx context.Context, c *Client) error {
-			_, err := c.BeginCloudGCPConnect(ctx, "acme")
+		{"connect aws role", "POST", "/api/v1/orgs/acme/projects/clave/cloud-accounts", `{"label":"prod","provider":"aws","role_arn":"arn:aws:iam::123456789012:role/GoShipNodeRole"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAWSRole(ctx, "acme", "clave", "prod", "arn:aws:iam::123456789012:role/GoShipNodeRole")
 			return err
 		}},
-		{"connect gcp", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"label":"prod","project_number":"123456789","provider":"gcp"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudGCP(ctx, "acme", "prod", "123456789")
+		{"connect aws keys", "POST", "/api/v1/orgs/acme/projects/clave/cloud-accounts", `{"access_key_id":"AKIA1","label":"","provider":"aws","secret_access_key":"s"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAWSKeys(ctx, "acme", "clave", "", "AKIA1", "s")
+			return err
+		}},
+		{"begin gcp connect", "POST", "/api/v1/orgs/acme/projects/clave/cloud-accounts/gcp/connect", "", func(ctx context.Context, c *Client) error {
+			_, err := c.BeginCloudGCPConnect(ctx, "acme", "clave")
+			return err
+		}},
+		{"connect gcp", "POST", "/api/v1/orgs/acme/projects/clave/cloud-accounts", `{"label":"prod","project_number":"123456789","provider":"gcp"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudGCP(ctx, "acme", "clave", "prod", "123456789")
 			return err
 		}},
 
-		{"volumes", "GET", "/api/v1/orgs/acme/volumes", "", func(ctx context.Context, c *Client) error { _, err := c.Volumes(ctx, "acme"); return err }},
-		{"volume", "GET", "/api/v1/orgs/acme/volumes/data", "", func(ctx context.Context, c *Client) error { _, err := c.Volume(ctx, "acme", "data"); return err }},
-		{"create volume", "POST", "/api/v1/orgs/acme/volumes", `{"capacity_gib":5,"name":"data","node_id":"n1","plan":"byon-local"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateVolume(ctx, "acme", "data", "n1", "byon-local", 5)
+		{"volumes", "GET", "/api/v1/orgs/acme/projects/clave/volumes", "", func(ctx context.Context, c *Client) error { _, err := c.Volumes(ctx, "acme", "clave"); return err }},
+		{"volume", "GET", "/api/v1/orgs/acme/projects/clave/volumes/data", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Volume(ctx, "acme", "clave", "data")
 			return err
 		}},
-		{"bind volume", "POST", "/api/v1/orgs/acme/volumes/data/bind", `{"app":"api","mount_point":"/data","read_only":true}`, func(ctx context.Context, c *Client) error {
-			return c.BindVolume(ctx, "acme", "data", "api", "/data", true)
+		{"create volume", "POST", "/api/v1/orgs/acme/projects/clave/volumes", `{"capacity_gib":5,"name":"data","node_id":"n1","plan":"byon-local"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateVolume(ctx, "acme", "clave", "data", "n1", "byon-local", 5)
+			return err
 		}},
-		{"unbind volume", "POST", "/api/v1/orgs/acme/volumes/data/unbind", `{"app":"api","mount_point":"/data"}`, func(ctx context.Context, c *Client) error {
-			return c.UnbindVolume(ctx, "acme", "data", "api", "/data")
+		{"bind volume", "POST", "/api/v1/orgs/acme/projects/clave/volumes/data/bind", `{"app":"api","mount_point":"/data","read_only":true}`, func(ctx context.Context, c *Client) error {
+			return c.BindVolume(ctx, "acme", "clave", "data", "api", "/data", true)
 		}},
-		{"delete volume", "DELETE", "/api/v1/orgs/acme/volumes/data", "", func(ctx context.Context, c *Client) error { return c.DeleteVolume(ctx, "acme", "data") }},
+		{"unbind volume", "POST", "/api/v1/orgs/acme/projects/clave/volumes/data/unbind", `{"app":"api","mount_point":"/data"}`, func(ctx context.Context, c *Client) error {
+			return c.UnbindVolume(ctx, "acme", "clave", "data", "api", "/data")
+		}},
+		{"delete volume", "DELETE", "/api/v1/orgs/acme/projects/clave/volumes/data", "", func(ctx context.Context, c *Client) error { return c.DeleteVolume(ctx, "acme", "clave", "data") }},
+
+		{"projects", "GET", "/api/v1/orgs/acme/projects", "", func(ctx context.Context, c *Client) error { _, err := c.Projects(ctx, "acme"); return err }},
+		{"create project", "POST", "/api/v1/orgs/acme/projects", `{"name":"Clave","slug":"clave"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateProject(ctx, "acme", "Clave", "clave")
+			return err
+		}},
+		{"placement", "GET", "/api/v1/orgs/acme/projects/clave/placement", "", func(ctx context.Context, c *Client) error { _, err := c.Placement(ctx, "acme", "clave"); return err }},
+		{"available plans", "GET", "/api/v1/orgs/acme/projects/clave/available-plans", "", func(ctx context.Context, c *Client) error {
+			_, err := c.AvailablePlans(ctx, "acme", "clave", "app", "")
+			return err
+		}},
+		{"cloud accounts without a project", "GET", "/api/v1/orgs/acme/cloud-accounts", "", func(ctx context.Context, c *Client) error { _, err := c.CloudAccounts(ctx, "acme", ""); return err }},
+		{"connect cloud api key at the org level", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"provider":"digitalocean","label":"prod","api_key":"secret"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAPIKey(ctx, "acme", "", "digitalocean", "prod", "secret")
+			return err
+		}},
 
 		{"api tokens", "GET", "/api/v1/auth/tokens", "", func(ctx context.Context, c *Client) error { _, err := c.APITokens(ctx); return err }},
 		{"create api token", "POST", "/api/v1/auth/tokens", `{"expires_in_days":90,"name":"ci"}`, func(ctx context.Context, c *Client) error { _, err := c.CreateAPIToken(ctx, "ci", 90); return err }},
 		{"revoke api token", "DELETE", "/api/v1/auth/tokens/t1", "", func(ctx context.Context, c *Client) error { return c.RevokeAPIToken(ctx, "t1") }},
 		{"me", "GET", "/api/v1/auth/me", "", func(ctx context.Context, c *Client) error { _, err := c.Me(ctx); return err }},
-		{"deploys", "GET", "/api/v1/orgs/acme/apps/api/deploys", "", func(ctx context.Context, c *Client) error { _, err := c.Deploys(ctx, "acme", "api", 0); return err }},
+		{"deploys", "GET", "/api/v1/orgs/acme/projects/clave/apps/api/deploys", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Deploys(ctx, "acme", "clave", "api", 0)
+			return err
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := serve(t, func(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +214,7 @@ func TestCloudSizesEncodesTheRegionQuery(t *testing.T) {
 		w.Write([]byte(`null`)) //nolint:errcheck
 	})
 
-	if _, err := c.CloudSizes(context.Background(), "acme", "acc1", "nyc 1"); err != nil {
+	if _, err := c.CloudSizes(context.Background(), "acme", "clave", "acc1", "nyc 1"); err != nil {
 		t.Fatal(err)
 	}
 	if gotQuery != "region=nyc+1" {
@@ -183,7 +229,7 @@ func TestCloudAWSSetupTreats404AsUnavailable(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c := New(srv.URL, "tok")
-	s, err := c.CloudAWSSetup(context.Background(), "acme")
+	s, err := c.CloudAWSSetup(context.Background(), "acme", "clave")
 	if err != nil || s != nil {
 		t.Fatalf("CloudAWSSetup() = %+v, %v; want nil, nil", s, err)
 	}

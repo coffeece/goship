@@ -14,14 +14,14 @@ func plansAPI(t *testing.T) {
 	t.Helper()
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`[{"id":"n1","name":"do-server1","status":"active"}]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/acme/available-plans" && r.URL.Query().Get("node") == "n1":
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/available-plans" && r.URL.Query().Get("node") == "n1":
 			w.Write([]byte(`[
 			  {"slug":"byon-do-server1-default","kind":"app","display_name":"Sized to the node","cpu_milli":1800,"memory_mb":3600,"is_active":true,"default":true,"billed":false},
 			  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":0,"is_active":true,"billed":false}
 			]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/acme/available-plans":
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/available-plans":
 			w.Write([]byte(`[
 			  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_active":true,"sort_order":30,"billed":true},
 			  {"slug":"app-micro","kind":"app","display_name":"Micro","cpu_milli":200,"memory_mb":256,"price_cents":990,"is_active":true,"sort_order":20,"billed":true}

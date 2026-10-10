@@ -33,13 +33,13 @@ func TestResolveNode(t *testing.T) {
 		{"do-server1", "25b640dc-5b91-49e8-ac21-1409efd47375"},
 		{"9f3c0000-0000-0000-0000-000000000001", "9f3c0000-0000-0000-0000-000000000001"},
 	} {
-		got, err := deploy.ResolveNode(context.Background(), client, "acme", tc.ref)
+		got, err := deploy.ResolveNode(context.Background(), client, deploy.Target{Org: "acme", Project: "clave"}, tc.ref)
 		if err != nil || got != tc.want {
 			t.Errorf("deploy.ResolveNode(%q) = %q, %v; want %q", tc.ref, got, err, tc.want)
 		}
 	}
 
-	_, err = deploy.ResolveNode(context.Background(), client, "acme", "nope")
+	_, err = deploy.ResolveNode(context.Background(), client, deploy.Target{Org: "acme", Project: "clave"}, "nope")
 	if err == nil || !strings.Contains(err.Error(), "do-server1") || !strings.Contains(err.Error(), "homelab") {
 		t.Errorf("an unknown ref should list what exists, got %v", err)
 	}
@@ -50,7 +50,7 @@ func TestDeployNodeByNameSendsTheID(t *testing.T) {
 	var created map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(twoNodes)) //nolint:errcheck
 		case r.Method == http.MethodPost:
 			json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
@@ -84,21 +84,21 @@ func TestResolvePlacementGoshipMeansSharedServers(t *testing.T) {
 	client := portal.New(cfg.Endpoint(), "")
 	ctx := context.Background()
 
-	if got, err := deploy.ResolvePlacement(ctx, client, "acme", "goship"); err != nil || got != portal.GoShipPlacement {
+	if got, err := deploy.ResolvePlacement(ctx, client, deploy.Target{Org: "acme", Project: "clave"}, "goship"); err != nil || got != portal.GoShipPlacement {
 		t.Errorf("ResolvePlacement(goship) = %q, %v; want %q", got, err, portal.GoShipPlacement)
 	}
-	if got, err := deploy.ResolvePlacement(ctx, client, "acme", "do-server1"); err != nil || got != "25b640dc-5b91-49e8-ac21-1409efd47375" {
+	if got, err := deploy.ResolvePlacement(ctx, client, deploy.Target{Org: "acme", Project: "clave"}, "do-server1"); err != nil || got != "25b640dc-5b91-49e8-ac21-1409efd47375" {
 		t.Errorf("ResolvePlacement(do-server1) = %q, %v; want the node's id", got, err)
 	}
-	if _, err := deploy.ResolveNode(ctx, client, "acme", "goship"); err == nil {
+	if _, err := deploy.ResolveNode(ctx, client, deploy.Target{Org: "acme", Project: "clave"}, "goship"); err == nil {
 		t.Error("ResolveNode(goship) must not name GoShip's servers: node commands need a real node")
 	}
 	nodes = `[]`
-	if got, err := deploy.ResolvePlacement(ctx, client, "acme", "goship"); err != nil || got != portal.GoShipPlacement {
+	if got, err := deploy.ResolvePlacement(ctx, client, deploy.Target{Org: "acme", Project: "clave"}, "goship"); err != nil || got != portal.GoShipPlacement {
 		t.Errorf("ResolvePlacement(goship) without nodes = %q, %v; want %q", got, err, portal.GoShipPlacement)
 	}
 	nodes = `[{"id":"n-goship","name":"goship","status":"active"}]`
-	if got, _ := deploy.ResolvePlacement(ctx, client, "acme", "goship"); got != "n-goship" {
+	if got, _ := deploy.ResolvePlacement(ctx, client, deploy.Target{Org: "acme", Project: "clave"}, "goship"); got != "n-goship" {
 		t.Errorf("ResolvePlacement(goship) = %q, want the node named goship", got)
 	}
 }

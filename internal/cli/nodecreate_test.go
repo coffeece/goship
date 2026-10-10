@@ -19,9 +19,9 @@ func TestNodeCreateCloudSendsAccountRegionSize(t *testing.T) {
 	var gotMethod, gotPath string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			gotMethod, gotPath = r.Method, r.URL.Path
 			json.NewDecoder(r.Body).Decode(&body)                              //nolint:errcheck
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
@@ -34,7 +34,7 @@ func TestNodeCreateCloudSendsAccountRegionSize(t *testing.T) {
 		"--cloud", "acme-do", "--region", "nyc3", "--size", "s-4vcpu-8gb", "--no-wait"); err != nil {
 		t.Fatal(err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/nodes" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/projects/clave/nodes" {
 		t.Fatalf("request = %s %s", gotMethod, gotPath)
 	}
 	if body["name"] != "n1" || body["cloud_account_id"] != "acc-1" || body["region"] != "nyc3" || body["size"] != "s-4vcpu-8gb" {
@@ -115,14 +115,14 @@ func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 	var body map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/regions":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/regions":
 			w.Write([]byte(`[{"slug":"nyc1","label":"New York 1","country":"US"},{"slug":"nyc3","label":"New York 3","country":"US"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/sizes":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/sizes":
 			w.Write([]byte(`[{"slug":"s-1vcpu-1gb","vcpu":1,"memory_mb":1024,"disk_gb":25,"price_monthly":48,"currency":"USD","band":{"slug":"b1","price_cents":9900,"currency":"BRL"}},` +
 				`{"slug":"s-2vcpu-4gb","vcpu":2,"memory_mb":4096,"disk_gb":80}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			json.NewDecoder(r.Body).Decode(&body)                              //nolint:errcheck
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
 		default:
@@ -168,13 +168,13 @@ func TestNodeCreateChecksTTYBeforeWrappingStdin(t *testing.T) {
 
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/regions":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/regions":
 			w.Write([]byte(`[{"slug":"nyc3","label":"New York 3","country":"US"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/sizes":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/sizes":
 			w.Write([]byte(`[{"slug":"s-1vcpu-1gb","vcpu":1,"memory_mb":1024,"disk_gb":25}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -214,9 +214,9 @@ func TestNodeCreateRejectsFlagsOfTheOtherPath(t *testing.T) {
 func TestNodeCreateNoWaitPointsAtNodes(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -242,11 +242,11 @@ func followAPI(t *testing.T, poll http.HandlerFunc) {
 
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"creating_machine"}`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/nodes/n1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes/n1":
 			poll(w, r)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -366,11 +366,11 @@ func TestNodeCreateFollowsUntilActive(t *testing.T) {
 	polls := 0
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"creating_machine"}`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/nodes/n1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes/n1":
 			polls++
 			if polls == 1 {
 				w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"installing_k3s"}`)) //nolint:errcheck
@@ -404,11 +404,11 @@ func TestNodeCreateFollowStopsOnError(t *testing.T) {
 
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"waiting_ssh"}`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/nodes/n1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes/n1":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"error","stage":"waiting_ssh","error_message":"ssh never answered"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -431,11 +431,11 @@ func TestNodeCreateJSONSkipsFollow(t *testing.T) {
 	gets := 0
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/nodes/n1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes/n1":
 			gets++
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"active"}`)) //nolint:errcheck
 		default:

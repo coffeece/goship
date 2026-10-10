@@ -163,5 +163,10 @@ func esc(s string) string { return url.PathEscape(s) }
 // orgPath is an API path under an organization; rest starts with a slash.
 func orgPath(org, rest string) string { return "/orgs/" + esc(org) + rest }
 
-// appPath is an API path under one of the organization's apps.
-func appPath(org, app string) string { return orgPath(org, "/apps/"+esc(app)) }
+// projectPath is an API path under one of the organization's projects.
+func projectPath(org, project, rest string) string {
+	return orgPath(org, "/projects/"+esc(project)+rest)
+}
+
+// appPath is an API path under one of the project's apps.
+func appPath(org, project, app string) string { return projectPath(org, project, "/apps/"+esc(app)) }

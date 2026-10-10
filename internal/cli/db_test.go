@@ -9,7 +9,7 @@ import (
 // The password comes back once, so the table must show it.
 func TestDBUserAddShowsThePasswordOnce(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/orgs/acme/databases/shop/users" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/orgs/acme/projects/clave/databases/shop/users" {
 			t.Errorf("got %s %s", r.Method, r.URL.Path)
 		}
 		w.WriteHeader(http.StatusCreated)

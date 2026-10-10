@@ -51,7 +51,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 			"interactively from the account's live catalog; piped in or scripted, both\n" +
 			"must be passed.",
 		Args: cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			if (cloudRef == "") == (host == "") {
 				return errors.New("pass exactly one of --cloud or --host")
 			}
@@ -75,7 +75,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 
 			switch {
 			case cloudRef != "":
-				account, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, cloudRef)
+				account, err := resolveCloudAccount(cmd.Context(), app.Portal(), t, cloudRef)
 				if err != nil {
 					return err
 				}
@@ -86,7 +86,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 					if !tty {
 						return errors.New("--region is required (not a terminal to prompt)")
 					}
-					regions, err := app.Portal().CloudRegions(cmd.Context(), org, account.ID)
+					regions, err := app.Portal().CloudRegions(cmd.Context(), t.Org, t.Project, account.ID)
 					if err != nil {
 						return err
 					}
@@ -103,7 +103,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 					if !tty {
 						return errors.New("--size is required (not a terminal to prompt)")
 					}
-					sizes, err := app.Portal().CloudSizes(cmd.Context(), org, account.ID, region)
+					sizes, err := app.Portal().CloudSizes(cmd.Context(), t.Org, t.Project, account.ID, region)
 					if err != nil {
 						return err
 					}
@@ -134,7 +134,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 				headerSize = sshUser
 			}
 
-			created, err := app.Portal().CreateNode(cmd.Context(), org, req)
+			created, err := app.Portal().CreateNode(cmd.Context(), t.Org, t.Project, req)
 			if err != nil {
 				return err
 			}
@@ -155,7 +155,7 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 			defer stop()
 			return followNode(ctx, app.Portal(), followOpts{
 				out: cmd.OutOrStdout(), errw: cmd.ErrOrStderr(), verbose: app.Global.Verbose,
-				org: org, id: created.ID, name: created.Name, timeout: timeout,
+				target: t, id: created.ID, name: created.Name, timeout: timeout,
 			})
 		}),
 	}
@@ -270,7 +270,8 @@ var errFollowTimeout = errors.New("follow timed out")
 type followOpts struct {
 	out, errw io.Writer
 	verbose   bool
-	org, id   string
+	target    Target
+	id        string
 	name      string
 	timeout   time.Duration
 }
@@ -302,7 +303,7 @@ func followNode(ctx context.Context, client *portal.Client, o followOpts) error 
 	}
 
 	for {
-		n, err := client.Node(ctx, o.org, o.id)
+		n, err := client.Node(ctx, o.target.Org, o.target.Project, o.id)
 		switch {
 		case err != nil && ctx.Err() != nil:
 			return stopped()

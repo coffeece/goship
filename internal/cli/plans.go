@@ -17,32 +17,32 @@ func newPlansCmd(app *App) *cobra.Command {
 			"are sizes: nothing there is billed, and the node's pool decides which are\n" +
 			"available and which applies by default.",
 		Args: cobra.NoArgs,
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
 			ctx, client, r := cmd.Context(), app.Portal(), app.Renderer()
 
 			if node != "" {
-				id, err := deploy.ResolveNode(ctx, client, org, node)
+				id, err := deploy.ResolveNode(ctx, client, t, node)
 				if err != nil {
 					return err
 				}
-				plans, err := client.AvailablePlans(ctx, org, kind, id)
+				plans, err := client.AvailablePlans(ctx, t.Org, t.Project, kind, id)
 				if err != nil {
 					return err
 				}
 				return r.Render(app.planView(plans))
 			}
 
-			shared, err := client.AvailablePlans(ctx, org, kind, "")
+			shared, err := client.AvailablePlans(ctx, t.Org, t.Project, kind, "")
 			if err != nil {
 				return err
 			}
-			nodes, err := client.Nodes(ctx, org)
+			nodes, err := client.Nodes(ctx, t.Org, t.Project)
 			if err != nil {
 				return err
 			}
 			sections := []section[portal.Plan]{{key: "shared", title: "GoShip (shared)", items: shared}}
 			for _, n := range nodes {
-				plans, err := client.AvailablePlans(ctx, org, kind, n.ID)
+				plans, err := client.AvailablePlans(ctx, t.Org, t.Project, kind, n.ID)
 				if err != nil {
 					return err
 				}

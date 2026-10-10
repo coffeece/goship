@@ -12,7 +12,7 @@ import (
 )
 
 func newAppsCmd(app *App) *cobra.Command {
-	return newOrgListCmd(app, "apps", "List your apps in the current organization, or --all of them", (*portal.Client).Apps)
+	return newTargetListCmd(app, "apps", "List your apps in the current project, or --all of them", (*portal.Client).Apps)
 }
 
 func newAppCmd(app *App) *cobra.Command {
@@ -41,16 +41,16 @@ func appCreateCmd(app *App) *cobra.Command {
 		Use:   "create <name>",
 		Short: "Create an app",
 		Args:  cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			req.Name = args[0]
 			if node != "" {
-				id, err := deploy.ResolvePlacement(cmd.Context(), app.Portal(), org, node)
+				id, err := deploy.ResolvePlacement(cmd.Context(), app.Portal(), t, node)
 				if err != nil {
 					return err
 				}
 				req.NodeID = &id
 			}
-			created, err := app.Portal().CreateApp(cmd.Context(), org, req)
+			created, err := app.Portal().CreateApp(cmd.Context(), t.Org, t.Project, req)
 			if err != nil {
 				return err
 			}
@@ -73,13 +73,13 @@ func appInfoCmd(app *App) *cobra.Command {
 		Short: "Show an app and its units",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Read-only, so with no org selected we locate the app across
-			// every org rather than demanding `org use` first.
-			org, err := app.OrgForApp(cmd.Context(), args[0])
+			// Read-only, so with nothing selected we locate the app across
+			// every project rather than demanding `project use` first.
+			t, err := app.TargetForApp(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
-			found, err := app.Portal().App(cmd.Context(), org, args[0])
+			found, err := app.Portal().App(cmd.Context(), t.Org, t.Project, args[0])
 			if err != nil {
 				return err
 			}
@@ -104,11 +104,11 @@ func appRemoveCmd(app *App) *cobra.Command {
 		Aliases: []string{"remove", "delete"},
 		Short:   "Delete an app and everything it runs",
 		Args:    cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			if err := confirm(cmd, app.Global.Yes, "Delete app %q? This cannot be undone.", args[0]); err != nil {
 				return err
 			}
-			if err := app.Portal().DeleteApp(cmd.Context(), org, args[0]); err != nil {
+			if err := app.Portal().DeleteApp(cmd.Context(), t.Org, t.Project, args[0]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s deleted.", args[0])
@@ -121,8 +121,8 @@ func appLifecycleCmd(app *App, action, short string) *cobra.Command {
 		Use:   action + " <name>",
 		Short: short,
 		Args:  cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			if err := app.Portal().Lifecycle(cmd.Context(), org, args[0], action); err != nil {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			if err := app.Portal().Lifecycle(cmd.Context(), t.Org, t.Project, args[0], action); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s: %s requested.", args[0], action)
@@ -137,8 +137,8 @@ func appScaleCmd(app *App) *cobra.Command {
 		Use:   "scale <name> --units <n>",
 		Short: "Set how many units the app runs",
 		Args:  cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			if err := app.Portal().ScaleApp(cmd.Context(), org, args[0], units); err != nil {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			if err := app.Portal().ScaleApp(cmd.Context(), t.Org, t.Project, args[0], units); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s scaled to %d unit(s).", args[0], units)
@@ -155,8 +155,8 @@ func appPlanCmd(app *App) *cobra.Command {
 		Use:   "plan <name> <plan>",
 		Short: "Move the app to another plan",
 		Args:  cobra.ExactArgs(2),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			if err := app.Portal().SetAppPlan(cmd.Context(), org, args[0], args[1]); err != nil {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			if err := app.Portal().SetAppPlan(cmd.Context(), t.Org, t.Project, args[0], args[1]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s moved to plan %s.", args[0], args[1])

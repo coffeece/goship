@@ -8,7 +8,7 @@ import (
 
 // newDBsCmd is the plural lister, matching `apps`.
 func newDBsCmd(app *App) *cobra.Command {
-	return newOrgListCmd(app, "dbs", "List databases in the current organization, or --all of them", (*portal.Client).Databases)
+	return newTargetListCmd(app, "dbs", "List databases in the current project, or --all of them", (*portal.Client).Databases)
 }
 
 func newDBCmd(app *App) *cobra.Command {
@@ -27,8 +27,8 @@ func newDBCmd(app *App) *cobra.Command {
 	create.Flags().StringVar(&plan, "plan", "", "database plan (required)")
 	create.Flags().StringVar(&description, "description", "", "human description")
 	_ = create.MarkFlagRequired("plan")
-	create.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		if err := app.Portal().CreateDatabase(cmd.Context(), org, args[0], plan, description); err != nil {
+	create.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, args[0], plan, description); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Database %s requested on plan %s.", args[0], plan)
@@ -40,8 +40,8 @@ func newDBCmd(app *App) *cobra.Command {
 		Use:   "info <name>",
 		Short: "Show a database and its usage",
 		Args:  cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			db, err := app.Portal().Database(cmd.Context(), org, args[0])
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			db, err := app.Portal().Database(cmd.Context(), t.Org, t.Project, args[0])
 			if err != nil {
 				return err
 			}
@@ -49,7 +49,7 @@ func newDBCmd(app *App) *cobra.Command {
 			if err := r.Render(db); err != nil {
 				return err
 			}
-			stats, err := app.Portal().DatabaseStats(cmd.Context(), org, args[0])
+			stats, err := app.Portal().DatabaseStats(cmd.Context(), t.Org, t.Project, args[0])
 			if err != nil {
 				return err
 			}
@@ -61,8 +61,8 @@ func newDBCmd(app *App) *cobra.Command {
 		Use:   "users <name>",
 		Short: "List database users",
 		Args:  cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			list, err := app.Portal().DatabaseUsers(cmd.Context(), org, args[0])
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			list, err := app.Portal().DatabaseUsers(cmd.Context(), t.Org, t.Project, args[0])
 			if err != nil {
 				return err
 			}
@@ -77,8 +77,8 @@ func newDBCmd(app *App) *cobra.Command {
 	}
 	var accessMode string
 	userAdd.Flags().StringVar(&accessMode, "access", "rw", "access mode: rw or ro")
-	userAdd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		created, err := app.Portal().CreateDatabaseUser(cmd.Context(), org, args[0], args[1], accessMode)
+	userAdd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		created, err := app.Portal().CreateDatabaseUser(cmd.Context(), t.Org, t.Project, args[0], args[1], accessMode)
 		if err != nil {
 			return err
 		}
@@ -101,8 +101,8 @@ func newDBCmd(app *App) *cobra.Command {
 	var bindApp string
 	bind.Flags().StringVarP(&bindApp, "app", "a", "", "app to bind (required)")
 	_ = bind.MarkFlagRequired("app")
-	bind.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		if err := app.Portal().BindDatabase(cmd.Context(), org, args[0], bindApp); err != nil {
+	bind.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		if err := app.Portal().BindDatabase(cmd.Context(), t.Org, t.Project, args[0], bindApp); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Database %s bound to %s.", args[0], bindApp)
@@ -116,8 +116,8 @@ func newDBCmd(app *App) *cobra.Command {
 	var unbindApp string
 	unbind.Flags().StringVarP(&unbindApp, "app", "a", "", "app to unbind (required)")
 	_ = unbind.MarkFlagRequired("app")
-	unbind.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		if err := app.Portal().UnbindDatabase(cmd.Context(), org, args[0], unbindApp); err != nil {
+	unbind.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		if err := app.Portal().UnbindDatabase(cmd.Context(), t.Org, t.Project, args[0], unbindApp); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Database %s unbound from %s.", args[0], unbindApp)
@@ -128,11 +128,11 @@ func newDBCmd(app *App) *cobra.Command {
 		Aliases: []string{"remove", "delete"},
 		Short:   "Delete a database and its data",
 		Args:    cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			if err := confirm(cmd, app.Global.Yes, "Delete database %q and all its data?", args[0]); err != nil {
 				return err
 			}
-			if err := app.Portal().DeleteDatabase(cmd.Context(), org, args[0]); err != nil {
+			if err := app.Portal().DeleteDatabase(cmd.Context(), t.Org, t.Project, args[0]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("Database %s deleted.", args[0])

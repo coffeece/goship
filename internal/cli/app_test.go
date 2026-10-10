@@ -14,6 +14,7 @@ func stubAPIWithOrg(t *testing.T, h http.HandlerFunc) {
 	t.Helper()
 	stubAPI(t, h)
 	t.Setenv("GOSHIP_ORG", "acme")
+	t.Setenv("GOSHIP_PROJECT", "clave")
 }
 
 func TestAppsListsUnderTheCurrentOrg(t *testing.T) {
@@ -27,7 +28,7 @@ func TestAppsListsUnderTheCurrentOrg(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/acme/apps" {
+	if gotPath != "/api/v1/orgs/acme/projects/clave/apps" {
 		t.Errorf("path = %q", gotPath)
 	}
 	if !strings.Contains(out, "api") || !strings.Contains(out, "Small") {
@@ -45,7 +46,7 @@ func TestOrgFlagOverridesTheStoredOrg(t *testing.T) {
 	if _, err := run(t, "", "apps", "--org", "other"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/other/apps" {
+	if gotPath != "/api/v1/orgs/other/projects/clave/apps" {
 		t.Errorf("path = %q", gotPath)
 	}
 }
@@ -110,7 +111,7 @@ func TestLifecycleCommandsHitTheirEndpoint(t *testing.T) {
 			if _, err := run(t, "", "app", action, "api"); err != nil {
 				t.Fatal(err)
 			}
-			if want := "/api/v1/orgs/acme/apps/api/" + action; gotPath != want {
+			if want := "/api/v1/orgs/acme/projects/clave/apps/api/" + action; gotPath != want {
 				t.Errorf("path = %q, want %q", gotPath, want)
 			}
 			if gotMethod != http.MethodPost {
@@ -177,6 +178,7 @@ func TestProjectFileOrgBeatsTheSelectedOrg(t *testing.T) {
 		w.Write([]byte(`[]`)) //nolint:errcheck
 	})
 	t.Setenv("GOSHIP_ORG", "selected")
+	t.Setenv("GOSHIP_PROJECT", "clave")
 
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "goship.yml"), []byte("org: from-project\n"), 0o600); err != nil {
@@ -187,29 +189,31 @@ func TestProjectFileOrgBeatsTheSelectedOrg(t *testing.T) {
 	if _, err := run(t, "", "apps"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/from-project/apps" {
+	if gotPath != "/api/v1/orgs/from-project/projects/clave/apps" {
 		t.Errorf("path = %q, want the project's org", gotPath)
 	}
 
 	if _, err := run(t, "", "apps", "--org", "explicit"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/explicit/apps" {
+	if gotPath != "/api/v1/orgs/explicit/projects/clave/apps" {
 		t.Errorf("path = %q, want --org to win", gotPath)
 	}
 }
 
-// Apps are org-scoped, so "apps" alone shows only the current org. --all spans
-// every org the user belongs to, grouped — the fuller view that matches what
+// "apps" alone shows only the current project. --all spans every project in
+// every org the user belongs to, grouped as org/project — the fuller view that matches what
 // people expect after seeing their apps scattered across orgs.
-func TestAppsAllSpansEveryOrg(t *testing.T) {
+func TestAppsAllSpansEveryProject(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/apps":
+		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/projects/default/apps":
 			w.Write([]byte(`[{"name":"arcade","status":"stopped","plan_name":"Medium"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/apps":
+		case "/api/v1/orgs/globex/projects/default/apps":
 			w.Write([]byte(`[{"name":"globex-api","status":"running","plan_name":"Small"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -226,18 +230,20 @@ func TestAppsAllSpansEveryOrg(t *testing.T) {
 			t.Errorf("--all output missing %q:\n%s", want, out)
 		}
 	}
-	// Grouped by org: each org's header precedes its own apps.
-	if strings.Index(out, "games") > strings.Index(out, "arcade") {
+	// Grouped by org/project: each header precedes its own apps.
+	if strings.Index(out, "games/default") > strings.Index(out, "arcade") {
 		t.Errorf("expected the org header before its apps:\n%s", out)
 	}
 }
 
-func TestAppsAllJSONKeysByOrg(t *testing.T) {
+func TestAppsAllJSONKeysByOrgAndProject(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"games"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/apps":
+		case "/api/v1/orgs/games/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/projects/default/apps":
 			w.Write([]byte(`[{"name":"arcade"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -253,7 +259,7 @@ func TestAppsAllJSONKeysByOrg(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, out)
 	}
-	if len(got["games"]) != 1 || got["games"][0]["name"] != "arcade" {
+	if len(got["games/default"]) != 1 || got["games/default"][0]["name"] != "arcade" {
 		t.Errorf("got %v", got)
 	}
 }
@@ -265,9 +271,11 @@ func TestAppsWithNoOrgListsEverything(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/apps":
+		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/projects/default/apps":
 			w.Write([]byte(`[{"name":"arcade"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/apps":
+		case "/api/v1/orgs/globex/projects/default/apps":
 			w.Write([]byte(`[{"name":"globex-api"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)

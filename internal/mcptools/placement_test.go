@@ -21,20 +21,20 @@ func TestCreateAppFollowsTheDefaultPlacement(t *testing.T) {
 			var created map[string]any
 			url := api(t, func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
-				case "/api/v1/orgs/acme/placement":
+				case "/api/v1/orgs/acme/projects/clave/placement":
 					w.Write([]byte(tc.placement)) //nolint:errcheck
-				case "/api/v1/orgs/acme/nodes":
+				case "/api/v1/orgs/acme/projects/clave/nodes":
 					w.Write([]byte(`[]`)) //nolint:errcheck
-				case "/api/v1/orgs/acme/available-plans":
+				case "/api/v1/orgs/acme/projects/clave/available-plans":
 					w.Write([]byte(`[{"slug":"app-free","kind":"app","display_name":"Free","is_active":true,"billed":false}]`)) //nolint:errcheck
-				case "/api/v1/orgs/acme/apps":
+				case "/api/v1/orgs/acme/projects/clave/apps":
 					json.NewDecoder(r.Body).Decode(&created) //nolint:errcheck
 					w.Write([]byte(`{"name":"web"}`))        //nolint:errcheck
 				default:
 					w.WriteHeader(http.StatusNotFound)
 				}
 			})
-			cs := session(t, fakeClients{url: url, token: "t", org: "acme"}, Options{})
+			cs := session(t, fakeClients{url: url, token: "t", org: "acme", project: "clave"}, Options{})
 
 			if res := call(t, cs, "goship_create_app", tc.args); res.IsError {
 				t.Fatalf("goship_create_app: %s", text(res))

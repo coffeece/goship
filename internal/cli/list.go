@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -10,13 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newOrgListCmd is the plural lister every org-scoped noun shares: `apps`,
-// `dbs`, `domains`, `volumes`, `nodes`. They are all org-scoped, so the
-// listing shows the current org; --all spans every org you belong to, grouped
-// under each slug — as does having no org selected, since demanding
-// `org use` first for a read is friction.
-func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string) ([]T, error), opts ...orgListOption) *cobra.Command {
-	skipForbidden := slices.Contains(opts, skipForbiddenOrgs)
+// newOrgListCmd is the plural lister for an org-scoped noun (`domains`). It
+// lists the current org; --all spans every org you belong to, grouped under
+// each slug — as does having no org selected, since demanding `org use`
+// first for a read is friction.
+func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string) ([]T, error)) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
 		Use:   use,
@@ -40,10 +39,6 @@ func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client
 			sections := make([]section[T], 0, len(orgs))
 			for _, o := range orgs {
 				items, err := fetch(client, ctx, o.Slug)
-				if skipForbidden && portal.IsForbidden(err) {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Skipping org %s: your role there cannot see this.\n", o.Slug)
-					continue
-				}
 				if err != nil {
 					return err
 				}
@@ -56,15 +51,72 @@ func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client
 	return cmd
 }
 
-// orgListOption tunes newOrgListCmd for a noun that needs it.
-type orgListOption int
+// newTargetListCmd is the plural lister every project-scoped noun shares:
+// `apps`, `dbs`, `volumes`, `nodes`. The listing shows the current project;
+// --all spans every project you can reach in every org, grouped under
+// org/project — as does having no project selected and several to choose
+// from, since demanding `project use` first for a read is friction.
+func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string, string) ([]T, error), opts ...listOption) *cobra.Command {
+	skipForbidden := slices.Contains(opts, skipForbiddenProjects)
+	var all bool
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, client := cmd.Context(), app.Portal()
+			if !all {
+				t, err := app.Target(ctx)
+				switch {
+				case err == nil:
+					items, err := fetch(client, ctx, t.Org, t.Project)
+					if err != nil {
+						return err
+					}
+					return app.Renderer().Render(items)
+				case !errors.Is(err, errNoOrg) && !errors.Is(err, errNoProject):
+					return err
+				}
+			}
+			orgs, err := client.Orgs(ctx)
+			if err != nil {
+				return err
+			}
+			var sections []section[T]
+			for _, o := range orgs {
+				projects, err := client.Projects(ctx, o.Slug)
+				if err != nil {
+					return err
+				}
+				for _, p := range projects {
+					items, err := fetch(client, ctx, o.Slug, p.Slug)
+					if skipForbidden && portal.IsForbidden(err) {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s/%s: your role there cannot see this.\n", o.Slug, p.Slug)
+						continue
+					}
+					if err != nil {
+						return err
+					}
+					key := o.Slug + "/" + p.Slug
+					sections = append(sections, section[T]{key: key, title: key, items: items})
+				}
+			}
+			return renderSections(app, sections, func(items []T) any { return items })
+		},
+	}
+	cmd.Flags().BoolVarP(&all, "all", "A", false, "list across every project you can reach in every organization")
+	return cmd
+}
 
-// skipForbiddenOrgs leaves an org that answers 403 out of an --all listing,
-// with a note on stderr, instead of failing the whole listing on it.
-const skipForbiddenOrgs orgListOption = iota + 1
+// listOption tunes newTargetListCmd for a noun that needs it.
+type listOption int
 
-// section is one group of a listing that spans several places: an org, or a
-// placement. key names it in JSON, title above its table.
+// skipForbiddenProjects leaves a project that answers 403 out of an --all
+// listing, with a note on stderr, instead of failing the whole listing on it.
+const skipForbiddenProjects listOption = iota + 1
+
+// section is one group of a listing that spans several places: an org, a
+// project, or a placement. key names it in JSON, title above its table.
 type section[T any] struct {
 	key, title string
 	items      []T

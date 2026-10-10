@@ -23,8 +23,8 @@ func Price(p portal.Plan) string {
 // ChoosePlan picks the plan for an app being created on the shared cluster. A
 // free plan, where the organization has one, is the only thing safe to select
 // on the user's behalf; otherwise the choice costs money and is theirs.
-func ChoosePlan(ctx context.Context, client *portal.Client, org string) (portal.Plan, error) {
-	plans, err := client.AvailablePlans(ctx, org, "app", "")
+func ChoosePlan(ctx context.Context, client *portal.Client, t Target) (portal.Plan, error) {
+	plans, err := client.AvailablePlans(ctx, t.Org, t.Project, "app", "")
 	if err != nil {
 		return portal.Plan{}, err
 	}

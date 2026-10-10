@@ -10,8 +10,8 @@ import (
 
 // ResolveNode turns what a person types — the node's name, usually — into
 // the node's ID, which is what the API wants.
-func ResolveNode(ctx context.Context, client *portal.Client, org, ref string) (string, error) {
-	nodes, err := client.Nodes(ctx, org)
+func ResolveNode(ctx context.Context, client *portal.Client, t Target, ref string) (string, error) {
+	nodes, err := client.Nodes(ctx, t.Org, t.Project)
 	if err != nil {
 		return "", err
 	}
@@ -23,18 +23,18 @@ func ResolveNode(ctx context.Context, client *portal.Client, org, ref string) (s
 		names = append(names, n.Name)
 	}
 	if len(names) == 0 {
-		return "", fmt.Errorf("no node %q: org %q has no nodes yet — `goship node create` makes one", ref, org)
+		return "", fmt.Errorf("no node %q: %s has no nodes yet — `goship node create` makes one", ref, t)
 	}
-	return "", fmt.Errorf("no node %q in org %q; you have: %s", ref, org, strings.Join(names, ", "))
+	return "", fmt.Errorf("no node %q in %s; you have: %s", ref, t, strings.Join(names, ", "))
 }
 
 // ResolvePlacement is ResolveNode for where an app runs: "goship" also names
 // GoShip's servers, unless one of the organization's nodes is called that.
-func ResolvePlacement(ctx context.Context, client *portal.Client, org, ref string) (string, error) {
+func ResolvePlacement(ctx context.Context, client *portal.Client, t Target, ref string) (string, error) {
 	if ref != "goship" {
-		return ResolveNode(ctx, client, org, ref)
+		return ResolveNode(ctx, client, t, ref)
 	}
-	nodes, err := client.Nodes(ctx, org)
+	nodes, err := client.Nodes(ctx, t.Org, t.Project)
 	if err != nil {
 		return "", err
 	}
@@ -51,9 +51,9 @@ func ResolvePlacement(ctx context.Context, client *portal.Client, org, ref strin
 // pinned in the request so the app lands where the output says. A portal
 // that cannot answer leaves the choice to the API. An empty nodeID or
 // portal.GoShipPlacement means GoShip's servers, which need a plan.
-func PlaceNewApp(ctx context.Context, client *portal.Client, org, node string) (nodeID, where string, err error) {
+func PlaceNewApp(ctx context.Context, client *portal.Client, t Target, node string) (nodeID, where string, err error) {
 	if node != "" {
-		id, err := ResolvePlacement(ctx, client, org, node)
+		id, err := ResolvePlacement(ctx, client, t, node)
 		if err != nil {
 			return "", "", err
 		}
@@ -62,7 +62,7 @@ func PlaceNewApp(ctx context.Context, client *portal.Client, org, node string) (
 		}
 		return id, "on your node " + node, nil
 	}
-	p, err := client.Placement(ctx, org)
+	p, err := client.Placement(ctx, t.Org, t.Project)
 	if err != nil || p.Target == nil {
 		return "", "", nil
 	}

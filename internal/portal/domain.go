@@ -32,12 +32,12 @@ func (c *Client) DeleteOrgDomain(ctx context.Context, org, id string) error {
 	return c.delete(ctx, orgDomainsPath(org)+"/"+esc(id), nil)
 }
 
-func (c *Client) AddAppDomain(ctx context.Context, org, app, domain string) error {
-	return c.post(ctx, appPath(org, app)+"/domains", map[string]string{"domain": domain}, nil)
+func (c *Client) AddAppDomain(ctx context.Context, org, project, app, domain string) error {
+	return c.post(ctx, appPath(org, project, app)+"/domains", map[string]string{"domain": domain}, nil)
 }
 
-func (c *Client) RemoveAppDomain(ctx context.Context, org, app, domain string) error {
-	return c.delete(ctx, appPath(org, app)+"/domains/"+esc(domain), nil)
+func (c *Client) RemoveAppDomain(ctx context.Context, org, project, app, domain string) error {
+	return c.delete(ctx, appPath(org, project, app)+"/domains/"+esc(domain), nil)
 }
 
 func orgDomainsPath(org string) string { return orgPath(org, "/domains") }

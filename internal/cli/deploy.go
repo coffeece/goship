@@ -44,9 +44,9 @@ func newDeployCmd(app *App) *cobra.Command {
 			p := newProgress(cmd.OutOrStdout(), app.Global.Verbose)
 			defer func() { p.Finish(err) }()
 
-			// The project file may pin the org; it beats the persisted
-			// selection, and an unselected org is left for Run to answer
-			// from where the app already lives.
+			// The project file may pin the org and project; they beat the
+			// persisted selection, and an unselected one is left for Run to
+			// answer from where the app already lives.
 			proj, _, err := deploy.LoadProject(dir)
 			if err != nil {
 				return err
@@ -54,7 +54,13 @@ func newDeployCmd(app *App) *cobra.Command {
 			if proj.Org != "" {
 				app.Global.Org = firstNonEmpty(app.Global.Org, proj.Org)
 			}
-			org, orgErr := app.Org(cmd.Context())
+			if proj.ProjectSlug != "" {
+				app.Global.Project = firstNonEmpty(app.Global.Project, proj.ProjectSlug)
+			}
+			target, targetErr := app.Target(cmd.Context())
+			if targetErr != nil && !errors.Is(targetErr, errNoOrg) && !errors.Is(targetErr, errNoProject) {
+				return targetErr
+			}
 
 			var env map[string]string
 			if envFile != "" {
@@ -67,7 +73,8 @@ func newDeployCmd(app *App) *cobra.Command {
 			res, err := deploy.Run(cmd.Context(), app.Portal(), deploy.Options{
 				Dir:        dir,
 				App:        name,
-				Org:        org,
+				Org:        target.Org,
+				Project:    target.Project,
 				Platform:   platform,
 				Plan:       plan,
 				Node:       node,
@@ -76,8 +83,8 @@ func newDeployCmd(app *App) *cobra.Command {
 				Env:        env,
 			}, p)
 			switch {
-			case errors.Is(err, deploy.ErrNoOrg):
-				return orgErr
+			case errors.Is(err, deploy.ErrNoOrg), errors.Is(err, deploy.ErrNoProject):
+				return targetErr
 			case err != nil:
 				p.Finish(err)
 				// Only a release that ran has a log to point at.

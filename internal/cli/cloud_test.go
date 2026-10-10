@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -343,12 +344,12 @@ func TestResolveCloudAccountAmbiguousAndMissing(t *testing.T) {
 	}
 	client := portal.New(cfg.Endpoint(), "")
 
-	_, err = resolveCloudAccount(context.Background(), client, "acme", "digitalocean")
+	_, err = resolveCloudAccount(context.Background(), client, Target{Org: "acme"}, "digitalocean")
 	if err == nil || !strings.Contains(err.Error(), "prod-do") || !strings.Contains(err.Error(), "staging-do") {
 		t.Fatalf("ambiguous ref should list both labels, got %v", err)
 	}
 
-	_, err = resolveCloudAccount(context.Background(), client, "acme", "hetzner")
+	_, err = resolveCloudAccount(context.Background(), client, Target{Org: "acme"}, "hetzner")
 	if err == nil || !strings.Contains(err.Error(), "goship cloud connect") {
 		t.Fatalf("missing ref should point at connect, got %v", err)
 	}
@@ -380,18 +381,20 @@ func TestCloudSizesJSONKeepsRawNumbers(t *testing.T) {
 	}
 }
 
-// Only admins may list an org's cloud accounts; --all must not fail on the
-// orgs where you are only a member.
-func TestCloudListAllSkipsForbiddenOrgs(t *testing.T) {
+// Only admins may list cloud accounts; --all must not fail on the projects
+// where you are only a member.
+func TestCloudListAllSkipsForbiddenProjects(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/cloud-accounts":
+		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/projects/default/cloud-accounts":
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte(`{"error":"admins only"}`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/cloud-accounts":
-			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"globex-do"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/globex/projects/default/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"globex-do","scope":"org"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -402,20 +405,60 @@ func TestCloudListAllSkipsForbiddenOrgs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "globex") || !strings.Contains(out, "globex-do") {
-		t.Errorf("output should show the org that answered:\n%s", out)
+	if !strings.Contains(out, "globex/default") || !strings.Contains(out, "globex-do") || !strings.Contains(out, "org") {
+		t.Errorf("output should show the project that answered, with its accounts' scope:\n%s", out)
 	}
-	if !strings.Contains(stderr, "games") {
-		t.Errorf("stderr should say which org was skipped: %q", stderr)
+	if !strings.Contains(stderr, "games/default") {
+		t.Errorf("stderr should say which project was skipped: %q", stderr)
+	}
+}
+
+// An account connected from the CLI is the organization's; naming a project
+// connects, lists and disconnects through that project instead.
+func TestCloudCommandsUseTheProjectPathOnlyWhenAProjectIsNamed(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args []string
+		want string
+	}{
+		"connect, org":     {[]string{"cloud", "connect", "digitalocean", "--api-key-stdin"}, "POST /api/v1/orgs/acme/cloud-accounts"},
+		"connect, project": {[]string{"cloud", "connect", "digitalocean", "--api-key-stdin", "--project", "clave"}, "POST /api/v1/orgs/acme/projects/clave/cloud-accounts"},
+		"list, selected":   {[]string{"cloud", "list"}, "GET /api/v1/orgs/acme/projects/clave/cloud-accounts"},
+		"disconnect, org":  {[]string{"cloud", "disconnect", "acc-1", "--yes"}, "DELETE /api/v1/orgs/acme/cloud-accounts/acc-1"},
+		"regions, project": {[]string{"cloud", "regions", "acc-1", "--project", "clave"}, "GET /api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/regions"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var calls []string
+			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+				calls = append(calls, r.Method+" "+r.URL.Path)
+				switch {
+				case r.URL.Path == "/api/v1/cloud/providers":
+					w.Write([]byte(`[{"name":"digitalocean","label":"DigitalOcean","kind":"api_key","status":"available"}]`)) //nolint:errcheck
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/cloud-accounts"):
+					w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod"}]`)) //nolint:errcheck
+				case r.Method == http.MethodGet:
+					w.Write([]byte(`[]`)) //nolint:errcheck
+				default:
+					w.Write([]byte(`{"id":"acc-1","label":"prod"}`)) //nolint:errcheck
+				}
+			})
+			if _, err := run(t, "key\n", tc.args...); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Contains(calls, tc.want) {
+				t.Errorf("calls = %q, want %q", calls, tc.want)
+			}
+		})
 	}
 }
 
 // Every other lister still fails on a 403: skipping is opt-in.
-func TestOrgListAllStillFailsOnForbiddenElsewhere(t *testing.T) {
+func TestListAllStillFailsOnForbiddenElsewhere(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"games"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusForbidden)
 		}
@@ -976,7 +1019,7 @@ func stubGCPEnv(t *testing.T, account string) *gcpEnv {
 func TestCloudConnectGCPRunsTheSetupLocallyWhenGcloudIsSignedIn(t *testing.T) {
 	env := stubGCPEnv(t, "dev@acme.test")
 	calls := gcpAPI(t, []string{"done"})
-	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("y\n"), "cloud", "connect", "gcp", "--project", "acme-prod")
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("y\n"), "cloud", "connect", "gcp", "--gcp-project", "acme-prod")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1094,8 +1137,8 @@ func TestCloudConnectGCPRefusesWhatItCannotDo(t *testing.T) {
 	}{
 		"no terminal":         {false, []string{"cloud", "connect", "gcp"}, "--project-number"},
 		"label when guided":   {true, []string{"cloud", "connect", "gcp", "--label", "prod"}, "--label only works with --project-number"},
-		"both project flags":  {true, []string{"cloud", "connect", "gcp", "--project", "acme-prod", "--project-number", "1"}, "not both"},
-		"shell in project id": {true, []string{"cloud", "connect", "gcp", "--project", "x; rm -rf /"}, "not a Google Cloud project id"},
+		"both project flags":  {true, []string{"cloud", "connect", "gcp", "--gcp-project", "acme-prod", "--project-number", "1"}, "not both"},
+		"shell in project id": {true, []string{"cloud", "connect", "gcp", "--gcp-project", "x; rm -rf /"}, "not a Google Cloud project id"},
 	} {
 		env := stubGCPEnv(t, "dev@acme.test")
 		stdinIsTTY = func(*cobra.Command) bool { return tc.tty }

@@ -258,7 +258,9 @@ func TestDeployStopsWhenTheAppLivesInAnotherOrg(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"acme"},{"id":"2","slug":"other"}]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/other/apps/widget":
+		case strings.HasSuffix(r.URL.Path, "/projects"):
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/other/projects/default/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
 			t.Error("a duplicate app was created in the wrong org")
@@ -277,7 +279,7 @@ func TestDeployStopsWhenTheAppLivesInAnotherOrg(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the command to stop")
 	}
-	for _, want := range []string{`"widget"`, "--org other", "goship org use other"} {
+	for _, want := range []string{`"widget"`, "--org other --project default", "goship org use other"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got:\n%v", want, err)
 		}
@@ -294,6 +296,8 @@ func TestDeployStillCreatesWhenTheNameIsFreeEverywhere(t *testing.T) {
 		case r.URL.Path == "/api/v1/orgs":
 			orgsListed++
 			w.Write([]byte(`[{"id":"1","slug":"acme"}]`)) //nolint:errcheck
+		case strings.HasSuffix(r.URL.Path, "/projects"):
+			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
 		case strings.HasSuffix(r.URL.Path, "/available-plans"):
 			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
 		case r.Method == http.MethodPost:
@@ -327,7 +331,9 @@ func TestDeployFindsTheAppWhenThePinnedOrgIsForbidden(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"mine"}]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/mine/apps/widget":
+		case r.URL.Path == "/api/v1/orgs/mine/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/mine/projects/default/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
 			t.Error("an app was created despite one existing in a reachable org")
@@ -346,7 +352,7 @@ func TestDeployFindsTheAppWhenThePinnedOrgIsForbidden(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the command to stop")
 	}
-	for _, want := range []string{"not a member", "--org mine"} {
+	for _, want := range []string{"cannot reach", "--org mine --project default"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got:\n%v", want, err)
 		}
@@ -388,7 +394,9 @@ func TestDeployPicksTheOrgThatOwnsTheApp(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/beta/apps/widget":
+		case "/api/v1/orgs/alpha/projects", "/api/v1/orgs/beta/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/beta/projects/default/apps/widget":
 			deployedOrg = "beta"
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
@@ -408,7 +416,7 @@ func TestDeployPicksTheOrgThatOwnsTheApp(t *testing.T) {
 	if deployedOrg != "beta" {
 		t.Errorf("never looked the app up in beta")
 	}
-	if !strings.Contains(out, "Using org beta") {
+	if !strings.Contains(out, "Using beta/default") {
 		t.Errorf("the choice must be visible, got %q", out)
 	}
 }
@@ -419,7 +427,9 @@ func TestDeployAsksWhenTheNameIsAmbiguous(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/alpha/apps/widget", "/api/v1/orgs/beta/apps/widget":
+		case "/api/v1/orgs/alpha/projects", "/api/v1/orgs/beta/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/alpha/projects/default/apps/widget", "/api/v1/orgs/beta/projects/default/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -437,7 +447,7 @@ func TestDeployAsksWhenTheNameIsAmbiguous(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the command to stop")
 	}
-	for _, want := range []string{"alpha", "beta", "--org"} {
+	for _, want := range []string{"alpha/default", "beta/default", "--org"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got:\n%v", want, err)
 		}
@@ -585,7 +595,7 @@ func TestDeployOnANodeDoesNotAskForAPlan(t *testing.T) {
 	var created map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`[{"id":"n-1","name":"do-server1"}]`)) //nolint:errcheck
 		case strings.HasSuffix(r.URL.Path, "/available-plans"):
 			t.Error("the paid catalogue must not be consulted for a node-placed app")
@@ -624,7 +634,7 @@ func TestDeployReadsTheNodeFromConfig(t *testing.T) {
 	var created map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/v1/orgs/acme/nodes":
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
 			w.Write([]byte(`[{"id":"n-1","name":"do-server1"}]`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
 			json.NewDecoder(r.Body).Decode(&created)                      //nolint:errcheck
@@ -714,7 +724,7 @@ func TestDeployUploadsTheProjectUnderItsDisplayName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deployPath != "/api/v1/orgs/acme/apps/quake/deploys" {
+	if deployPath != "/api/v1/orgs/acme/projects/clave/apps/quake/deploys" {
 		t.Errorf("deploy path = %q, want the display name", deployPath)
 	}
 	if message != "first" {

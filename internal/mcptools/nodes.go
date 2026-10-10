@@ -12,12 +12,12 @@ type NodeList struct {
 }
 
 type NodeArg struct {
-	OrgArg
+	ProjectArg
 	Node string `json:"node" jsonschema:"node name or id"`
 }
 
 type CreateNodeArgs struct {
-	OrgArg
+	ProjectArg
 	Name           string `json:"name" jsonschema:"node name"`
 	Host           string `json:"host,omitempty" jsonschema:"SSH host of a machine you already own; omit to create one on a connected cloud account"`
 	Port           int    `json:"port,omitempty" jsonschema:"SSH port, default 22"`
@@ -35,32 +35,32 @@ type DeleteNodeArgs struct {
 
 func (r *registry) nodes() {
 	tool(r, "goship_list_nodes", "List the organization's own nodes (BYON) and their status.", read,
-		func(ctx context.Context, c *portal.Client, org string, _ OrgArg) (NodeList, error) {
-			n, err := c.Nodes(ctx, org)
+		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (NodeList, error) {
+			n, err := c.Nodes(ctx, t.Org, t.Project)
 			return NodeList{Nodes: n}, err
 		})
 	tool(r, "goship_get_node", "Show one node, including its provisioning stage and last error.", read,
-		func(ctx context.Context, c *portal.Client, org string, in NodeArg) (*portal.Node, error) {
-			id, err := deploy.ResolveNode(ctx, c, org, in.Node)
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in NodeArg) (*portal.Node, error) {
+			id, err := deploy.ResolveNode(ctx, c, t, in.Node)
 			if err != nil {
 				return nil, err
 			}
-			return c.Node(ctx, org, id)
+			return c.Node(ctx, t.Org, t.Project, id)
 		})
 	tool(r, "goship_create_node", "Add a node: either a machine you already own over SSH, or a new machine in a connected cloud account. Provisioning continues in the background; goship_get_node shows its stage. Nodes are billed monthly.", write,
-		func(ctx context.Context, c *portal.Client, org string, in CreateNodeArgs) (*portal.Node, error) {
-			return c.CreateNode(ctx, org, portal.CreateNodeRequest{
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateNodeArgs) (*portal.Node, error) {
+			return c.CreateNode(ctx, t.Org, t.Project, portal.CreateNodeRequest{
 				Name: in.Name, Host: in.Host, Port: in.Port, SSHUser: in.SSHUser, SSHKey: in.SSHKey,
 				CloudAccountID: in.CloudAccountID, Region: in.Region, Size: in.Size,
 			})
 		})
 	tool(r, "goship_delete_node", "Remove a node and every app on it; with destroy_server the cloud machine is destroyed too.", destructive,
-		func(ctx context.Context, c *portal.Client, org string, in DeleteNodeArgs) (Message, error) {
-			id, err := deploy.ResolveNode(ctx, c, org, in.Node)
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in DeleteNodeArgs) (Message, error) {
+			id, err := deploy.ResolveNode(ctx, c, t, in.Node)
 			if err != nil {
 				return Message{}, err
 			}
-			if err := c.DeleteNode(ctx, org, id, in.DestroyServer); err != nil {
+			if err := c.DeleteNode(ctx, t.Org, t.Project, id, in.DestroyServer); err != nil {
 				return Message{}, err
 			}
 			return msgf("Node %s removed.", in.Node)

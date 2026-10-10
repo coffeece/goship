@@ -108,7 +108,7 @@ func TestAvailablePlansAsksForTheNodesPool(t *testing.T) {
 		w.Write([]byte(`[{"slug":"b","kind":"app","is_active":true,"default":true},{"slug":"a","kind":"app","is_active":true,"sort_order":1}]`)) //nolint:errcheck
 	})
 
-	plans, err := c.AvailablePlans(context.Background(), "acme", "app", "node 1")
+	plans, err := c.AvailablePlans(context.Background(), "acme", "clave", "app", "node 1")
 	if err != nil {
 		t.Fatal(err)
 	}

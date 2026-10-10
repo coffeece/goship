@@ -36,23 +36,23 @@ type CreateNodeRequest struct {
 	Size           string `json:"size,omitempty"`
 }
 
-func (c *Client) Nodes(ctx context.Context, org string) ([]Node, error) {
+func (c *Client) Nodes(ctx context.Context, org, project string) ([]Node, error) {
 	var nodes []Node
-	return nodes, c.get(ctx, nodesPath(org), &nodes)
+	return nodes, c.get(ctx, nodesPath(org, project), &nodes)
 }
 
-func (c *Client) Node(ctx context.Context, org, id string) (*Node, error) {
+func (c *Client) Node(ctx context.Context, org, project, id string) (*Node, error) {
 	var n Node
-	return &n, c.get(ctx, nodesPath(org)+"/"+esc(id), &n)
+	return &n, c.get(ctx, nodesPath(org, project)+"/"+esc(id), &n)
 }
 
-func (c *Client) CreateNode(ctx context.Context, org string, req CreateNodeRequest) (*Node, error) {
+func (c *Client) CreateNode(ctx context.Context, org, project string, req CreateNodeRequest) (*Node, error) {
 	var n Node
-	return &n, c.post(ctx, nodesPath(org), req, &n)
+	return &n, c.post(ctx, nodesPath(org, project), req, &n)
 }
 
-func (c *Client) DeleteNode(ctx context.Context, org, id string, destroyServer bool) error {
-	return c.delete(ctx, nodesPath(org)+"/"+esc(id), map[string]any{"destroy_server": destroyServer})
+func (c *Client) DeleteNode(ctx context.Context, org, project, id string, destroyServer bool) error {
+	return c.delete(ctx, nodesPath(org, project)+"/"+esc(id), map[string]any{"destroy_server": destroyServer})
 }
 
 // GoShipPlacement is the node_id that asks for GoShip's servers explicitly,
@@ -72,9 +72,9 @@ type PlacementTarget struct {
 	NodeName string `json:"node_name"`
 }
 
-func (c *Client) Placement(ctx context.Context, org string) (*Placement, error) {
+func (c *Client) Placement(ctx context.Context, org, project string) (*Placement, error) {
 	var p Placement
-	return &p, c.get(ctx, orgPath(org, "/placement"), &p)
+	return &p, c.get(ctx, projectPath(org, project, "/placement"), &p)
 }
 
-func nodesPath(org string) string { return orgPath(org, "/nodes") }
+func nodesPath(org, project string) string { return projectPath(org, project, "/nodes") }

@@ -21,7 +21,7 @@ func TestLogsPrintsEachLineWithItsSourceAndUnit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if path != "/api/v1/orgs/acme/apps/blog/logs" || !strings.Contains(query, "lines=5") {
+	if path != "/api/v1/orgs/acme/projects/clave/apps/blog/logs" || !strings.Contains(query, "lines=5") {
 		t.Errorf("request = %s?%s", path, query)
 	}
 	if out != "[web][blog-web-1]: listening on :8888\n" {
@@ -145,7 +145,7 @@ func TestShellPipesInputToTheUnitAndPrintsItsOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if path != "/api/v1/orgs/acme/apps/blog/shell" || auth != "Bearer gsp_test" {
+	if path != "/api/v1/orgs/acme/projects/clave/apps/blog/shell" || auth != "Bearer gsp_test" {
 		t.Errorf("path=%q auth=%q", path, auth)
 	}
 	if !strings.Contains(query, "isolated=true") || !strings.Contains(query, "unit=blog-web-1") {

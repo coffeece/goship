@@ -29,8 +29,8 @@ func newDomainCmd(app *App) *cobra.Command {
 	var addApp string
 	add.Flags().StringVarP(&addApp, "app", "a", "", "app to attach the domain to (required)")
 	_ = add.MarkFlagRequired("app")
-	add.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		if err := app.Portal().AddAppDomain(cmd.Context(), org, addApp, args[0]); err != nil {
+	add.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		if err := app.Portal().AddAppDomain(cmd.Context(), t.Org, t.Project, addApp, args[0]); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Domain %s attached to %s.", args[0], addApp)
@@ -45,8 +45,8 @@ func newDomainCmd(app *App) *cobra.Command {
 	var rmApp string
 	remove.Flags().StringVarP(&rmApp, "app", "a", "", "app to detach the domain from (required)")
 	_ = remove.MarkFlagRequired("app")
-	remove.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		if err := app.Portal().RemoveAppDomain(cmd.Context(), org, rmApp, args[0]); err != nil {
+	remove.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		if err := app.Portal().RemoveAppDomain(cmd.Context(), t.Org, t.Project, rmApp, args[0]); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Domain %s detached from %s.", args[0], rmApp)
@@ -85,7 +85,7 @@ func newDomainCmd(app *App) *cobra.Command {
 
 // newVolumesCmd is the plural lister, matching `apps`.
 func newVolumesCmd(app *App) *cobra.Command {
-	return newOrgListCmd(app, "volumes", "List volumes in the current organization, or --all of them", (*portal.Client).Volumes)
+	return newTargetListCmd(app, "volumes", "List volumes in the current project, or --all of them", (*portal.Client).Volumes)
 }
 
 func newVolumeCmd(app *App) *cobra.Command {
@@ -105,12 +105,12 @@ func newVolumeCmd(app *App) *cobra.Command {
 	create.Flags().StringVar(&plan, "plan", "byon-local", "byon-local or do-block-storage")
 	create.Flags().IntVar(&size, "size", 5, "capacity in GiB")
 	_ = create.MarkFlagRequired("node")
-	create.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		nodeID, err := deploy.ResolveNode(cmd.Context(), app.Portal(), org, node)
+	create.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		nodeID, err := deploy.ResolveNode(cmd.Context(), app.Portal(), t, node)
 		if err != nil {
 			return err
 		}
-		v, err := app.Portal().CreateVolume(cmd.Context(), org, args[0], nodeID, plan, size)
+		v, err := app.Portal().CreateVolume(cmd.Context(), t.Org, t.Project, args[0], nodeID, plan, size)
 		if err != nil {
 			return err
 		}
@@ -123,8 +123,8 @@ func newVolumeCmd(app *App) *cobra.Command {
 		Use:   "info <name>",
 		Short: "Show a volume and where it is mounted",
 		Args:  cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			v, err := app.Portal().Volume(cmd.Context(), org, args[0])
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			v, err := app.Portal().Volume(cmd.Context(), t.Org, t.Project, args[0])
 			if err != nil {
 				return err
 			}
@@ -151,8 +151,8 @@ func newVolumeCmd(app *App) *cobra.Command {
 	bind.Flags().BoolVar(&readOnly, "read-only", false, "mount read-only")
 	_ = bind.MarkFlagRequired("app")
 	_ = bind.MarkFlagRequired("mount")
-	bind.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		if err := app.Portal().BindVolume(cmd.Context(), org, args[0], bindApp, mount, readOnly); err != nil {
+	bind.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		if err := app.Portal().BindVolume(cmd.Context(), t.Org, t.Project, args[0], bindApp, mount, readOnly); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Volume %s mounted on %s at %s.", args[0], bindApp, mount)
@@ -168,8 +168,8 @@ func newVolumeCmd(app *App) *cobra.Command {
 	unbind.Flags().StringVar(&unbindMount, "mount", "", "mount point to remove (required)")
 	_ = unbind.MarkFlagRequired("app")
 	_ = unbind.MarkFlagRequired("mount")
-	unbind.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		if err := app.Portal().UnbindVolume(cmd.Context(), org, args[0], unbindApp, unbindMount); err != nil {
+	unbind.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		if err := app.Portal().UnbindVolume(cmd.Context(), t.Org, t.Project, args[0], unbindApp, unbindMount); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Volume %s unmounted from %s. The data is still there.", args[0], unbindApp)
@@ -180,11 +180,11 @@ func newVolumeCmd(app *App) *cobra.Command {
 		Aliases: []string{"remove", "delete"},
 		Short:   "Delete a volume and the data on it",
 		Args:    cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			if err := confirm(cmd, app.Global.Yes, "Delete volume %q and the data on it?", args[0]); err != nil {
 				return err
 			}
-			if err := app.Portal().DeleteVolume(cmd.Context(), org, args[0]); err != nil {
+			if err := app.Portal().DeleteVolume(cmd.Context(), t.Org, t.Project, args[0]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("Volume %s deleted.", args[0])
@@ -197,7 +197,7 @@ func newVolumeCmd(app *App) *cobra.Command {
 
 // newNodesCmd is the plural lister, matching `apps`.
 func newNodesCmd(app *App) *cobra.Command {
-	return newOrgListCmd(app, "nodes", "List your nodes in the current organization, or --all of them", (*portal.Client).Nodes)
+	return newTargetListCmd(app, "nodes", "List your nodes in the current project, or --all of them", (*portal.Client).Nodes)
 }
 
 func newNodeCmd(app *App) *cobra.Command {
@@ -221,13 +221,13 @@ func newNodeCmd(app *App) *cobra.Command {
 	add.Flags().StringVar(&keyFile, "ssh-key", "", "path to a private key with access to the host (required)")
 	_ = add.MarkFlagRequired("host")
 	_ = add.MarkFlagRequired("ssh-key")
-	add.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+	add.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 		key, err := os.ReadFile(keyFile)
 		if err != nil {
 			return err
 		}
 		req.Name, req.Type, req.SSHKey = args[0], "vps", string(key)
-		created, err := app.Portal().CreateNode(cmd.Context(), org, req)
+		created, err := app.Portal().CreateNode(cmd.Context(), t.Org, t.Project, req)
 		if err != nil {
 			return err
 		}
@@ -240,12 +240,12 @@ func newNodeCmd(app *App) *cobra.Command {
 		Use:   "info <node>",
 		Short: "Show a node",
 		Args:  cobra.ExactArgs(1),
-		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-			id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), org, args[0])
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), t, args[0])
 			if err != nil {
 				return err
 			}
-			n, err := app.Portal().Node(cmd.Context(), org, id)
+			n, err := app.Portal().Node(cmd.Context(), t.Org, t.Project, id)
 			if err != nil {
 				return err
 			}
@@ -261,8 +261,8 @@ func newNodeCmd(app *App) *cobra.Command {
 	}
 	var destroy bool
 	remove.Flags().BoolVar(&destroy, "destroy-server", false, "also destroy the machine at the cloud provider")
-	remove.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), org, args[0])
+	remove.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), t, args[0])
 		if err != nil {
 			return err
 		}
@@ -273,7 +273,7 @@ func newNodeCmd(app *App) *cobra.Command {
 		if err := confirm(cmd, app.Global.Yes, question, args[0]); err != nil {
 			return err
 		}
-		if err := app.Portal().DeleteNode(cmd.Context(), org, id, destroy); err != nil {
+		if err := app.Portal().DeleteNode(cmd.Context(), t.Org, t.Project, id, destroy); err != nil {
 			return err
 		}
 		// Destroying the machine runs on after the API answers, so this says

@@ -13,15 +13,15 @@ func TestDatabaseCommandsUseTheServiceInstanceEndpoints(t *testing.T) {
 		name, method, path string
 		args               []string
 	}{
-		{"create", http.MethodPost, "/api/v1/orgs/acme/services/postgresql/instances",
+		{"create", http.MethodPost, "/api/v1/orgs/acme/projects/clave/services/postgresql/instances",
 			[]string{"db", "create", "main", "--plan", "starter"}},
-		{"delete", http.MethodDelete, "/api/v1/orgs/acme/services/postgresql/instances/main",
+		{"delete", http.MethodDelete, "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/main",
 			[]string{"db", "rm", "main", "--yes"}},
-		{"bind", http.MethodPost, "/api/v1/orgs/acme/services/postgresql/instances/main/bind",
+		{"bind", http.MethodPost, "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/main/bind",
 			[]string{"db", "bind", "main", "-a", "api"}},
-		{"unbind", http.MethodDelete, "/api/v1/orgs/acme/services/postgresql/instances/main/bind/api",
+		{"unbind", http.MethodDelete, "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/main/bind/api",
 			[]string{"db", "unbind", "main", "-a", "api"}},
-		{"list", http.MethodGet, "/api/v1/orgs/acme/databases",
+		{"list", http.MethodGet, "/api/v1/orgs/acme/projects/clave/databases",
 			[]string{"dbs"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestVolumeUnbindIsAPost(t *testing.T) {
 	if _, err := run(t, "", "volume", "unbind", "uploads", "-a", "api", "--mount", "/data"); err != nil {
 		t.Fatal(err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/volumes/uploads/unbind" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/projects/clave/volumes/uploads/unbind" {
 		t.Errorf("%s %s", gotMethod, gotPath)
 	}
 }
@@ -84,7 +84,7 @@ func TestDomainAddTargetsTheApp(t *testing.T) {
 	if _, err := run(t, "", "domain", "add", "shop.example.com", "-a", "api"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/acme/apps/api/domains" {
+	if gotPath != "/api/v1/orgs/acme/projects/clave/apps/api/domains" {
 		t.Errorf("path = %q", gotPath)
 	}
 	if body["domain"] != "shop.example.com" {

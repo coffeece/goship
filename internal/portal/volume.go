@@ -19,34 +19,34 @@ type VolumeBind struct {
 	ReadOnly   bool   `json:"read_only" table:"READ-ONLY"`
 }
 
-func (c *Client) Volumes(ctx context.Context, org string) ([]Volume, error) {
+func (c *Client) Volumes(ctx context.Context, org, project string) ([]Volume, error) {
 	var volumes []Volume
-	return volumes, c.get(ctx, volumesPath(org), &volumes)
+	return volumes, c.get(ctx, volumesPath(org, project), &volumes)
 }
 
-func (c *Client) Volume(ctx context.Context, org, name string) (*Volume, error) {
+func (c *Client) Volume(ctx context.Context, org, project, name string) (*Volume, error) {
 	var v Volume
-	return &v, c.get(ctx, volumesPath(org)+"/"+esc(name), &v)
+	return &v, c.get(ctx, volumesPath(org, project)+"/"+esc(name), &v)
 }
 
-func (c *Client) CreateVolume(ctx context.Context, org, name, nodeID, plan string, capacityGiB int) (*Volume, error) {
+func (c *Client) CreateVolume(ctx context.Context, org, project, name, nodeID, plan string, capacityGiB int) (*Volume, error) {
 	body := map[string]any{"name": name, "node_id": nodeID, "plan": plan, "capacity_gib": capacityGiB}
 	var v Volume
-	return &v, c.post(ctx, volumesPath(org), body, &v)
+	return &v, c.post(ctx, volumesPath(org, project), body, &v)
 }
 
-func (c *Client) BindVolume(ctx context.Context, org, name, app, mountPoint string, readOnly bool) error {
+func (c *Client) BindVolume(ctx context.Context, org, project, name, app, mountPoint string, readOnly bool) error {
 	body := map[string]any{"app": app, "mount_point": mountPoint, "read_only": readOnly}
-	return c.post(ctx, volumesPath(org)+"/"+esc(name)+"/bind", body, nil)
+	return c.post(ctx, volumesPath(org, project)+"/"+esc(name)+"/bind", body, nil)
 }
 
-func (c *Client) UnbindVolume(ctx context.Context, org, name, app, mountPoint string) error {
+func (c *Client) UnbindVolume(ctx context.Context, org, project, name, app, mountPoint string) error {
 	body := map[string]string{"app": app, "mount_point": mountPoint}
-	return c.post(ctx, volumesPath(org)+"/"+esc(name)+"/unbind", body, nil)
+	return c.post(ctx, volumesPath(org, project)+"/"+esc(name)+"/unbind", body, nil)
 }
 
-func (c *Client) DeleteVolume(ctx context.Context, org, name string) error {
-	return c.delete(ctx, volumesPath(org)+"/"+esc(name), nil)
+func (c *Client) DeleteVolume(ctx context.Context, org, project, name string) error {
+	return c.delete(ctx, volumesPath(org, project)+"/"+esc(name), nil)
 }
 
-func volumesPath(org string) string { return orgPath(org, "/volumes") }
+func volumesPath(org, project string) string { return projectPath(org, project, "/volumes") }
