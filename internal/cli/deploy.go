@@ -54,8 +54,10 @@ func newDeployCmd(app *App) *cobra.Command {
 			if proj.Org != "" {
 				app.Global.Org = firstNonEmpty(app.Global.Org, proj.Org)
 			}
-			if proj.ProjectSlug != "" {
-				app.Global.Project = firstNonEmpty(app.Global.Project, proj.ProjectSlug)
+			// The directory's file speaks for itself, so selectedProject can
+			// tell whether its project belongs to the org that was resolved.
+			if proj.Org != "" || proj.ProjectSlug != "" {
+				app.ProjectOrg, app.ProjectProject = proj.Org, proj.ProjectSlug
 			}
 			target, targetErr := app.Target(cmd.Context())
 			if targetErr != nil && !errors.Is(targetErr, errNoOrg) && !errors.Is(targetErr, errNoProject) {

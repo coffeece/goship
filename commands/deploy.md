@@ -8,4 +8,5 @@ the `goship-deploy` skill end to end: read the project and report what you
 found, make only the changes GoShip needs, write `goship.yaml` and
 `.goshipignore` if missing, deploy with the `goship_deploy` tool (or
 `goship deploy` when the MCP server is not available), then verify the URL
-answers and report it.
+answers and report it. When the organization has several projects, pass
+`project` (or set `project:` in `goship.yaml`) as the skill describes.

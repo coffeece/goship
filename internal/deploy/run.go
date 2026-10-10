@@ -90,7 +90,12 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 	platform := o.Platform
 	dockerfile := firstNonEmpty(o.Dockerfile, proj.Dockerfile)
 
-	target, err := chooseTarget(ctx, client, Target{Org: firstNonEmpty(o.Org, proj.Org), Project: firstNonEmpty(o.Project, proj.ProjectSlug)}, name, r)
+	// The file's project belongs to the org the file names.
+	want := Target{Org: firstNonEmpty(o.Org, proj.Org), Project: o.Project}
+	if want.Project == "" && (proj.Org == "" || proj.Org == want.Org) {
+		want.Project = proj.ProjectSlug
+	}
+	target, err := chooseTarget(ctx, client, want, name, r)
 	if err != nil {
 		return nil, err
 	}

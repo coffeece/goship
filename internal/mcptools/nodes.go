@@ -34,7 +34,7 @@ type DeleteNodeArgs struct {
 }
 
 func (r *registry) nodes() {
-	tool(r, "goship_list_nodes", "List the organization's own nodes (BYON) and their status.", read,
+	tool(r, "goship_list_nodes", "List the project's own nodes (BYON) and their status.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (NodeList, error) {
 			n, err := c.Nodes(ctx, t.Org, t.Project)
 			return NodeList{Nodes: n}, err

@@ -32,7 +32,7 @@ type VolumeBindArgs struct {
 }
 
 func (r *registry) volumes() {
-	tool(r, "goship_list_volumes", "List persistent disks on the organization's nodes and what they are mounted in.", read,
+	tool(r, "goship_list_volumes", "List persistent disks on the project's nodes and what they are mounted in.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (VolumeList, error) {
 			v, err := c.Volumes(ctx, t.Org, t.Project)
 			return VolumeList{Volumes: v}, err

@@ -12,7 +12,7 @@ func newPlansCmd(app *App) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "plans",
-		Short: "List the plans your organization can choose, per placement",
+		Short: "List the plans the current project can choose, per placement",
 		Long: "Plans on GoShip's shared cluster carry a price. On a node you own they\n" +
 			"are sizes: nothing there is billed, and the node's pool decides which are\n" +
 			"available and which applies by default.",
