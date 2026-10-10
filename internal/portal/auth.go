@@ -10,10 +10,12 @@ import (
 )
 
 type Me struct {
-	ID            string   `json:"id"`
-	Email         string   `json:"email" table:"EMAIL"`
-	Name          string   `json:"name" table:"NAME"`
-	Groups        []string `json:"groups" table:"ORGS"`
+	ID    string `json:"id"`
+	Email string `json:"email" table:"EMAIL"`
+	Name  string `json:"name" table:"NAME"`
+	// Orgs are the slugs of the organizations the user belongs to. WhoAmI
+	// fills them from the org list; /auth/me does not carry them.
+	Orgs          []string `json:"orgs" table:"ORGS"`
 	Provider      string   `json:"provider"`
 	EmailVerified bool     `json:"email_verified"`
 	IsAdmin       bool     `json:"is_admin"`
@@ -31,6 +33,23 @@ func (c *Client) Login(ctx context.Context, email, password string) (string, err
 func (c *Client) Me(ctx context.Context) (*Me, error) {
 	var me Me
 	return &me, c.get(ctx, "/auth/me", &me)
+}
+
+// WhoAmI is Me with the user's organizations filled in.
+func (c *Client) WhoAmI(ctx context.Context) (*Me, error) {
+	me, err := c.Me(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgs, err := c.Orgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	me.Orgs = make([]string, len(orgs))
+	for i, o := range orgs {
+		me.Orgs[i] = o.Slug
+	}
+	return me, nil
 }
 
 // ExchangeCode trades an authorization code from the browser login for an

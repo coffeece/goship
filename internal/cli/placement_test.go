@@ -47,12 +47,12 @@ func TestDeployUsesTheOrgDefaultNode(t *testing.T) {
 	created, plansAsked, out := deployNewApp(t, `{"mode":"auto","target":{"node_id":"n-prod","node_name":"prod"}}`)
 
 	if created["node_id"] != "n-prod" {
-		t.Errorf("node_id = %v, want the org default node", created["node_id"])
+		t.Errorf("node_id = %v, want the project default node", created["node_id"])
 	}
 	if plansAsked || created["plan"] != nil {
 		t.Errorf("a node app must not pick from the paid catalogue (asked=%v, plan=%v)", plansAsked, created["plan"])
 	}
-	if !strings.Contains(out, "on your node prod (org default)") {
+	if !strings.Contains(out, "on your node prod (project default)") {
 		t.Errorf("the output should say the app goes to the default node, got %q", out)
 	}
 }

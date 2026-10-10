@@ -47,7 +47,7 @@ func ResolvePlacement(ctx context.Context, client *portal.Client, t Target, ref 
 }
 
 // PlaceNewApp decides where a new app goes and how to say so. A node the
-// caller named wins; otherwise the organization's default placement does,
+// caller named wins; otherwise the project's default placement does,
 // pinned in the request so the app lands where the output says. A portal
 // that cannot answer leaves the choice to the API. An empty nodeID or
 // portal.GoShipPlacement means GoShip's servers, which need a plan.
@@ -66,7 +66,7 @@ func PlaceNewApp(ctx context.Context, client *portal.Client, t Target, node stri
 	if err != nil || p.Target == nil {
 		return "", "", nil
 	}
-	return p.Target.NodeID, "on your node " + p.Target.NodeName + " (org default)", nil
+	return p.Target.NodeID, "on your node " + p.Target.NodeName + " (project default)", nil
 }
 
 // OnNode reports whether a PlaceNewApp result is one of the organization's

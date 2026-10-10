@@ -61,7 +61,7 @@ func appCreateCmd(app *App) *cobra.Command {
 	f.StringVar(&req.Platform, "platform", "", "platform: go, python, nodejs or static (required)")
 	f.StringVar(&req.Plan, "plan", "", "plan slug; required on GoShip's servers, app-small on a node when omitted")
 	f.StringVar(&req.Description, "description", "", "human description")
-	f.StringVar(&node, "node", "", "run on one of your own nodes, by name, or goship for GoShip's servers (default: the org's default placement)")
+	f.StringVar(&node, "node", "", "run on one of your own nodes, by name, or goship for GoShip's servers (default: the project's default placement)")
 	_ = cmd.MarkFlagRequired("platform")
 
 	return cmd
@@ -81,7 +81,7 @@ func appInfoCmd(app *App) *cobra.Command {
 			}
 			found, err := app.Portal().App(cmd.Context(), t.Org, t.Project, args[0])
 			if err != nil {
-				return err
+				return app.explainProject(cmd.Context(), t, err)
 			}
 			r := app.Renderer()
 			if err := r.Render(found); err != nil {

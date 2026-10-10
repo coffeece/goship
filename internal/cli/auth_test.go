@@ -51,7 +51,9 @@ func loginAPI(t *testing.T, calls *[]string) http.HandlerFunc {
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{"id":"tok-1","token":"gsp_session"}`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/auth/me":
-			w.Write([]byte(`{"email":"gui@example.com","groups":["acme"]}`)) //nolint:errcheck
+			w.Write([]byte(`{"email":"gui@example.com","groups":["acme-clave"]}`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"acme"}]`)) //nolint:errcheck
 		case strings.HasPrefix(r.URL.Path, "/api/v1/auth/tokens/") && r.Method == http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -190,10 +192,24 @@ func TestLogoutClearsTheTokenEvenWhenRevokingFails(t *testing.T) {
 	}
 }
 
-func TestWhoamiRendersJSONOnDemand(t *testing.T) {
-	stubAPI(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"id":"u1","email":"gui@example.com","groups":["acme"]}`)) //nolint:errcheck
+// /auth/me's groups are platform team names (acme-clave), not organizations;
+// the CLI shows the organizations from the org list.
+func whoamiAPI(t *testing.T) {
+	t.Helper()
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/auth/me":
+			w.Write([]byte(`{"id":"u1","email":"gui@example.com","groups":["acme-clave"]}`)) //nolint:errcheck
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"acme"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	})
+}
+
+func TestWhoamiRendersJSONOnDemand(t *testing.T) {
+	whoamiAPI(t)
 
 	out, err := run(t, "", "whoami", "--output", "json")
 	if err != nil {
@@ -205,6 +221,60 @@ func TestWhoamiRendersJSONOnDemand(t *testing.T) {
 	}
 	if me["email"] != "gui@example.com" {
 		t.Errorf("got %v", me)
+	}
+	if orgs, _ := me["orgs"].([]any); len(orgs) != 2 || orgs[0] != "acme" || orgs[1] != "globex" {
+		t.Errorf("orgs = %v, want the organizations", me["orgs"])
+	}
+	if _, ok := me["groups"]; ok {
+		t.Errorf("platform groups leaked into the output: %v", me)
+	}
+}
+
+func TestWhoamiShowsOrganizationsNotTeams(t *testing.T) {
+	whoamiAPI(t)
+	out, err := run(t, "", "whoami")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "acme") || !strings.Contains(out, "globex") || strings.Contains(out, "acme-clave") {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+// A pin on an org the user belongs to survives a login, whatever the
+// platform's groups for them look like.
+func TestLoginKeepsAValidOrgPin(t *testing.T) {
+	var calls []string
+	stubAPI(t, loginAPI(t, &calls))
+	if err := (&config.Config{Org: "acme", Projects: map[string]string{"acme": "clave"}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := run(t, "hunter2\n", "login", "--email", "gui@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "not a member") {
+		t.Errorf("output = %q", out)
+	}
+	if cfg, _ := config.Load(); cfg.Org != "acme" || cfg.Projects["acme"] != "clave" {
+		t.Errorf("config = %+v, want the pin kept", cfg)
+	}
+}
+
+func TestLoginDropsAPinOnAnOrgTheUserIsNotIn(t *testing.T) {
+	var calls []string
+	stubAPI(t, loginAPI(t, &calls))
+	if err := (&config.Config{Org: "stranger", Projects: map[string]string{"stranger": "x"}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := run(t, "hunter2\n", "login", "--email", "gui@example.com")
+	if err != nil || !strings.Contains(out, `not a member of "stranger"`) {
+		t.Fatalf("out %q err %v", out, err)
+	}
+	if cfg, _ := config.Load(); cfg.Org != "" || len(cfg.Projects) != 0 {
+		t.Errorf("config = %+v, want the stale pin gone", cfg)
 	}
 }
 

@@ -56,7 +56,7 @@ func (c *Client) DeleteNode(ctx context.Context, org, project, id string, destro
 }
 
 // GoShipPlacement is the node_id that asks for GoShip's servers explicitly,
-// overriding the organization's default placement.
+// overriding the project's default placement.
 const GoShipPlacement = "goship"
 
 // Placement is where an organization's new apps go when the create request

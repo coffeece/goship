@@ -94,11 +94,20 @@ func establishSession(cmd *cobra.Command, app *App, jwt string) error {
 	if err != nil {
 		return err
 	}
+	// Without the list there is nothing to compare the pin with, so keep it.
+	orgs, err := client.Orgs(cmd.Context())
+	if err != nil {
+		return app.Renderer().Message("Logged in as %s.", me.Email)
+	}
+	slugs := make([]string, len(orgs))
+	for i, o := range orgs {
+		slugs[i] = o.Slug
+	}
 
 	// The selected org is stored per config, not per identity, so signing in as
 	// someone else leaves a pin they may have no access to — and every
 	// org-scoped command then answers "forbidden" for no visible reason.
-	if dropped := app.Config.ForgetOrgUnlessMember(me.Groups); dropped != "" {
+	if dropped := app.Config.ForgetOrgUnlessMember(slugs); dropped != "" {
 		if err := app.Config.Save(); err != nil {
 			return err
 		}
@@ -135,7 +144,7 @@ func newWhoamiCmd(app *App) *cobra.Command {
 		Short: "Show the authenticated user",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			me, err := app.Portal().Me(cmd.Context())
+			me, err := app.Portal().WhoAmI(cmd.Context())
 			if err != nil {
 				return err
 			}

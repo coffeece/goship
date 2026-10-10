@@ -22,7 +22,7 @@ type CreateAppArgs struct {
 	Name     string `json:"name" jsonschema:"app name: lowercase letters, digits and hyphens"`
 	Platform string `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; omit for an app built from a Dockerfile"`
 	Plan     string `json:"plan,omitempty" jsonschema:"plan slug from goship_list_plans; required unless the org has a free plan or node is set"`
-	Node     string `json:"node,omitempty" jsonschema:"name of one of the organization's own nodes to run the app on (never billed), or goship for GoShip's servers; omitted, the organization's default placement decides"`
+	Node     string `json:"node,omitempty" jsonschema:"name of one of the project's own nodes to run the app on (never billed), or goship for GoShip's servers; omitted, the project's default placement decides"`
 }
 
 type ScaleArgs struct {

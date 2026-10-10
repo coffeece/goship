@@ -67,19 +67,21 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 			ctx, client := cmd.Context(), app.Portal()
 			// Nothing to choose from narrows the listing to the org that was
 			// named or selected; with no org either, it spans them all.
-			var org string
+			var org, only string
 			if !all {
 				t, err := app.Target(ctx)
 				switch {
 				case err == nil:
 					items, err := fetch(client, ctx, t.Org, t.Project)
 					if err != nil {
-						return err
+						return app.explainProject(ctx, t, err)
 					}
 					return app.Renderer().Render(items)
 				case errors.Is(err, errNoProject):
 					org = t.Org
-				case !errors.Is(err, errNoOrg):
+				case errors.Is(err, errNoOrg):
+					only = t.Project
+				default:
 					return err
 				}
 			}
@@ -102,6 +104,9 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 					return err
 				}
 				for _, p := range projects {
+					if only != "" && p.Slug != only {
+						continue
+					}
 					items, err := fetch(client, ctx, o, p.Slug)
 					if skipForbidden && portal.IsForbidden(err) {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s/%s: your role there cannot see this.\n", o, p.Slug)

@@ -144,10 +144,14 @@ func TestNoTokenIsExplainedAsAToolError(t *testing.T) {
 
 func TestNoOrgIsExplainedAsAToolError(t *testing.T) {
 	url := api(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/auth/me" {
+		switch r.URL.Path {
+		case "/api/v1/auth/me":
+			w.Write([]byte(`{"email":"me@example.com","groups":["acme-clave"]}`)) //nolint:errcheck
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"slug":"acme"}]`)) //nolint:errcheck
+		default:
 			t.Errorf("unexpected call %s", r.URL)
 		}
-		w.Write([]byte(`{"email":"me@example.com"}`)) //nolint:errcheck
 	})
 	cs := session(t, fakeClients{url: url, token: "tok"}, Options{})
 	res := call(t, cs, "goship_list_apps", nil)
@@ -155,8 +159,12 @@ func TestNoOrgIsExplainedAsAToolError(t *testing.T) {
 		t.Errorf("got isError=%v %q", res.IsError, text(res))
 	}
 	res = call(t, cs, "goship_whoami", nil)
-	if res.IsError && strings.Contains(text(res), "organization") {
-		t.Errorf("an account tool must not need an org: %q", text(res))
+	if res.IsError {
+		t.Fatalf("an account tool must not need an org: %q", text(res))
+	}
+	raw, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(raw), `"orgs":["acme"]`) || strings.Contains(string(raw), "acme-clave") {
+		t.Errorf("whoami must list organizations, not platform groups: %s", raw)
 	}
 }
 
@@ -369,5 +377,37 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// goship.yml in the deployed directory pins the org; that beats the one the
+// caller has selected.
+func TestDeployUsesTheOrgGoshipYmlPins(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir+"/go.mod", "module web\n")
+	writeFile(t, dir+"/goship.yml", "org: other\nproject: mova\n")
+	var paths []string
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		switch {
+		case r.URL.Path == "/api/v1/orgs":
+			w.Write([]byte(`[{"slug":"acme"},{"slug":"other"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/other/projects":
+			w.Write([]byte(`[{"slug":"mova"}]`)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{Deploy: true})
+	call(t, cs, "goship_deploy", map[string]any{"path": dir, "app": "web", "plan": "app-free"})
+	if !slices.Contains(paths, "POST /api/v1/orgs/other/projects/mova/apps") {
+		t.Errorf("paths = %q, want the app created in other/mova", paths)
+	}
+	for _, p := range paths {
+		if strings.Contains(p, "/orgs/acme/projects/clave") {
+			t.Errorf("touched the selected org's project: %s", p)
+		}
 	}
 }

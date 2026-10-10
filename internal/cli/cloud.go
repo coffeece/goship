@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -112,7 +113,8 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 			"or a guided flow in a terminal) or, as a fallback, access keys read from stdin (--access-keys-stdin).\n" +
 			"\nGoogle Cloud with no flags runs GoShip's setup script with your local gcloud (after asking),\n" +
 			"or prints the command to run in Cloud Shell, and waits for it. --project-number connects a\n" +
-			"project that is already set up.",
+			"project that is already set up. --project selects the GoShip project; the Google Cloud\n" +
+			"project id is --gcp-project (it was --project before 0.5.0).",
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&label, "label", "", "name for the account (defaults to the provider's name; for AWS, the account id)")
@@ -152,7 +154,7 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 			case "aws":
 				return connectCloudAWS(cmd, app, t, p, label, roleARN, accessKeysStdin)
 			case "gcp":
-				return connectCloudGCP(cmd, app, t, p, label, gcpProject, projectNumber)
+				return gcpProjectFlagHint(cmd, app, t, connectCloudGCP(cmd, app, t, p, label, gcpProject, projectNumber))
 			}
 			return fmt.Errorf("cloud provider %s has an unsupported connection kind %q", p.Name, p.Kind)
 		default:
@@ -294,7 +296,7 @@ func newCloudRegionsCmd(app *App) *cobra.Command {
 		Short: "List the regions available to a cloud account",
 		Args:  cobra.ExactArgs(1),
 		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			account, err := resolveCloudAccount(cmd.Context(), app.Portal(), t, args[0])
+			account, t, err := app.resolveCloudScoped(cmd.Context(), t, args[0])
 			if err != nil {
 				return err
 			}
@@ -331,7 +333,7 @@ func newCloudSizesCmd(app *App) *cobra.Command {
 	_ = cmd.MarkFlagRequired("region")
 
 	cmd.RunE = cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		account, err := resolveCloudAccount(cmd.Context(), app.Portal(), t, args[0])
+		account, t, err := app.resolveCloudScoped(cmd.Context(), t, args[0])
 		if err != nil {
 			return err
 		}
@@ -402,7 +404,7 @@ func newCloudDisconnectCmd(app *App) *cobra.Command {
 		Short: "Disconnect a cloud account",
 		Args:  cobra.ExactArgs(1),
 		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			account, err := resolveCloudAccount(cmd.Context(), app.Portal(), t, args[0])
+			account, t, err := app.resolveCloudScoped(cmd.Context(), t, args[0])
 			if err != nil {
 				return err
 			}
@@ -415,6 +417,37 @@ func newCloudDisconnectCmd(app *App) *cobra.Command {
 			return app.Renderer().Message("Cloud account %s disconnected.", account.Label)
 		}),
 	}
+}
+
+// cloudAccountMissing is resolveCloudAccount finding nothing, as opposed to
+// failing to look.
+type cloudAccountMissing struct{ msg string }
+
+func (e *cloudAccountMissing) Error() string { return e.msg }
+
+// resolveCloudScoped is resolveCloudAccount for the commands that name an
+// account after seeing it in `cloud list`, which shows the project's view.
+// Not found at the scope the flags gave (the organization's), it looks again
+// through the selected project. The Target returned is the scope to use for
+// the account from here on: an inherited organization account is the
+// organization's.
+func (a *App) resolveCloudScoped(ctx context.Context, t Target, ref string) (*portal.CloudAccount, Target, error) {
+	client := a.Portal()
+	account, err := resolveCloudAccount(ctx, client, t, ref)
+	var missing *cloudAccountMissing
+	if err == nil || !errors.As(err, &missing) || t.Project != "" {
+		return account, t, err
+	}
+	if project, perr := a.projectIn(ctx, t.Org); perr == nil {
+		through := Target{Org: t.Org, Project: project}
+		if found, ferr := resolveCloudAccount(ctx, client, through, ref); ferr == nil {
+			if found.Scope == "org" {
+				through.Project = ""
+			}
+			return found, through, nil
+		}
+	}
+	return nil, t, fmt.Errorf("%w; pass --project <slug> for an account connected to a project", err)
 }
 
 // resolveCloudAccount turns what a person types into the account the API
@@ -449,11 +482,11 @@ func resolveCloudAccount(ctx context.Context, client *portal.Client, t Target, r
 		if providers, err := client.CloudProviders(ctx); err == nil {
 			for _, p := range providers {
 				if p.Name == ref {
-					return nil, fmt.Errorf("no %s account connected; run `goship cloud connect %s`", p.Label, p.Name)
+					return nil, &cloudAccountMissing{fmt.Sprintf("no %s account connected; run `goship cloud connect %s`", p.Label, p.Name)}
 				}
 			}
 		}
-		return nil, fmt.Errorf("no cloud account %q in %s; run `goship cloud connect <provider>`", ref, cloudScope(t))
+		return nil, &cloudAccountMissing{fmt.Sprintf("no cloud account %q in %s; run `goship cloud connect <provider>`", ref, cloudScope(t))}
 	default:
 		labels := make([]string, len(byProvider))
 		for i, a := range byProvider {
@@ -699,4 +732,20 @@ func cloudScope(t Target) string {
 		return fmt.Sprintf("org %q", t.Org)
 	}
 	return fmt.Sprintf("project %q", t.String())
+}
+
+// gcpProjectFlagHint explains a connect that failed with a --project that is
+// no GoShip project, which is what a pre-0.5.0 script passing its Google Cloud
+// project id gets.
+func gcpProjectFlagHint(cmd *cobra.Command, app *App, t Target, err error) error {
+	var apiErr *portal.Error
+	if !errors.As(err, &apiErr) || app.Global.Project == "" || !cmd.Flags().Changed("project") {
+		return err
+	}
+	if !portal.IsNotFound(err) {
+		if projects, perr := app.Portal().Projects(cmd.Context(), t.Org); perr != nil || slices.ContainsFunc(projects, func(p portal.Project) bool { return p.Slug == app.Global.Project }) {
+			return err
+		}
+	}
+	return fmt.Errorf("--project selects the GoShip project; the Google Cloud project id is --gcp-project (renamed in 0.5.0): %w", err)
 }

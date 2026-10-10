@@ -10,8 +10,10 @@ import (
 )
 
 // FindApp lists every project the caller can reach, in org when given and
-// otherwise in all their organizations, that holds an app called name.
-func FindApp(ctx context.Context, client *portal.Client, org, name string) ([]Target, error) {
+// otherwise in all their organizations, that holds an app called name. A
+// project slug narrows the search to projects of that name: a project someone
+// asked for is never swapped for another.
+func FindApp(ctx context.Context, client *portal.Client, org, project, name string) ([]Target, error) {
 	var orgs []string
 	if org != "" {
 		orgs = []string{org}
@@ -32,6 +34,9 @@ func FindApp(ctx context.Context, client *portal.Client, org, name string) ([]Ta
 			return nil, err
 		}
 		for _, p := range projects {
+			if project != "" && p.Slug != project {
+				continue
+			}
 			_, err := client.App(ctx, o, p.Slug, name)
 			switch {
 			case err == nil:
@@ -53,7 +58,7 @@ func FindApp(ctx context.Context, client *portal.Client, org, name string) ([]Ta
 // Best effort: a failure here must not block a legitimate create, so errors
 // return no matches rather than propagating.
 func AppElsewhere(ctx context.Context, client *portal.Client, current Target, name string) []Target {
-	found, err := FindApp(ctx, client, "", name)
+	found, err := FindApp(ctx, client, "", "", name)
 	if err != nil {
 		return nil
 	}

@@ -656,8 +656,8 @@ func TestResolveCloudAccountNamesAKnownProvider(t *testing.T) {
 
 	_, err := run(t, "", "cloud", "regions", "digitalocean")
 	want := "no DigitalOcean account connected; run `goship cloud connect digitalocean`"
-	if err == nil || err.Error() != want {
-		t.Fatalf("got %v, want %q", err, want)
+	if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.Contains(err.Error(), "--project <slug>") {
+		t.Fatalf("got %v, want %q and the hint", err, want)
 	}
 }
 
@@ -1150,5 +1150,86 @@ func TestCloudConnectGCPRefusesWhatItCannotDo(t *testing.T) {
 		if calls.begins != 0 || len(env.ran) != 0 {
 			t.Errorf("%s: began %d connects, ran %q", name, calls.begins, env.ran)
 		}
+	}
+}
+
+// A script written for 0.4 passed its Google Cloud project id as --project.
+// It now names a GoShip project, and the error says what changed.
+func TestCloudConnectGCPExplainsTheRenamedFlag(t *testing.T) {
+	for name, status := range map[string]int{"project not found": http.StatusNotFound, "project forbidden": http.StatusForbidden} {
+		t.Run(name, func(t *testing.T) {
+			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/api/v1/cloud/providers":
+					w.Write([]byte(`[{"name":"gcp","label":"Google Cloud","kind":"federated","status":"available"}]`)) //nolint:errcheck
+				case r.URL.Path == "/api/v1/orgs/acme/projects":
+					w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+				default:
+					w.WriteHeader(status)
+				}
+			})
+			_, err := run(t, "", "cloud", "connect", "gcp", "--project-number", "123456789", "--project", "acme-prod")
+			if err == nil || !strings.Contains(err.Error(), "--gcp-project") || !strings.Contains(err.Error(), "renamed in 0.5.0") {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}
+
+func TestCloudConnectGCPKeepsOtherErrorsWithAValidProject(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/cloud/providers":
+			w.Write([]byte(`[{"name":"gcp","label":"Google Cloud","kind":"federated","status":"available"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusBadGateway)
+		}
+	})
+	_, err := run(t, "", "cloud", "connect", "gcp", "--project-number", "123456789", "--project", "clave")
+	if err == nil || strings.Contains(err.Error(), "--gcp-project") {
+		t.Fatalf("err = %v, want the plain API error", err)
+	}
+}
+
+// `cloud list` shows the project's view, so the commands that take an account
+// from that list must find it there: first at the organization, then through
+// the selected project.
+func TestCloudAccountCommandsRetryThroughTheSelectedProject(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args  []string
+		scope string
+		want  string
+	}{
+		"disconnect a project account": {[]string{"cloud", "disconnect", "acc-1", "--yes"}, "project", "DELETE /api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1"},
+		"disconnect an inherited one":  {[]string{"cloud", "disconnect", "acc-1", "--yes"}, "org", "DELETE /api/v1/orgs/acme/cloud-accounts/acc-1"},
+		"regions":                      {[]string{"cloud", "regions", "prod"}, "project", "GET /api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/regions"},
+		"sizes":                        {[]string{"cloud", "sizes", "acc-1", "--region", "nyc1"}, "project", "GET /api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/sizes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var calls []string
+			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+				calls = append(calls, r.Method+" "+r.URL.Path)
+				switch {
+				case r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
+					w.Write([]byte(`[]`)) //nolint:errcheck
+				case r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+					w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod","scope":"` + tc.scope + `"}]`)) //nolint:errcheck
+				case r.URL.Path == "/api/v1/orgs/acme/projects":
+					w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+				case r.Method == http.MethodGet:
+					w.Write([]byte(`[]`)) //nolint:errcheck
+				default:
+					w.WriteHeader(http.StatusNoContent)
+				}
+			})
+			if _, err := run(t, "", tc.args...); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Contains(calls, tc.want) {
+				t.Errorf("calls = %q, want %q", calls, tc.want)
+			}
+		})
 	}
 }
