@@ -13,7 +13,7 @@ writes the CLI half from what it finds in the directory.
 | `platform` | `go`, `python`, `nodejs`, `static` |
 | `dockerfile` | build from this container file instead of a platform |
 | `plan` | plan slug for a new app |
-| `node` | run on this node of the organization's own (never billed) |
+| `node` | run on this node of the project's own (never billed) |
 | `env` | variables applied as private on every deploy |
 
 ## Platform keys
@@ -54,7 +54,7 @@ A Dockerfile build reads the file from the image's `WORKDIR`:
 | python | `pyproject.toml`, `requirements.txt`, `Pipfile`, `setup.py` | pip install; Python 3.14 — prefer loose `>=` pins for native deps |
 | nodejs | `package.json` | npm install |
 | static | `index.html` | nginx serves the directory |
-| Dockerfile | `Dockerfile` / `Containerfile`, when no marker matches | image build; required on the organization's own nodes |
+| Dockerfile | `Dockerfile` / `Containerfile`, when no marker matches | image build; required on the project's own nodes |
 
 The port is always 8888 (`$PORT`).
 

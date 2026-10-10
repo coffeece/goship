@@ -104,7 +104,7 @@ app-small-sandboxed        Small               500    512      included
 
 `goship deploy --node do-server1` with no plan takes the pool's default; `--plan`
 picks any size the pool admits, including the one sized to the whole node.
-Without `--node`, a new app goes where the organization's default placement
+Without `--node`, a new app goes where the project's default placement
 points: its oldest active node when it has one, unless the owner chose otherwise
 in the dashboard's settings. `--node goship` (or `node: goship`) picks GoShip's
 servers for one app.
@@ -142,11 +142,25 @@ goship deploy --env-file .env
 | `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
-| `goship projects` / `goship project use\|create <slug>` | list the org's projects / choose one / create one |
+| `goship projects` (or `project list`) / `goship project use\|create <slug>` | list the org's projects / choose one / create one |
 | `goship tokens` / `goship token create\|rm` | list / manage API tokens for CI |
 | `goship mcp` | serve all of the above to an AI agent over MCP (see below) |
 
 Run `goship <command> --help` for flags.
+
+## Upgrading to 0.5.0
+
+Organizations now hold projects, and apps, databases, nodes and volumes live in
+a project.
+
+- An organization with one project needs no change: the CLI picks it.
+- With several, choose one with `goship project use <slug>`, `--project`,
+  `GOSHIP_PROJECT` or `project:` in `goship.yml` (`goship init` writes it).
+  `goship projects` lists them.
+- `goship cloud connect gcp --project <id>` took the Google Cloud project id.
+  `--project` now selects the GoShip project; the Google Cloud one is
+  `--gcp-project`.
+- `goship whoami` lists organizations, not teams.
 
 ## Scripting and agents
 
