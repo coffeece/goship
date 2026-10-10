@@ -36,6 +36,7 @@ too.
 ```sh
 goship login                 # opens the browser; one login covers every command
 goship org use acme          # pick the organization to work in
+goship project use web       # and the project, when the organization has several
 goship deploy                # create + configure + deploy the current directory
 ```
 
@@ -109,8 +110,9 @@ in the dashboard's settings. `--node goship` (or `node: goship`) picks GoShip's
 servers for one app.
 
 `org` pins the organization for the whole project, so a repo always deploys to
-the same place regardless of what `goship org use` last selected. It applies to
-every command run inside the directory, not only `deploy`. `--org` still wins.
+the same place regardless of what `goship org use` last selected; `project`
+does the same for the project inside it. They apply to every command run inside
+the directory, not only `deploy`. `--org` and `--project` still win.
 
 Flags beat the file; the file beats what is inferred. Secrets belong in a
 dotenv file instead, applied as private variables:
@@ -123,7 +125,8 @@ goship deploy --env-file .env
 
 | | |
 |---|---|
-| `goship apps\|dbs\|domains\|volumes\|nodes [-A]` | list in the current org; `--all`, or no org selected, spans every org |
+| `goship apps\|dbs\|volumes\|nodes [-A]` | list in the current project; `--all`, or nothing selected, spans every project as `org/project` |
+| `goship domains [-A]` | list the organization's domains |
 | `goship app create\|info\|rm\|start\|stop\|restart\|scale\|plan` | manage one app |
 | `goship init [dir]` | write a `goship.yml` with what it can work out |
 | `goship deploy [dir]` | create if needed, apply env, deploy |
@@ -139,6 +142,7 @@ goship deploy --env-file .env
 | `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
+| `goship projects` / `goship project use\|create <slug>` | list the org's projects / choose one / create one |
 | `goship tokens` / `goship token create\|rm` | list / manage API tokens for CI |
 | `goship mcp` | serve all of the above to an AI agent over MCP (see below) |
 
