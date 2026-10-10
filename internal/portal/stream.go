@@ -149,9 +149,9 @@ type Deploy struct {
 	DurationMS  int64     `json:"duration_ms"`
 }
 
-func (c *Client) Deploys(ctx context.Context, org, app string, limit int) ([]Deploy, error) {
+func (c *Client) Deploys(ctx context.Context, org, project, app string, limit int) ([]Deploy, error) {
 	var out []Deploy
-	path := appPath(org, app) + "/deploys"
+	path := appPath(org, project, app) + "/deploys"
 	if limit > 0 {
 		path += "?limit=" + strconv.Itoa(limit)
 	}
@@ -167,7 +167,7 @@ type DeployRequest struct {
 
 // Deploy uploads the archive and hands each output line and step to on. The
 // body is produced while it is sent, so the archive is never held in memory.
-func (c *Client) Deploy(ctx context.Context, org, app string, in DeployRequest, on func(ReleaseEvent) error) error {
+func (c *Client) Deploy(ctx context.Context, org, project, app string, in DeployRequest, on func(ReleaseEvent) error) error {
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 	go func() {
@@ -195,21 +195,21 @@ func (c *Client) Deploy(ctx context.Context, org, app string, in DeployRequest, 
 		pw.CloseWithError(err) //nolint:errcheck
 	}()
 
-	err := c.stream(ctx, http.MethodPost, appPath(org, app)+"/deploys", mw.FormDataContentType(), pr, releaseEvents(on))
+	err := c.stream(ctx, http.MethodPost, appPath(org, project, app)+"/deploys", mw.FormDataContentType(), pr, releaseEvents(on))
 	pr.CloseWithError(err) //nolint:errcheck
 	return err
 }
 
 // Rollback releases a previous version again, e.g. "v12", and hands each
 // output line and step to on.
-func (c *Client) Rollback(ctx context.Context, org, app, version string, on func(ReleaseEvent) error) error {
-	return c.streamJSON(ctx, appPath(org, app)+"/deploys/rollback", map[string]string{"version": version}, releaseEvents(on))
+func (c *Client) Rollback(ctx context.Context, org, project, app, version string, on func(ReleaseEvent) error) error {
+	return c.streamJSON(ctx, appPath(org, project, app)+"/deploys/rollback", map[string]string{"version": version}, releaseEvents(on))
 }
 
 // Run runs a one-off command in the app's image.
-func (c *Client) Run(ctx context.Context, org, app, command string, once, isolated bool, out io.Writer) error {
+func (c *Client) Run(ctx context.Context, org, project, app, command string, once, isolated bool, out io.Writer) error {
 	body := map[string]any{"command": command, "once": once, "isolated": isolated}
-	return c.streamJSON(ctx, appPath(org, app)+"/run", body, outputTo(out))
+	return c.streamJSON(ctx, appPath(org, project, app)+"/run", body, outputTo(out))
 }
 
 func (c *Client) streamJSON(ctx context.Context, path string, body any, on func(event) error) error {
@@ -230,7 +230,7 @@ type LogOptions struct {
 
 // Logs reads the app's output, calling on for each line. With Follow it runs
 // until ctx is cancelled.
-func (c *Client) Logs(ctx context.Context, org, app string, opts LogOptions, on func(LogEntry) error) error {
+func (c *Client) Logs(ctx context.Context, org, project, app string, opts LogOptions, on func(LogEntry) error) error {
 	q := url.Values{}
 	if opts.Lines > 0 {
 		q.Set("lines", strconv.Itoa(opts.Lines))
@@ -244,7 +244,7 @@ func (c *Client) Logs(ctx context.Context, org, app string, opts LogOptions, on 
 	for _, u := range opts.Units {
 		q.Add("unit", u)
 	}
-	path := appPath(org, app) + "/logs"
+	path := appPath(org, project, app) + "/logs"
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}

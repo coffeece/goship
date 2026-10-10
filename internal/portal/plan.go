@@ -27,8 +27,8 @@ type Plan struct {
 // placement. Without a node it is the shared cluster: the public catalogue,
 // plus a free plan only for an org holding a grant. With one it is the
 // node's own pool, read from the platform, in the order the platform applies.
-func (c *Client) AvailablePlans(ctx context.Context, org, kind, node string) ([]Plan, error) {
-	path := orgPath(org, "/available-plans")
+func (c *Client) AvailablePlans(ctx context.Context, org, project, kind, node string) ([]Plan, error) {
+	path := projectPath(org, project, "/available-plans")
 	if node != "" {
 		path += "?node=" + url.QueryEscape(node)
 	}

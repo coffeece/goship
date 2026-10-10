@@ -57,6 +57,17 @@ func (l localClients) Org(ctx context.Context, override string) (string, error) 
 	return org, err
 }
 
+func (l localClients) Project(ctx context.Context, _ *portal.Client, org, override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	project, err := l.app.projectIn(ctx, org)
+	if errors.Is(err, errNoProject) {
+		return "", fmt.Errorf(`no project selected: pass project, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`)
+	}
+	return project, err
+}
+
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }

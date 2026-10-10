@@ -8,18 +8,23 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Clients gives each tool call its API client and organization. The local
-// server reads them from the config file; the hosted one from the request.
+// Clients gives each tool call its API client, organization and project. The
+// local server reads them from the config file; the hosted one from the
+// request.
 type Clients interface {
 	Client(ctx context.Context) (*portal.Client, error)
 	// Org resolves the organization for a call: override when the tool was
 	// given one, else whatever the caller's context selects. The error says
 	// how to select one.
 	Org(ctx context.Context, override string) (string, error)
+	// Project is Org for the project inside org. The error says how to select
+	// one.
+	Project(ctx context.Context, c *portal.Client, org, override string) (string, error)
 }
 
 // Options selects what the server offers.
@@ -82,9 +87,38 @@ func (k kind) annotations() *mcp.ToolAnnotations {
 // confirm is appended to every destructive tool's description.
 const confirm = " Destructive and not undoable: confirm with the user before calling it."
 
-// tool registers one typed tool. The handler gets the client and the
-// resolved org; In must carry an Org field read through orgOf.
-func tool[In orgCarrier, Out any](r *registry, name, desc string, k kind, fn func(ctx context.Context, c *portal.Client, org string, in In) (Out, error)) {
+// tool registers one typed tool that acts on a project. The handler gets the
+// client and the resolved org and project; In must embed ProjectArg.
+func tool[In targetCarrier, Out any](r *registry, name, desc string, k kind, fn func(ctx context.Context, c *portal.Client, t deploy.Target, in In) (Out, error)) {
+	if k == destructive {
+		desc += confirm
+	}
+	mcp.AddTool(r.s, &mcp.Tool{Name: name, Description: desc, Annotations: k.annotations()},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+			var zero Out
+			c, err := r.clients.Client(ctx)
+			if err != nil {
+				return nil, zero, err
+			}
+			org, err := r.clients.Org(ctx, in.org())
+			if err != nil {
+				return nil, zero, err
+			}
+			project, err := r.clients.Project(ctx, c, org, in.project())
+			if err != nil {
+				return nil, zero, err
+			}
+			out, err := fn(ctx, c, deploy.Target{Org: org, Project: project}, in)
+			if err != nil {
+				return nil, zero, err
+			}
+			return nil, out, nil
+		})
+}
+
+// orgTool registers one typed tool that acts on an organization; In must
+// embed OrgArg.
+func orgTool[In orgCarrier, Out any](r *registry, name, desc string, k kind, fn func(ctx context.Context, c *portal.Client, org string, in In) (Out, error)) {
 	if k == destructive {
 		desc += confirm
 	}
@@ -129,12 +163,26 @@ func orgless[In any, Out any](r *registry, name, desc string, k kind, fn func(ct
 
 type orgCarrier interface{ org() string }
 
+type targetCarrier interface {
+	orgCarrier
+	project() string
+}
+
 // OrgArg is the organization override every org-scoped tool accepts.
 type OrgArg struct {
 	Org string `json:"org,omitempty" jsonschema:"organization slug; defaults to the selected organization"`
 }
 
 func (o OrgArg) org() string { return o.Org }
+
+// ProjectArg is the organization and project overrides every project-scoped
+// tool accepts.
+type ProjectArg struct {
+	OrgArg
+	Project string `json:"project,omitempty" jsonschema:"project slug; defaults to the selected project (goship_list_projects)"`
+}
+
+func (p ProjectArg) project() string { return p.Project }
 
 // Message is the result of a call that changes something and returns nothing.
 type Message struct {

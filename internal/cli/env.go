@@ -25,8 +25,8 @@ func newEnvCmd(app *App) *cobra.Command {
 			Use:   "list",
 			Short: "List environment variables",
 			Args:  cobra.NoArgs,
-			RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-				envs, err := app.Portal().Env(cmd.Context(), org, appName)
+			RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+				envs, err := app.Portal().Env(cmd.Context(), t.Org, t.Project, appName)
 				if err != nil {
 					return err
 				}
@@ -37,7 +37,7 @@ func newEnvCmd(app *App) *cobra.Command {
 			Use:   "set KEY=VALUE [KEY=VALUE ...]",
 			Short: "Set environment variables",
 			Args:  cobra.MinimumNArgs(1),
-			RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 				envs := make([]portal.EnvVar, 0, len(args))
 				for _, arg := range args {
 					key, value, ok := strings.Cut(arg, "=")
@@ -46,7 +46,7 @@ func newEnvCmd(app *App) *cobra.Command {
 					}
 					envs = append(envs, portal.EnvVar{Name: key, Value: value})
 				}
-				if err := app.Portal().SetEnv(cmd.Context(), org, appName, envs, noRestart); err != nil {
+				if err := app.Portal().SetEnv(cmd.Context(), t.Org, t.Project, appName, envs, noRestart); err != nil {
 					return err
 				}
 				return app.Renderer().Message("Set %d variable(s) on %s.", len(envs), appName)
@@ -56,8 +56,8 @@ func newEnvCmd(app *App) *cobra.Command {
 			Use:   "unset KEY [KEY ...]",
 			Short: "Remove environment variables",
 			Args:  cobra.MinimumNArgs(1),
-			RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-				if err := app.Portal().UnsetEnv(cmd.Context(), org, appName, args, noRestart); err != nil {
+			RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+				if err := app.Portal().UnsetEnv(cmd.Context(), t.Org, t.Project, appName, args, noRestart); err != nil {
 					return err
 				}
 				return app.Renderer().Message("Removed %d variable(s) from %s.", len(args), appName)

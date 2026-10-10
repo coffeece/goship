@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 )
 
@@ -27,24 +28,24 @@ type UnsetEnvArgs struct {
 
 func (r *registry) env() {
 	tool(r, "goship_get_env", "List an app's environment variables. Private values are shown to the owner.", read,
-		func(ctx context.Context, c *portal.Client, org string, in AppArg) (EnvList, error) {
-			env, err := c.Env(ctx, org, in.App)
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in AppArg) (EnvList, error) {
+			env, err := c.Env(ctx, t.Org, t.Project, in.App)
 			return EnvList{Env: env}, err
 		})
 	tool(r, "goship_set_env", "Set environment variables on an app. Restarts it unless no_restart is true.", write,
-		func(ctx context.Context, c *portal.Client, org string, in SetEnvArgs) (Message, error) {
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetEnvArgs) (Message, error) {
 			vars := make([]portal.EnvVar, 0, len(in.Env))
 			for _, k := range slices.Sorted(maps.Keys(in.Env)) {
 				vars = append(vars, portal.EnvVar{Name: k, Value: in.Env[k], Public: in.Public})
 			}
-			if err := c.SetEnv(ctx, org, in.App, vars, in.NoRestart); err != nil {
+			if err := c.SetEnv(ctx, t.Org, t.Project, in.App, vars, in.NoRestart); err != nil {
 				return Message{}, err
 			}
 			return msgf("%d variable(s) set on %s.", len(vars), in.App)
 		})
 	tool(r, "goship_unset_env", "Remove environment variables from an app.", write,
-		func(ctx context.Context, c *portal.Client, org string, in UnsetEnvArgs) (Message, error) {
-			if err := c.UnsetEnv(ctx, org, in.App, in.Names, in.NoRestart); err != nil {
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in UnsetEnvArgs) (Message, error) {
+			if err := c.UnsetEnv(ctx, t.Org, t.Project, in.App, in.Names, in.NoRestart); err != nil {
 				return Message{}, err
 			}
 			return msgf("%d variable(s) removed from %s.", len(in.Names), in.App)

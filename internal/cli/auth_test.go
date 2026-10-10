@@ -248,8 +248,12 @@ func TestSavingTheConfigNeverStoresTheEnvironmentToken(t *testing.T) {
 func TestSingleOrgAccountsNeedNoSelection(t *testing.T) {
 	var gotPath string
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/orgs" {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"onlyone"}]`)) //nolint:errcheck
+			return
+		case "/api/v1/orgs/onlyone/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
 			return
 		}
 		gotPath = r.URL.Path
@@ -260,8 +264,8 @@ func TestSingleOrgAccountsNeedNoSelection(t *testing.T) {
 	if _, err := run(t, "", "apps"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/onlyone/apps" {
-		t.Errorf("path = %q, want the sole org selected automatically", gotPath)
+	if gotPath != "/api/v1/orgs/onlyone/projects/default/apps" {
+		t.Errorf("path = %q, want the sole org and project selected automatically", gotPath)
 	}
 }
 
@@ -288,11 +292,11 @@ func TestAppInfoFindsAppAcrossOrgs(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/a/apps":
-			w.Write([]byte(`[]`)) //nolint:errcheck
-		case "/api/v1/orgs/b/apps":
-			w.Write([]byte(`[{"name":"my-game"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/b/apps/my-game":
+		case "/api/v1/orgs/a/projects", "/api/v1/orgs/b/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/a/projects/default/apps/my-game":
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/v1/orgs/b/projects/default/apps/my-game":
 			w.Write([]byte(`{"name":"my-game","plan_name":"Small"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
@@ -316,8 +320,10 @@ func TestAppInfoAmbiguousAcrossOrgs(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/a/apps", "/api/v1/orgs/b/apps":
-			w.Write([]byte(`[{"name":"dup"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/a/projects", "/api/v1/orgs/b/projects":
+			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/a/projects/default/apps/dup", "/api/v1/orgs/b/projects/default/apps/dup":
+			w.Write([]byte(`{"name":"dup"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
@@ -325,7 +331,7 @@ func TestAppInfoAmbiguousAcrossOrgs(t *testing.T) {
 	os.Unsetenv("GOSHIP_ORG")
 
 	_, err := run(t, "", "app", "info", "dup")
-	if err == nil || !strings.Contains(err.Error(), "more than one organization") {
+	if err == nil || !strings.Contains(err.Error(), "a/default") || !strings.Contains(err.Error(), "b/default") {
 		t.Fatalf("got %v", err)
 	}
 }

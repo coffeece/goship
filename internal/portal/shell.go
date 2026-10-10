@@ -25,8 +25,8 @@ type ShellOptions struct {
 
 // Shell opens an interactive shell in one of the app's units. What is written
 // to the result is typed into the terminal; what is read is its output.
-func (c *Client) Shell(ctx context.Context, org, app string, opts ShellOptions) (io.ReadWriteCloser, error) {
-	u, err := url.Parse(c.base + "/api/v1" + appPath(org, app) + "/shell")
+func (c *Client) Shell(ctx context.Context, org, project, app string, opts ShellOptions) (io.ReadWriteCloser, error) {
+	u, err := url.Parse(c.base + "/api/v1" + appPath(org, project, app) + "/shell")
 	if err != nil {
 		return nil, err
 	}

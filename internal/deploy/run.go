@@ -22,6 +22,10 @@ import (
 // differs between a terminal and an agent.
 var ErrNoOrg = errors.New("no organization selected")
 
+// ErrNoProject is ErrNoOrg for the project: the organization is known, the
+// app is in none of its projects and it has more than one to choose from.
+var ErrNoProject = errors.New("no project selected")
+
 // Options is what a deploy is told. Everything but Dir is optional: the rest
 // comes from the project file in Dir, then from the files present.
 type Options struct {
@@ -30,7 +34,10 @@ type Options struct {
 	App string
 	// Org is the organization already chosen by the caller, or empty to let
 	// the app's existing home decide.
-	Org        string
+	Org string
+	// Project is the project already chosen by the caller, or empty to let the
+	// app's existing home decide.
+	Project    string
 	Platform   string
 	Plan       string
 	Node       string
@@ -54,6 +61,7 @@ type Reporter interface {
 type Result struct {
 	App      string        `json:"app"`
 	Org      string        `json:"org"`
+	Project  string        `json:"project"`
 	Platform string        `json:"platform,omitempty"`
 	Plan     string        `json:"plan,omitempty"`
 	Created  bool          `json:"created"`
@@ -82,21 +90,9 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 	platform := o.Platform
 	dockerfile := firstNonEmpty(o.Dockerfile, proj.Dockerfile)
 
-	// The app name is known before the organization has to be, so an
-	// unselected org is answerable: if this app exists in exactly one of the
-	// caller's organizations, that is the one they meant.
-	org := firstNonEmpty(o.Org, proj.Org)
-	if org == "" {
-		owners := AppInOtherOrgs(ctx, client, "", name)
-		switch len(owners) {
-		case 1:
-			org = owners[0]
-			r.Note("Using org %s, where %q already exists. Run `goship org use %s` to keep it.", org, name, org)
-		case 0:
-			return nil, ErrNoOrg
-		default:
-			return nil, ElsewhereError(name, "", owners, false)
-		}
+	target, err := chooseTarget(ctx, client, Target{Org: firstNonEmpty(o.Org, proj.Org), Project: firstNonEmpty(o.Project, proj.ProjectSlug)}, name, r)
+	if err != nil {
+		return nil, err
 	}
 
 	// Where the build instructions came from, so the creation line can say
@@ -123,7 +119,7 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 	// Not found and forbidden both mean "not usable from here", and both are
 	// worth searching the user's other organizations for: a pinned org left
 	// over from another account produces the second one.
-	existing, lookupErr := client.App(ctx, org, name)
+	existing, lookupErr := client.App(ctx, target.Org, target.Project, name)
 	if lookupErr != nil && !portal.IsNotFound(lookupErr) && !portal.IsForbidden(lookupErr) {
 		return nil, lookupErr
 	}
@@ -137,10 +133,10 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 	} else {
 		r.Header("Deploying %s", name)
 	}
-	res := &Result{App: name, Org: org, Platform: platform, Plan: plan}
+	res := &Result{App: name, Org: target.Org, Project: target.Project, Platform: platform, Plan: plan}
 	if lookupErr != nil {
-		if others := AppInOtherOrgs(ctx, client, org, name); len(others) > 0 {
-			return nil, ElsewhereError(name, org, others, portal.IsForbidden(lookupErr))
+		if others := AppElsewhere(ctx, client, target, name); len(others) > 0 {
+			return nil, ElsewhereError(name, target, others, portal.IsForbidden(lookupErr))
 		}
 		if portal.IsForbidden(lookupErr) {
 			return nil, lookupErr
@@ -158,7 +154,7 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		if platformSource != "" {
 			origin += ", " + platformSource
 		}
-		nodeID, where, err := PlaceNewApp(ctx, client, org, node)
+		nodeID, where, err := PlaceNewApp(ctx, client, target, node)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +165,7 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		case OnNode(nodeID):
 			origin += ", " + where
 		case plan == "":
-			chosen, err := ChoosePlan(ctx, client, org)
+			chosen, err := ChoosePlan(ctx, client, target)
 			if err != nil {
 				return nil, err
 			}
@@ -181,7 +177,7 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		if nodeID != "" {
 			req.NodeID = &nodeID
 		}
-		if _, err := client.CreateApp(ctx, org, req); err != nil {
+		if _, err := client.CreateApp(ctx, target.Org, target.Project, req); err != nil {
 			return nil, err
 		}
 		r.Done("create", origin)
@@ -201,22 +197,60 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 			vars = append(vars, portal.EnvVar{Name: k, Value: env[k], Public: false})
 		}
 		r.Begin("environment")
-		if err := client.SetEnv(ctx, org, name, vars, true); err != nil {
+		if err := client.SetEnv(ctx, target.Org, target.Project, name, vars, true); err != nil {
 			return nil, err
 		}
 		r.Done("environment", plural(len(vars), "variable"))
 	}
 
 	versions := &versionWatch{Reporter: r}
-	if err := Build(ctx, client, BuildArgs{Org: org, Name: name, Dir: o.Dir, Dockerfile: dockerfile, Message: o.Message}, versions); err != nil {
+	if err := Build(ctx, client, BuildArgs{Target: target, Name: name, Dir: o.Dir, Dockerfile: dockerfile, Message: o.Message}, versions); err != nil {
 		return res, err
 	}
 	res.Version = versions.version
-	if deployed, err := client.App(ctx, org, name); err == nil {
+	if deployed, err := client.App(ctx, target.Org, target.Project, name); err == nil {
 		res.URL = PublicURL(deployed)
 	}
 	res.Duration = time.Since(began)
 	return res, nil
+}
+
+// chooseTarget completes the organization and project the caller left open.
+// The app name is known before either has to be, so an unselected one is
+// answerable: if this app exists in exactly one of the caller's projects,
+// that is the one they meant. A new app in an organization with a single
+// project has nowhere else to go.
+func chooseTarget(ctx context.Context, client *portal.Client, t Target, name string, r Reporter) (Target, error) {
+	if t.Org != "" && t.Project != "" {
+		return t, nil
+	}
+	owners, err := FindApp(ctx, client, t.Org, name)
+	if err != nil {
+		return Target{}, err
+	}
+	switch len(owners) {
+	case 1:
+		if t.Org == "" {
+			r.Note("Using %s, where %q already exists. Run `goship org use %s` and `goship project use %s` to keep it.", owners[0], name, owners[0].Org, owners[0].Project)
+		} else {
+			r.Note("Using project %s, where %q already exists. Run `goship project use %s` to keep it.", owners[0].Project, name, owners[0].Project)
+		}
+		return owners[0], nil
+	case 0:
+		if t.Org == "" {
+			return Target{}, ErrNoOrg
+		}
+		projects, err := client.Projects(ctx, t.Org)
+		if err != nil {
+			return Target{}, err
+		}
+		if len(projects) == 1 {
+			return Target{Org: t.Org, Project: projects[0].Slug}, nil
+		}
+		return Target{}, ErrNoProject
+	default:
+		return Target{}, ElsewhereError(name, t, owners, false)
+	}
 }
 
 // versionWatch forwards events and keeps the image version the build
@@ -237,7 +271,8 @@ func (v *versionWatch) Event(ev portal.ReleaseEvent) error {
 
 // BuildArgs is what the build step needs.
 type BuildArgs struct {
-	Org, Name, Dir, Dockerfile, Message string
+	Target                         Target
+	Name, Dir, Dockerfile, Message string
 }
 
 // Build packs the project and uploads it, reporting the build to r as it
@@ -265,7 +300,7 @@ var Build = func(ctx context.Context, client *portal.Client, a BuildArgs, r Repo
 
 	r.Begin("upload")
 	uploaded := false
-	err := client.Deploy(ctx, a.Org, a.Name, in, func(ev portal.ReleaseEvent) error {
+	err := client.Deploy(ctx, a.Target.Org, a.Target.Project, a.Name, in, func(ev portal.ReleaseEvent) error {
 		// The build starts once the upload is in, so the first event ends it.
 		if !uploaded {
 			uploaded = true

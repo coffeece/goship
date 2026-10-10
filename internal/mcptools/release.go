@@ -13,7 +13,7 @@ import (
 )
 
 type DeployArgs struct {
-	OrgArg
+	ProjectArg
 	Path       string            `json:"path" jsonschema:"directory to deploy, absolute or relative to the server's working directory"`
 	App        string            `json:"app,omitempty" jsonschema:"app name; defaults to goship.yml's app, then the directory name"`
 	Platform   string            `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; inferred from the files present when omitted"`
@@ -60,10 +60,10 @@ type RollbackResult struct {
 func (r *registry) releases(withDeploy bool) {
 	if withDeploy {
 		tool(r, "goship_deploy", "Deploy a directory: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback), applies env, uploads the source and follows the build and release. Returns the version and public URL. Can take minutes.", write,
-			func(ctx context.Context, c *portal.Client, org string, in DeployArgs) (*DeployResult, error) {
+			func(ctx context.Context, c *portal.Client, t deploy.Target, in DeployArgs) (*DeployResult, error) {
 				rec := &recorder{}
 				res, err := deploy.Run(ctx, c, deploy.Options{
-					Dir: in.Path, App: in.App, Org: org, Platform: in.Platform, Plan: in.Plan,
+					Dir: in.Path, App: in.App, Org: t.Org, Project: t.Project, Platform: in.Platform, Plan: in.Plan,
 					Node: in.Node, Dockerfile: in.Dockerfile, Message: in.Message, Env: in.Env,
 				}, rec)
 				if err != nil {
@@ -73,24 +73,24 @@ func (r *registry) releases(withDeploy bool) {
 			})
 	} else {
 		tool(r, "goship_deploy", "Not available on the hosted server: a deploy reads a directory on your machine. Run `goship deploy` or the local `goship mcp` server instead.", read,
-			func(context.Context, *portal.Client, string, DeployArgs) (Message, error) {
+			func(context.Context, *portal.Client, deploy.Target, DeployArgs) (Message, error) {
 				return Message{}, errors.New("deploys need the project directory, which this hosted server cannot read: run `goship deploy <dir>` in a terminal, or add the local server with `goship mcp`")
 			})
 	}
 	tool(r, "goship_list_releases", "List an app's releases, newest first, with who deployed and whether it can be rolled back to.", read,
-		func(ctx context.Context, c *portal.Client, org string, in ListReleasesArgs) (ReleaseList, error) {
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in ListReleasesArgs) (ReleaseList, error) {
 			limit := in.Limit
 			if limit == 0 {
 				limit = 20
 			}
-			rel, err := c.Deploys(ctx, org, in.App, limit)
+			rel, err := c.Deploys(ctx, t.Org, t.Project, in.App, limit)
 			return ReleaseList{Releases: rel}, err
 		})
 	tool(r, "goship_rollback", "Release a previous version of an app again.", write,
-		func(ctx context.Context, c *portal.Client, org string, in RollbackArgs) (*RollbackResult, error) {
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in RollbackArgs) (*RollbackResult, error) {
 			rec := &recorder{}
 			began := time.Now()
-			if err := c.Rollback(ctx, org, in.App, in.Version, rec.Event); err != nil {
+			if err := c.Rollback(ctx, t.Org, t.Project, in.App, in.Version, rec.Event); err != nil {
 				return nil, rec.explain(err)
 			}
 			return &RollbackResult{App: in.App, Version: in.Version, DurationSeconds: time.Since(began).Seconds(), Steps: rec.steps()}, nil

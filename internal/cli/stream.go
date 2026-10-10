@@ -53,7 +53,7 @@ func newLogsCmd(app *App) *cobra.Command {
 	f.BoolVar(&noDate, "no-date", false, "leave the timestamp out")
 	_ = cmd.MarkFlagRequired("app")
 
-	cmd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
+	cmd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
 		if err := noJSON(app, cmd); err != nil {
 			return err
 		}
@@ -61,7 +61,7 @@ func newLogsCmd(app *App) *cobra.Command {
 		defer stop()
 
 		out := cmd.OutOrStdout()
-		err := app.Portal().Logs(ctx, org, appName, opts, func(l portal.LogEntry) error {
+		err := app.Portal().Logs(ctx, t.Org, t.Project, appName, opts, func(l portal.LogEntry) error {
 			prefix := fmt.Sprintf("[%s][%s]", l.Source, l.Unit)
 			if !noDate {
 				prefix = l.Date.Local().Format("2006-01-02 15:04:05") + " " + prefix
@@ -96,13 +96,13 @@ func newRunCmd(app *App) *cobra.Command {
 	f.BoolVar(&isolated, "isolated", false, "run in a new container rather than a serving unit")
 	_ = cmd.MarkFlagRequired("app")
 
-	cmd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+	cmd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 		if err := noJSON(app, cmd); err != nil {
 			return err
 		}
 		ctx, stop := interruptible(cmd.Context())
 		defer stop()
-		err := app.Portal().Run(ctx, org, appName, strings.Join(args, " "), once, isolated, cmd.OutOrStdout())
+		err := app.Portal().Run(ctx, t.Org, t.Project, appName, strings.Join(args, " "), once, isolated, cmd.OutOrStdout())
 		return explainStreamError(err, "command", false)
 	})
 	return cmd
@@ -122,8 +122,8 @@ func newReleasesCmd(app *App) *cobra.Command {
 	cmd.Flags().IntVar(&limit, "limit", 20, "how many releases to show")
 	_ = cmd.MarkFlagRequired("app")
 
-	cmd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
-		deploys, err := app.Portal().Deploys(cmd.Context(), org, appName, limit)
+	cmd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
+		deploys, err := app.Portal().Deploys(cmd.Context(), t.Org, t.Project, appName, limit)
 		if err != nil {
 			return err
 		}
@@ -143,7 +143,7 @@ func newRollbackCmd(app *App) *cobra.Command {
 	cmd.Flags().StringVarP(&appName, "app", "a", "", "app name (required)")
 	_ = cmd.MarkFlagRequired("app")
 
-	cmd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+	cmd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 		if err := noJSON(app, cmd); err != nil {
 			return err
 		}
@@ -154,7 +154,7 @@ func newRollbackCmd(app *App) *cobra.Command {
 		}
 		p := newProgress(cmd.OutOrStdout(), app.Global.Verbose)
 		p.Header("Rolling back %s to %s", appName, version)
-		err := app.Portal().Rollback(cmd.Context(), org, appName, version, p.Event)
+		err := app.Portal().Rollback(cmd.Context(), t.Org, t.Project, appName, version, p.Event)
 		p.Finish(err)
 		ran := isOperationError(err)
 		err = explainStreamError(err, "rollback of "+appName, true)
@@ -208,7 +208,7 @@ func newShellCmd(app *App) *cobra.Command {
 	f.BoolVar(&isolated, "isolated", false, "open the shell in a new container rather than a serving unit")
 	_ = cmd.MarkFlagRequired("app")
 
-	cmd.RunE = orgRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
+	cmd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
 		if err := noJSON(app, cmd); err != nil {
 			return err
 		}
@@ -222,7 +222,7 @@ func newShellCmd(app *App) *cobra.Command {
 			opts.Width, opts.Height, _ = term.GetSize(int(in.Fd()))
 		}
 
-		conn, err := app.Portal().Shell(cmd.Context(), org, appName, opts)
+		conn, err := app.Portal().Shell(cmd.Context(), t.Org, t.Project, appName, opts)
 		if err != nil {
 			return err
 		}
