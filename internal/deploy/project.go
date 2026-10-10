@@ -27,8 +27,8 @@ type Project struct {
 	ProjectSlug string `yaml:"project"`
 	Platform    string `yaml:"platform"`
 	Plan        string `yaml:"plan"`
-	// Node places the app on one of the organization's own machines, or on
-	// GoShip's servers with "goship". Unset, the organization's default
+	// Node places the app on one of the project's own machines, or on
+	// GoShip's servers with "goship". Unset, the project's default
 	// placement decides. A node-placed app is never billed, so it needs no
 	// plan.
 	Node string            `yaml:"node"`

@@ -987,3 +987,38 @@ func TestDeployIgnoresTheFileProjectForAnotherOrg(t *testing.T) {
 		t.Errorf("without --org the file's org and project apply: %q", touched)
 	}
 }
+
+// goship.yml names a project but no org resolves: the deploy goes to that
+// project wherever the app lives, and never to another project.
+func TestDeployWithAFileProjectAndNoOrgNeverUsesAnotherProject(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "web")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module web\n")
+	write(t, filepath.Join(dir, "goship.yml"), "app: web\nproject: comet\n")
+
+	var touched []string
+	twoOrgs(t, &touched, "acme/atlas")
+	_, err := run(t, "", "deploy", dir)
+	if !errors.Is(err, errNoOrg) {
+		t.Fatalf("err = %v, want errNoOrg: web is not in any project named comet", err)
+	}
+	for _, p := range touched {
+		if strings.Contains(p, "/projects/atlas") || strings.HasPrefix(p, "POST") {
+			t.Errorf("touched %s", p)
+		}
+	}
+
+	touched = nil
+	twoOrgs(t, &touched, "acme/atlas", "globex/comet")
+	run(t, "", "deploy", dir) //nolint:errcheck
+	if !slices.Contains(touched, "POST /api/v1/orgs/globex/projects/comet/apps/web/deploys") {
+		t.Errorf("touched %q, want the deploy in globex/comet", touched)
+	}
+	for _, p := range touched {
+		if strings.Contains(p, "/projects/atlas") && strings.HasPrefix(p, "POST") {
+			t.Errorf("uploaded to another project: %s", p)
+		}
+	}
+}

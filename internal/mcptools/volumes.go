@@ -41,7 +41,7 @@ func (r *registry) volumes() {
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in VolumeArg) (*portal.Volume, error) {
 			return c.Volume(ctx, t.Org, t.Project, in.Volume)
 		})
-	tool(r, "goship_create_volume", "Create a persistent disk on one of the organization's nodes.", write,
+	tool(r, "goship_create_volume", "Create a persistent disk on one of the project's nodes.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateVolumeArgs) (*portal.Volume, error) {
 			id, err := deploy.ResolveNode(ctx, c, t, in.Node)
 			if err != nil {

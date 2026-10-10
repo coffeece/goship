@@ -242,6 +242,8 @@ func followAPI(t *testing.T, poll http.HandlerFunc) {
 
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"atlas"}]`)) //nolint:errcheck
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/atlas/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/atlas/nodes":

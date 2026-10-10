@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -214,5 +215,114 @@ func TestProjectFlagSelectsTheProjectPath(t *testing.T) {
 	}
 	if gotPath != "/api/v1/orgs/acme/projects/comet/apps" {
 		t.Errorf("path = %q", gotPath)
+	}
+}
+
+// twoOrgs serves two orgs with projects atlas and comet each; web lives in the
+// "org/project" pairs named by holders, and every request is recorded.
+func twoOrgs(t *testing.T, touched *[]string, holders ...string) {
+	t.Helper()
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		*touched = append(*touched, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"slug":"acme"},{"slug":"globex"}]`)) //nolint:errcheck
+			return
+		case "/api/v1/orgs/acme/projects", "/api/v1/orgs/globex/projects":
+			w.Write([]byte(`[{"slug":"atlas"},{"slug":"comet"}]`)) //nolint:errcheck
+			return
+		}
+		for _, h := range holders {
+			if r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/"+strings.Replace(h, "/", "/projects/", 1)+"/apps/web" {
+				w.Write([]byte(`{"name":"web","platform":"go"}`)) //nolint:errcheck
+				return
+			}
+			if r.URL.Path == "/api/v1/orgs/"+strings.Replace(h, "/", "/projects/", 1)+"/apps" {
+				w.Write([]byte(`[{"name":"web"}]`)) //nolint:errcheck
+				return
+			}
+		}
+		if strings.HasSuffix(r.URL.Path, "/apps") {
+			w.Write([]byte(`[]`)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	t.Setenv("GOSHIP_ORG", "")
+	t.Setenv("GOSHIP_PROJECT", "")
+}
+
+// A project that was asked for is never swapped for another when no org
+// resolves: the app search only looks in projects of that name.
+func TestTargetForAppKeepsTheProjectWhenNoOrgResolves(t *testing.T) {
+	var touched []string
+	twoOrgs(t, &touched, "acme/atlas")
+
+	_, err := run(t, "", "app", "info", "web", "--project", "comet")
+	if err == nil || !strings.Contains(err.Error(), `not found in any project named "comet"`) {
+		t.Fatalf("err = %v", err)
+	}
+	for _, p := range touched {
+		if strings.Contains(p, "/projects/atlas") {
+			t.Errorf("looked in another project: %s", p)
+		}
+	}
+
+	touched = nil
+	twoOrgs(t, &touched, "acme/atlas", "globex/comet")
+	out, err := run(t, "", "app", "info", "web", "--project", "comet")
+	if err != nil || !strings.Contains(out, "web") || !slices.Contains(touched, "GET /api/v1/orgs/globex/projects/comet/apps/web") {
+		t.Fatalf("out %q err %v touched %q", out, err, touched)
+	}
+}
+
+func TestGOSHIPProjectNarrowsTheAppSearchToo(t *testing.T) {
+	var touched []string
+	twoOrgs(t, &touched, "acme/atlas")
+	t.Setenv("GOSHIP_PROJECT", "comet")
+	if _, err := run(t, "", "app", "info", "web"); err == nil {
+		t.Fatal("web is only in atlas; GOSHIP_PROJECT=comet must not find it")
+	}
+}
+
+func TestListerKeepsTheProjectWhenNoOrgResolves(t *testing.T) {
+	var touched []string
+	twoOrgs(t, &touched, "acme/atlas", "globex/comet")
+	out, err := run(t, "", "apps", "--project", "comet", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "atlas") || !strings.Contains(out, "globex/comet") {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+// A saved or GOSHIP_PROJECT selection that is no longer reachable earns an
+// explanation, not the API's bare 404.
+func TestStaleProjectSelectionIsExplained(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/orgs/acme/projects" {
+			w.Write([]byte(`[{"slug":"atlas"}]`)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	t.Setenv("GOSHIP_PROJECT", "gone")
+
+	for _, args := range [][]string{{"apps"}, {"app", "rm", "web", "--yes"}, {"app", "info", "web"}} {
+		_, err := run(t, "", args...)
+		if err == nil || !strings.Contains(err.Error(), `project "gone" is not reachable in acme`) || !strings.Contains(err.Error(), "goship project use") {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+
+	// Said on the command line, the project is the user's own words: the API's
+	// answer stands, and a project that does exist keeps its plain errors.
+	if _, err := run(t, "", "apps", "--project", "gone"); err == nil || strings.Contains(err.Error(), "not reachable") {
+		t.Errorf("--project: err = %v", err)
+	}
+	t.Setenv("GOSHIP_PROJECT", "atlas")
+	if _, err := run(t, "", "app", "rm", "web", "--yes"); err == nil || strings.Contains(err.Error(), "not reachable") {
+		t.Errorf("a valid project: err = %v", err)
 	}
 }

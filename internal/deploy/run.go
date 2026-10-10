@@ -229,7 +229,7 @@ func chooseTarget(ctx context.Context, client *portal.Client, t Target, name str
 	if t.Org != "" && t.Project != "" {
 		return t, nil
 	}
-	owners, err := FindApp(ctx, client, t.Org, name)
+	owners, err := FindApp(ctx, client, t.Org, t.Project, name)
 	if err != nil {
 		return Target{}, err
 	}

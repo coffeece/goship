@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/coffeece/goship/internal/config"
@@ -100,13 +101,20 @@ func (a *App) explicitProject(org string) string {
 	return cmp.Or(a.Global.Project, fromFile)
 }
 
+// noProjectError is errNoProject with the words of the case it describes.
+type noProjectError struct{ msg string }
+
+func (e *noProjectError) Error() string        { return e.msg }
+func (e *noProjectError) Is(target error) bool { return target == errNoProject }
+
 // Target resolves the organization and project a command runs against. An
-// org with one reachable project has nothing to choose. When only the project
-// is missing, the returned Target still names the org.
+// org with one reachable project has nothing to choose. When only one half
+// is missing, the returned Target still carries the other: a project that was
+// asked for is not lost because no org resolved.
 func (a *App) Target(ctx context.Context) (Target, error) {
 	org, err := a.Org(ctx)
 	if err != nil {
-		return Target{}, err
+		return Target{Project: a.selectedProject("")}, err
 	}
 	project, err := a.projectIn(ctx, org)
 	return Target{Org: org, Project: project}, err
@@ -122,10 +130,31 @@ func (a *App) projectIn(ctx context.Context, org string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(projects) == 1 {
+	switch len(projects) {
+	case 1:
 		return projects[0].Slug, nil
+	case 0:
+		return "", &noProjectError{"you cannot reach any project in " + org + ": ask an admin of the organization to add you to one"}
 	}
-	return "", errNoProject
+	return "", &noProjectError{fmt.Sprintf("%s has %d projects and none is selected: run `goship project use <slug>` (`goship projects` lists them), pass --project, or set project: in goship.yaml", org, len(projects))}
+}
+
+// explainProject says why a call failed when the project it went to came from
+// the saved selection or GOSHIP_PROJECT and is no longer one the user can
+// reach, which the API only answers with a bare 404 or 403. Anything else is
+// returned as it came.
+func (a *App) explainProject(ctx context.Context, t Target, err error) error {
+	if err == nil || !(portal.IsNotFound(err) || portal.IsForbidden(err)) || a.explicitProject(t.Org) != "" {
+		return err
+	}
+	if t.Project == "" || a.Config.SelectedProject(t.Org) != t.Project {
+		return err
+	}
+	projects, perr := a.Portal().Projects(ctx, t.Org)
+	if perr != nil || slices.ContainsFunc(projects, func(p portal.Project) bool { return p.Slug == t.Project }) {
+		return err
+	}
+	return fmt.Errorf("project %q is not reachable in %s; run `goship projects` and `goship project use <slug>`", t.Project, t.Org)
 }
 
 // TargetForApp is Target for a named app: with nothing selected it looks for
@@ -140,7 +169,7 @@ func (a *App) TargetForApp(ctx context.Context, name string) (Target, error) {
 	if !errors.Is(err, errNoOrg) && !errors.Is(err, errNoProject) {
 		return Target{}, err
 	}
-	matches, err := deploy.FindApp(ctx, a.Portal(), tg.Org, name)
+	matches, err := deploy.FindApp(ctx, a.Portal(), tg.Org, tg.Project, name)
 	if err != nil {
 		return Target{}, err
 	}
@@ -148,6 +177,9 @@ func (a *App) TargetForApp(ctx context.Context, name string) (Target, error) {
 	case 1:
 		return matches[0], nil
 	case 0:
+		if tg.Project != "" {
+			return Target{}, fmt.Errorf("app %q not found in any project named %q that you can reach", name, tg.Project)
+		}
 		if tg.Org != "" {
 			return Target{}, fmt.Errorf("app %q not found in any project of %s that you can reach", name, tg.Org)
 		}
@@ -179,7 +211,7 @@ func targetRunE(app *App, fn func(cmd *cobra.Command, t Target, args []string) e
 		if err != nil {
 			return err
 		}
-		return fn(cmd, t, args)
+		return app.explainProject(cmd.Context(), t, fn(cmd, t, args))
 	}
 }
 

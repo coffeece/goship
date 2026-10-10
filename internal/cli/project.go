@@ -3,6 +3,7 @@ package cli
 import (
 	"cmp"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -49,7 +50,18 @@ func newProjectCmd(app *App) *cobra.Command {
 				if err := app.Config.Save(); err != nil {
 					return err
 				}
-				return app.Renderer().Message("Now using %s/%s.", org, p.Slug)
+				r := app.Renderer()
+				if err := r.Message("Now using %s/%s.", org, p.Slug); err != nil {
+					return err
+				}
+				// Said closer to the command than the saved choice, these win.
+				switch {
+				case os.Getenv("GOSHIP_PROJECT") != "" && os.Getenv("GOSHIP_PROJECT") != p.Slug:
+					return r.Message("Note: GOSHIP_PROJECT=%s is set and overrides this.", os.Getenv("GOSHIP_PROJECT"))
+				case app.ProjectProject != "" && app.ProjectProject != p.Slug && (app.ProjectOrg == "" || app.ProjectOrg == org):
+					return r.Message("Note: the goship.yml in this directory pins project %s and overrides this here.", app.ProjectProject)
+				}
+				return nil
 			}
 			return fmt.Errorf("no project %q in %s that you can reach; run `goship projects`", args[0], org)
 		}),
@@ -70,6 +82,9 @@ func newProjectCmd(app *App) *cobra.Command {
 	}
 	create.Flags().StringVar(&name, "name", "", "display name (defaults to the slug)")
 
-	cmd.AddCommand(use, create)
+	list := newProjectsCmd(app)
+	list.Use = "list"
+
+	cmd.AddCommand(list, use, create)
 	return cmd
 }
