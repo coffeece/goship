@@ -54,10 +54,12 @@ follows provisioning the same way, bounded by `--timeout` (30 minutes by default
 Both polls ride out up to three transient failures in a row (a network error or a
 5xx) and stop at once on a 4xx; Ctrl-C stops the wait, not the operation.
 
-## Org context
+## Org and project context
 
-Every API route is org-scoped (`/orgs/{slug}/…`), so the CLI carries a current
-org. It resolves, in order:
+Account and org-level routes live under `/orgs/{slug}/…`; everything an
+organization runs lives under `/orgs/{slug}/projects/{project}/…`. The CLI
+therefore carries a current org and a current project. The org resolves, in
+order:
 
 1. `--org`
 2. `org:` in the working directory's `goship.yml` — a repo belongs to one
@@ -71,11 +73,22 @@ Commands that change something fail with a pointer to `org use` only when all
 of those come up empty. Listings (`apps`, `dbs`, …) with no org selected show
 every org instead.
 
+The project inside that org resolves the same way: `--project`, `project:` in
+`goship.yml` (ignored when the file pins another org), `GOSHIP_PROJECT`, what
+`goship project use` persisted for the org, then the only project the user can
+reach. With several and none selected, a command that changes something fails
+with a pointer to `project use`; `deploy` and `app info` look for the app in
+every project instead, and listings show every project as `org/project`.
+
+Cloud accounts are the exception: one connected from the CLI belongs to the
+org, so `cloud` commands use the org-level routes unless `--project` or
+`project:` names a project.
+
 ## Configuration
 
 `~/.config/goship/config.json` (or `$GOSHIP_CONFIG`) holds the API address, the
-selected org and the token, and is written `0600`. `GOSHIP_API`, `GOSHIP_ORG`
-and `GOSHIP_TOKEN` override it for the process that sets them and are never
+selected org, the selected project per org and the token, and is written
+`0600`. `GOSHIP_API`, `GOSHIP_ORG`, `GOSHIP_PROJECT` and `GOSHIP_TOKEN` override it for the process that sets them and are never
 written back, so a CI token cannot end up on disk.
 
 ## Builds

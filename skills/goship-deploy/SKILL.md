@@ -23,6 +23,8 @@ Find out, asking only for what is not already known:
 - **Directory** to deploy (default: the current one).
 - **App name**: lowercase letters, digits, hyphens. Default: the directory name.
 - **Organization**: `goship_list_orgs` shows them; one org needs no choice.
+- **Project**: `goship_list_projects` shows the organization's; one project
+  needs no choice. Pass `project` to the tools, or set `project:` in goship.yml.
 - **Placement**: the shared cluster (billed per unit by plan) or one of the
   organization's own nodes (`goship_list_nodes`; apps there are not billed).
 - **Plan**: `goship_list_plans` shows what the org can pick and the price.

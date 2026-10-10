@@ -4,6 +4,7 @@
 |---|---|
 | `goship_whoami` | `goship whoami` |
 | `goship_list_orgs` | `goship orgs` |
+| `goship_list_projects` | `goship projects` |
 | `goship_list_apps` / `goship_get_app` | `goship apps` / `goship app info <name>` |
 | `goship_create_app` | `goship app create <name> --platform go [--plan p] [--node n]` |
 | `goship_delete_app` | `goship app rm <name>` |
