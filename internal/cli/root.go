@@ -241,6 +241,8 @@ func NewRoot(version string) *cobra.Command {
 		newTokenCmd(app),
 		newOrgCmd(app),
 		newOrgsCmd(app),
+		newProjectCmd(app),
+		newProjectsCmd(app),
 		newAppsCmd(app),
 		newAppCmd(app),
 		newEnvCmd(app),
