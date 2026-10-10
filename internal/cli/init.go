@@ -8,9 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/coffeece/goship/internal/deploy"
+	"github.com/coffeece/goship/internal/portal"
 	"github.com/spf13/cobra"
 )
 
@@ -100,7 +102,9 @@ func newInitCmd(app *App) *cobra.Command {
 // initProject is the project to pin: the one selected for org, unless org has
 // only one, in which case there is nothing to choose. The count needs the
 // network, so a machine that is signed out pins what it has selected and asks
-// nothing. note says why the project was left empty when org has several.
+// nothing. Once the list is known, a selection that is not in it (a stale
+// config, a typo in GOSHIP_PROJECT) is not pinned. note says why the project
+// was left empty.
 func initProject(ctx context.Context, app *App, org string) (project, note string) {
 	if org == "" {
 		return "", ""
@@ -113,12 +117,14 @@ func initProject(ctx context.Context, app *App, org string) (project, note strin
 	switch {
 	case err != nil:
 		return project, ""
+	case len(projects) == 0:
+		return "", "left empty — you cannot reach any project in " + org
 	case len(projects) == 1:
 		return "", ""
-	case project == "":
-		return "", "left empty — " + org + " has several projects, pick one with `goship project use`"
+	case slices.ContainsFunc(projects, func(p portal.Project) bool { return p.Slug == project }):
+		return project, ""
 	}
-	return project, ""
+	return "", "left empty — " + org + " has several projects, pick one with `goship project use`"
 }
 
 func existingConfig(dir string) (string, error) {

@@ -39,7 +39,7 @@ type DBBindArgs struct {
 }
 
 func (r *registry) databases() {
-	tool(r, "goship_list_databases", "List the managed PostgreSQL databases in an organization.", read,
+	tool(r, "goship_list_databases", "List the managed PostgreSQL databases in a project.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (DBList, error) {
 			dbs, err := c.Databases(ctx, t.Org, t.Project)
 			return DBList{Databases: dbs}, err

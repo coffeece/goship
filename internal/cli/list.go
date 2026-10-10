@@ -65,6 +65,9 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, client := cmd.Context(), app.Portal()
+			// Nothing to choose from narrows the listing to the org that was
+			// named or selected; with no org either, it spans them all.
+			var org string
 			if !all {
 				t, err := app.Target(ctx)
 				switch {
@@ -74,30 +77,40 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 						return err
 					}
 					return app.Renderer().Render(items)
-				case !errors.Is(err, errNoOrg) && !errors.Is(err, errNoProject):
+				case errors.Is(err, errNoProject):
+					org = t.Org
+				case !errors.Is(err, errNoOrg):
 					return err
 				}
 			}
-			orgs, err := client.Orgs(ctx)
-			if err != nil {
-				return err
+			var orgs []string
+			if org != "" {
+				orgs = []string{org}
+			} else {
+				list, err := client.Orgs(ctx)
+				if err != nil {
+					return err
+				}
+				for _, o := range list {
+					orgs = append(orgs, o.Slug)
+				}
 			}
 			var sections []section[T]
 			for _, o := range orgs {
-				projects, err := client.Projects(ctx, o.Slug)
+				projects, err := client.Projects(ctx, o)
 				if err != nil {
 					return err
 				}
 				for _, p := range projects {
-					items, err := fetch(client, ctx, o.Slug, p.Slug)
+					items, err := fetch(client, ctx, o, p.Slug)
 					if skipForbidden && portal.IsForbidden(err) {
-						fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s/%s: your role there cannot see this.\n", o.Slug, p.Slug)
+						fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s/%s: your role there cannot see this.\n", o, p.Slug)
 						continue
 					}
 					if err != nil {
 						return err
 					}
-					key := o.Slug + "/" + p.Slug
+					key := o + "/" + p.Slug
 					sections = append(sections, section[T]{key: key, title: key, items: items})
 				}
 			}

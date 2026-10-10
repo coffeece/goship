@@ -18,7 +18,7 @@ type PlanList struct {
 }
 
 func (r *registry) plans() {
-	tool(r, "goship_list_plans", "List the plans the organization can choose, with CPU, memory, price and whether each is billed. A plan with billed=false is free to pick.", read,
+	tool(r, "goship_list_plans", "List the plans the project can choose, with CPU, memory, price and whether each is billed. A plan with billed=false is free to pick.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in PlansArgs) (PlanList, error) {
 			kind := in.Kind
 			if kind == "" {

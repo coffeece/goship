@@ -89,3 +89,45 @@ func TestMCPWithoutALoginExplainsItself(t *testing.T) {
 	}
 	inW.Close()
 }
+
+// With several projects and none selected, the local server tells the agent
+// how to choose in its own words, not the terminal's.
+func TestMCPExplainsAMissingProject(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/orgs/acme/projects" {
+			t.Errorf("unexpected %s", r.URL)
+		}
+		w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
+	})
+	t.Setenv("GOSHIP_TOKEN", "tok")
+	t.Setenv("GOSHIP_PROJECT", "")
+
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	root := NewRoot("test")
+	root.SetArgs([]string{"mcp"})
+	root.SetIn(inR)
+	root.SetOut(outW)
+	root.SetErr(&strings.Builder{})
+	go root.Execute() //nolint:errcheck
+
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "t", Version: "0"}, nil).Connect(context.Background(), &mcp.IOTransport{Reader: outR, Writer: inW}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close() //nolint:errcheck
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "goship_list_apps", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msg strings.Builder
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			msg.WriteString(tc.Text)
+		}
+	}
+	want := `no project selected: pass project, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`
+	if !res.IsError || msg.String() != want {
+		t.Errorf("isError=%v message %q, want %q", res.IsError, msg.String(), want)
+	}
+}

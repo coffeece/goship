@@ -4,10 +4,12 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -940,5 +942,48 @@ func TestLoadProjectReadsTheProjectSlug(t *testing.T) {
 	}
 	if p.Org != "menlo" || p.ProjectSlug != "clave" {
 		t.Errorf("got org=%q project=%q", p.Org, p.ProjectSlug)
+	}
+}
+
+// The project in goship.yml belongs to the org the file names. Pointing the
+// deploy at another org with --org must not carry it along.
+func TestDeployIgnoresTheFileProjectForAnotherOrg(t *testing.T) {
+	var touched []string
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		touched = append(touched, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"slug":"menlo"},{"slug":"other"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/other/projects":
+			w.Write([]byte(`[{"slug":"mova"},{"slug":"nova"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/menlo/projects":
+			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	t.Setenv("GOSHIP_PROJECT", "")
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "module widget\n")
+	write(t, filepath.Join(dir, "goship.yml"), "org: menlo\nproject: clave\n")
+
+	_, err := run(t, "", "deploy", dir, "--org", "other")
+	if !errors.Is(err, errNoProject) {
+		t.Fatalf("err = %v, want errNoProject: other has two projects and none is selected", err)
+	}
+	for _, p := range touched {
+		if strings.Contains(p, "/orgs/other/projects/clave") {
+			t.Errorf("the file's project was applied to another org: %s", p)
+		}
+	}
+
+	touched = nil
+	run(t, "", "deploy", dir) //nolint:errcheck
+	if !slices.Contains(touched, "GET /api/v1/orgs/menlo/projects/clave/apps/widget") {
+		t.Errorf("without --org the file's org and project apply: %q", touched)
 	}
 }

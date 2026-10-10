@@ -256,3 +256,17 @@ func TestInitDoesNotPinTheOnlyProject(t *testing.T) {
 		t.Errorf("project = %q, want it left out", p.ProjectSlug)
 	}
 }
+
+// A selection the account cannot reach (a stale config, a mistyped
+// GOSHIP_PROJECT) must not end up in a file that is meant to be committed.
+func TestInitDoesNotPinAProjectTheUserCannotReach(t *testing.T) {
+	p, out := initWithProjects(t, `[{"slug":"clave"},{"slug":"mova"}]`, "gone")
+	if p.ProjectSlug != "" || !strings.Contains(out, "goship project use") {
+		t.Errorf("project = %q, output:\n%s", p.ProjectSlug, out)
+	}
+
+	p, out = initWithProjects(t, `[]`, "gone")
+	if p.ProjectSlug != "" || !strings.Contains(out, "cannot reach any project") {
+		t.Errorf("project = %q, output:\n%s", p.ProjectSlug, out)
+	}
+}

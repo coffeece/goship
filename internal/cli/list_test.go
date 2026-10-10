@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -160,5 +161,41 @@ func TestTokensLists(t *testing.T) {
 	}
 	if gotPath != "/api/v1/auth/tokens" {
 		t.Errorf("path = %q", gotPath)
+	}
+}
+
+// --org narrows an unresolved project to that org's projects, not to every org.
+func TestListerWithOrgFlagAndNoProjectListsOnlyThatOrg(t *testing.T) {
+	var touched []string
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		touched = append(touched, r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/clave/apps":
+			w.Write([]byte(`[{"name":"web"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/mova/apps":
+			w.Write([]byte(`[{"name":"api"}]`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	t.Setenv("GOSHIP_ORG", "")
+	t.Setenv("GOSHIP_PROJECT", "")
+
+	out, err := run(t, "", "apps", "--org", "acme", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string][]map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	if len(got) != 2 || got["acme/clave"][0]["name"] != "web" || got["acme/mova"][0]["name"] != "api" {
+		t.Errorf("got %v", got)
+	}
+	if slices.Contains(touched, "/api/v1/orgs") {
+		t.Errorf("other orgs were listed: %q", touched)
 	}
 }

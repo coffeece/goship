@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -296,5 +298,76 @@ func TestListProjectsNeedsNoProject(t *testing.T) {
 	res := call(t, cs, "goship_list_projects", nil)
 	if res.IsError || gotPath != "/api/v1/orgs/acme/projects" {
 		t.Errorf("%s: %q", gotPath, text(res))
+	}
+}
+
+// deployPaths drives goship_deploy in an org with two projects and records
+// the app-scoped paths it touches; the deploy itself is refused so the call
+// ends there.
+func deployPaths(t *testing.T, fc fakeClients, dir string, args map[string]any, holder string) ([]string, *mcp.CallToolResult) {
+	t.Helper()
+	var paths []string
+	fc.url = api(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/orgs":
+			w.Write([]byte(`[{"slug":"acme"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
+		case strings.Contains(r.URL.Path, "/apps/web"):
+			paths = append(paths, r.Method+" "+r.URL.Path)
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/"+holder+"/apps/web":
+				w.Write([]byte(`{"name":"web","platform":"go"}`)) //nolint:errcheck
+			case r.Method == http.MethodPost:
+				w.WriteHeader(http.StatusForbidden)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	fc.token = "tok"
+	cs := session(t, fc, Options{Deploy: true})
+	args["path"], args["app"] = dir, "web"
+	return paths, call(t, cs, "goship_deploy", args)
+}
+
+// With several projects and none passed, the deploy is not refused up front:
+// the project that already holds the app decides.
+func TestDeployFindsTheProjectHoldingTheApp(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir+"/go.mod", "module web\n")
+	paths, _ := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "mova")
+	if !slices.Contains(paths, "POST /api/v1/orgs/acme/projects/mova/apps/web/deploys") {
+		t.Errorf("paths = %q, want the deploy to go to mova", paths)
+	}
+}
+
+// A goship.yml in the deployed directory names the project.
+func TestDeployReadsTheProjectFromGoshipYml(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir+"/go.mod", "module web\n")
+	writeFile(t, dir+"/goship.yml", "project: clave\n")
+	paths, _ := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "clave")
+	if !slices.Contains(paths, "POST /api/v1/orgs/acme/projects/clave/apps/web/deploys") {
+		t.Errorf("paths = %q, want the deploy to go to clave", paths)
+	}
+}
+
+// With nothing to go on, a new app asks for a project in the tool's words.
+func TestDeployAsksForAProjectWhenNothingDecides(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir+"/go.mod", "module web\n")
+	_, res := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "none")
+	if !res.IsError || !strings.Contains(text(res), "goship_list_projects") {
+		t.Errorf("got isError=%v %q", res.IsError, text(res))
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

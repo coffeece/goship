@@ -36,7 +36,7 @@ type SetPlanArgs struct {
 }
 
 func (r *registry) apps() {
-	tool(r, "goship_list_apps", "List the apps in an organization with status, plan and address.", read,
+	tool(r, "goship_list_apps", "List the apps in a project with status, plan and address.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (AppList, error) {
 			apps, err := c.Apps(ctx, t.Org, t.Project)
 			return AppList{Apps: apps}, err

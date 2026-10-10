@@ -59,21 +59,33 @@ type RollbackResult struct {
 
 func (r *registry) releases(withDeploy bool) {
 	if withDeploy {
-		tool(r, "goship_deploy", "Deploy a directory: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback), applies env, uploads the source and follows the build and release. Returns the version and public URL. Can take minutes.", write,
-			func(ctx context.Context, c *portal.Client, t deploy.Target, in DeployArgs) (*DeployResult, error) {
+		// The project is chosen here only when the caller named it or one is
+		// selected; otherwise goship.yml, or the project that already holds the
+		// app, decides inside deploy.Run.
+		orgTool(r, "goship_deploy", "Deploy a directory: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback), applies env, uploads the source and follows the build and release. Returns the version and public URL. Can take minutes.", write,
+			func(ctx context.Context, c *portal.Client, org string, in DeployArgs) (*DeployResult, error) {
+				project := in.Project
+				if project == "" {
+					if proj, _, err := deploy.LoadProject(in.Path); err == nil && proj.ProjectSlug == "" {
+						project, _ = r.clients.Project(ctx, c, org, "")
+					}
+				}
 				rec := &recorder{}
 				res, err := deploy.Run(ctx, c, deploy.Options{
-					Dir: in.Path, App: in.App, Org: t.Org, Project: t.Project, Platform: in.Platform, Plan: in.Plan,
+					Dir: in.Path, App: in.App, Org: org, Project: project, Platform: in.Platform, Plan: in.Plan,
 					Node: in.Node, Dockerfile: in.Dockerfile, Message: in.Message, Env: in.Env,
 				}, rec)
+				if errors.Is(err, deploy.ErrNoProject) {
+					return nil, errors.New(`no project selected: pass project, set project: in goship.yml, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`)
+				}
 				if err != nil {
 					return nil, rec.explain(err)
 				}
 				return &DeployResult{Result: *res, DurationSeconds: res.Duration.Seconds(), Steps: rec.steps()}, nil
 			})
 	} else {
-		tool(r, "goship_deploy", "Not available on the hosted server: a deploy reads a directory on your machine. Run `goship deploy` or the local `goship mcp` server instead.", read,
-			func(context.Context, *portal.Client, deploy.Target, DeployArgs) (Message, error) {
+		orgTool(r, "goship_deploy", "Not available on the hosted server: a deploy reads a directory on your machine. Run `goship deploy` or the local `goship mcp` server instead.", read,
+			func(context.Context, *portal.Client, string, DeployArgs) (Message, error) {
 				return Message{}, errors.New("deploys need the project directory, which this hosted server cannot read: run `goship deploy <dir>` in a terminal, or add the local server with `goship mcp`")
 			})
 	}
