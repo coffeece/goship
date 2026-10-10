@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,5 +202,57 @@ func TestInitLeavesTheOrgEmptyWhenNoneIsSelected(t *testing.T) {
 	}
 	if !strings.Contains(out, "goship org use") {
 		t.Errorf("output should say how to set one, got:\n%s", out)
+	}
+}
+
+func initWithProjects(t *testing.T, projects, selected string) (*deploy.Project, string) {
+	t.Helper()
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/orgs/acme/projects" {
+			t.Errorf("unexpected %s", r.URL.Path)
+		}
+		w.Write([]byte(projects)) //nolint:errcheck
+	})
+	t.Setenv("GOSHIP_TOKEN", "gsp_test")
+	t.Setenv("GOSHIP_ORG", "acme")
+	t.Setenv("GOSHIP_PROJECT", selected)
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "go.mod"), "")
+
+	out, err := run(t, "", "init", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _, err := deploy.LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p, out
+}
+
+// An org with several projects gets the selected one pinned, so the repo
+// always deploys to the same place.
+func TestInitRecordsTheSelectedProjectWhenTheOrgHasSeveral(t *testing.T) {
+	p, out := initWithProjects(t, `[{"slug":"clave"},{"slug":"mova"}]`, "mova")
+	if p.ProjectSlug != "mova" || !strings.Contains(out, "project:  mova") {
+		t.Errorf("project = %q, output:\n%s", p.ProjectSlug, out)
+	}
+}
+
+func TestInitLeavesTheProjectEmptyWhenTheOrgHasSeveralAndNoneIsSelected(t *testing.T) {
+	p, out := initWithProjects(t, `[{"slug":"clave"},{"slug":"mova"}]`, "")
+	if p.ProjectSlug != "" || !strings.Contains(out, "goship project use") {
+		t.Errorf("project = %q, output:\n%s", p.ProjectSlug, out)
+	}
+}
+
+// One project is nothing to choose, so the file does not pin it.
+func TestInitDoesNotPinTheOnlyProject(t *testing.T) {
+	p, _ := initWithProjects(t, `[{"slug":"default"}]`, "default")
+	if p.ProjectSlug != "" {
+		t.Errorf("project = %q, want it left out", p.ProjectSlug)
 	}
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -48,11 +49,12 @@ func newInitCmd(app *App) *cobra.Command {
 				dockerfile = deploy.DetectDockerfile(dir)
 			}
 
-			// The selected org is local state, so init still needs no network.
+			// The selected org is local state, so init needs no network for it.
 			org := app.Config.SelectedOrg()
+			project, projectNote := initProject(cmd.Context(), app, org)
 
 			path := filepath.Join(dir, initFile)
-			if err := os.WriteFile(path, []byte(renderProject(name, org, platform, dockerfile)), 0o644); err != nil { //nolint:gosec // G306: a project file, meant to be committed
+			if err := os.WriteFile(path, []byte(renderProject(name, org, project, platform, dockerfile)), 0o644); err != nil { //nolint:gosec // G306: a project file, meant to be committed
 				return err
 			}
 
@@ -70,6 +72,15 @@ func newInitCmd(app *App) *cobra.Command {
 			} else if err := r.Message("  org:      left empty — set it, or pick one with `goship org use`"); err != nil {
 				return err
 			}
+			if project != "" {
+				if err := r.Message("  project:  %s (the one you have selected)", project); err != nil {
+					return err
+				}
+			} else if projectNote != "" {
+				if err := r.Message("  project:  %s", projectNote); err != nil {
+					return err
+				}
+			}
 			switch {
 			case platform != "":
 				return r.Message("  platform: %s (detected from %s)", platform, evidence)
@@ -84,6 +95,30 @@ func newInitCmd(app *App) *cobra.Command {
 	cmd.Flags().BoolVar(&force, "force", false, "replace an existing config file")
 
 	return cmd
+}
+
+// initProject is the project to pin: the one selected for org, unless org has
+// only one, in which case there is nothing to choose. The count needs the
+// network, so a machine that is signed out pins what it has selected and asks
+// nothing. note says why the project was left empty when org has several.
+func initProject(ctx context.Context, app *App, org string) (project, note string) {
+	if org == "" {
+		return "", ""
+	}
+	project = app.selectedProject(org)
+	if app.Config.Credential() == "" {
+		return project, ""
+	}
+	projects, err := app.Portal().Projects(ctx, org)
+	switch {
+	case err != nil:
+		return project, ""
+	case len(projects) == 1:
+		return "", ""
+	case project == "":
+		return "", "left empty — " + org + " has several projects, pick one with `goship project use`"
+	}
+	return project, ""
 }
 
 func existingConfig(dir string) (string, error) {
@@ -113,8 +148,9 @@ func appNameFor(dir string) string {
 	return strings.Trim(name, "-")
 }
 
-func renderProject(name, org, platform, dockerfile string) string {
+func renderProject(name, org, project, platform, dockerfile string) string {
 	orgLine := strings.TrimRight("org: "+org, " ")
+	projectLine := strings.TrimRight("project: "+project, " ")
 	build := strings.TrimRight("platform: "+platform, " ")
 	if platform == "" && dockerfile != "" {
 		build = "# No platform: the container file below builds the image.\nplatform:\ndockerfile: " + dockerfile
@@ -126,6 +162,10 @@ app: %s
 
 # Organization this project belongs to. Set here, it beats whatever
 # "goship org use" last selected, so a repo always deploys to the same place.
+%s
+
+# Project inside the organization, when it has more than one. Set here, it beats
+# whatever "goship project use" last selected.
 %s
 
 %s
@@ -160,5 +200,5 @@ env:
 # processes:
 #   - name: web
 #     command: ./server
-`, name, orgLine, build)
+`, name, orgLine, projectLine, build)
 }
