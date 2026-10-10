@@ -146,3 +146,29 @@ func TestForgetOrgUnlessMember(t *testing.T) {
 		}
 	})
 }
+
+func TestSelectedProjectEnvWinsOverTheFile(t *testing.T) {
+	tempConfig(t)
+	c := &Config{Projects: map[string]string{"acme": "clave", "other": "mova"}}
+	if got := c.SelectedProject("acme"); got != "clave" {
+		t.Errorf("SelectedProject = %q, want the file value", got)
+	}
+	t.Setenv("GOSHIP_PROJECT", "from-env")
+	if got := c.SelectedProject("acme"); got != "from-env" {
+		t.Errorf("SelectedProject = %q, want the environment value", got)
+	}
+}
+
+func TestProjectsSurviveASaveAndLoad(t *testing.T) {
+	tempConfig(t)
+	if err := (&Config{Projects: map[string]string{"acme": "clave"}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.SelectedProject("acme"); got != "clave" || c.SelectedProject("other") != "" {
+		t.Errorf("Projects = %v", c.Projects)
+	}
+}

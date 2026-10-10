@@ -22,12 +22,14 @@ const DefaultAPI = "https://api.goship.sh"
 const legacyAPI = "https://goship.sh"
 
 // Config is what the config file holds, and nothing else: the environment is
-// read by Endpoint, SelectedOrg and Credential, never stored here, so Save
+// read by Endpoint, SelectedOrg, SelectedProject and Credential, never stored here, so Save
 // cannot write a GOSHIP_TOKEN meant for one CI job to disk.
 type Config struct {
 	// API is the GoShip API, the only thing the CLI talks to.
 	API string `json:"api,omitempty"`
 	Org string `json:"org,omitempty"`
+	// Projects is the project `goship project use` selected, per org slug.
+	Projects map[string]string `json:"projects,omitempty"`
 	// Token is the credential; TokenID identifies it to the API when it is an
 	// API token minted by `goship login`, so `goship logout` can revoke it.
 	Token   string `json:"token,omitempty"`
@@ -82,6 +84,12 @@ func (c *Config) SelectedOrg() string {
 	return cmp.Or(os.Getenv("GOSHIP_ORG"), c.Org)
 }
 
+// SelectedProject is GOSHIP_PROJECT, else what `goship project use` persisted
+// for org.
+func (c *Config) SelectedProject(org string) string {
+	return cmp.Or(os.Getenv("GOSHIP_PROJECT"), c.Projects[org])
+}
+
 // Credential is the token to send: GOSHIP_TOKEN, for CI and anywhere without
 // a browser, wins over whatever `goship login` stored.
 func (c *Config) Credential() string {
@@ -113,6 +121,7 @@ func (c *Config) ForgetOrgUnlessMember(orgs []string) string {
 		return ""
 	}
 	dropped := c.Org
+	delete(c.Projects, dropped)
 	c.Org = ""
 	return dropped
 }

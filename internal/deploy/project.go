@@ -22,9 +22,11 @@ type Project struct {
 	App string `yaml:"app"`
 	// Org pins the organization for the project, so a repo that belongs to one
 	// org does not depend on whatever `goship org use` was last pointed at.
-	Org      string `yaml:"org"`
-	Platform string `yaml:"platform"`
-	Plan     string `yaml:"plan"`
+	Org string `yaml:"org"`
+	// ProjectSlug pins the project inside the organization.
+	ProjectSlug string `yaml:"project"`
+	Platform    string `yaml:"platform"`
+	Plan        string `yaml:"plan"`
 	// Node places the app on one of the organization's own machines, or on
 	// GoShip's servers with "goship". Unset, the organization's default
 	// placement decides. A node-placed app is never billed, so it needs no
