@@ -919,3 +919,16 @@ func TestDeployCutOffLeavesTheReleaseRunning(t *testing.T) {
 		t.Errorf("error = %v", err)
 	}
 }
+
+func TestLoadProjectReadsTheProjectSlug(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "goship.yaml"), "app: api\norg: initech\nproject: atlas\n")
+
+	p, _, err := deploy.LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Org != "initech" || p.ProjectSlug != "atlas" {
+		t.Errorf("got org=%q project=%q", p.Org, p.ProjectSlug)
+	}
+}
