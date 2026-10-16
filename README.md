@@ -134,7 +134,8 @@ goship deploy --env-file .env
 | `goship run -a api -- <cmd>` | run a command in the app's containers |
 | `goship shell -a api` | shell into a unit |
 | `goship env list\|set\|unset -a api` | environment variables |
-| `goship db create\|info\|users\|user-add\|bind\|unbind\|rm` | managed PostgreSQL |
+| `goship db create [--server <server>]\|info\|users\|user-add\|bind\|unbind\|rm` | managed PostgreSQL; `--server` places it on your own server |
+| `goship db server list\|create\|tiers\|retry\|delete` | PostgreSQL servers in your own Google Cloud project, unbilled by GoShip |
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
 | `goship volume create\|info\|bind\|unbind\|rm` | persistent disks |
 | `goship node create\|info\|rm` | your own machines: create on a connected cloud or attach over SSH |
