@@ -63,7 +63,7 @@ func (r *registry) databases() {
 		})
 	tool(r, "goship_create_database", "Create a managed PostgreSQL database.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (Message, error) {
-			if err := c.CreateDatabase(ctx, t.Org, t.Project, in.Name, in.Plan, in.Description); err != nil {
+			if err := c.CreateDatabase(ctx, t.Org, t.Project, in.Name, in.Plan, in.Description, ""); err != nil {
 				return Message{}, err
 			}
 			return msgf("Database %s is being created.", in.Name)

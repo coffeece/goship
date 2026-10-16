@@ -58,7 +58,25 @@ func TestEndpoints(t *testing.T) {
 			return err
 		}},
 		{"create database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
-			return c.CreateDatabase(ctx, "acme", "clave", "shop", "starter", "")
+			return c.CreateDatabase(ctx, "acme", "clave", "shop", "starter", "", "")
+		}},
+		{"database servers", "GET", "/api/v1/orgs/acme/projects/clave/database-servers", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseServers(ctx, "acme", "clave")
+			return err
+		}},
+		{"database servers at org", "GET", "/api/v1/orgs/acme/database-servers", "", func(ctx context.Context, c *Client) error { _, err := c.DatabaseServers(ctx, "acme", ""); return err }},
+		{"create database server", "POST", "/api/v1/orgs/acme/database-servers", `{"cloud_account_id":"acc-1","name":"pg","region":"southamerica-east1","tier":"db-f1-micro"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateDatabaseServer(ctx, "acme", "", CreateDatabaseServerRequest{CloudAccountID: "acc-1", Name: "pg", Region: "southamerica-east1", Tier: "db-f1-micro"})
+			return err
+		}},
+		{"retry database server", "POST", "/api/v1/orgs/acme/database-servers/s%201/retry", "", func(ctx context.Context, c *Client) error { return c.RetryDatabaseServer(ctx, "acme", "", "s 1") }},
+		{"delete database server", "DELETE", "/api/v1/orgs/acme/database-servers/s%201", "", func(ctx context.Context, c *Client) error { return c.DeleteDatabaseServer(ctx, "acme", "", "s 1") }},
+		{"database server tiers", "GET", "/api/v1/orgs/acme/database-server-tiers", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseServerTiers(ctx, "acme", "")
+			return err
+		}},
+		{"create database on server", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","plan":"db-small","server_id":"s1"}`, func(ctx context.Context, c *Client) error {
+			return c.CreateDatabase(ctx, "acme", "clave", "shop", "db-small", "", "s1")
 		}},
 		{"delete database", "DELETE", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop", "", func(ctx context.Context, c *Client) error { return c.DeleteDatabase(ctx, "acme", "clave", "shop") }},
 		{"bind database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop/bind", `{"app_name":"api"}`, func(ctx context.Context, c *Client) error { return c.BindDatabase(ctx, "acme", "clave", "shop", "api") }},
