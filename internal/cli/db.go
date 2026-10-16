@@ -1,6 +1,11 @@
 package cli
 
 import (
+	"context"
+	"fmt"
+	"regexp"
+	"strings"
+
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
@@ -23,12 +28,21 @@ func newDBCmd(app *App) *cobra.Command {
 		Short: "Provision a database",
 		Args:  cobra.ExactArgs(1),
 	}
-	var plan, description string
+	var plan, description, server string
 	create.Flags().StringVar(&plan, "plan", "", "database plan (required)")
 	create.Flags().StringVar(&description, "description", "", "human description")
+	create.Flags().StringVar(&server, "server", "", "place the database on one of your own database servers (name or id); default: GoShip")
 	_ = create.MarkFlagRequired("plan")
 	create.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, args[0], plan, description); err != nil {
+		var serverID string
+		if server != "" {
+			s, err := resolveDatabaseServer(cmd.Context(), app.Portal(), t, server)
+			if err != nil {
+				return err
+			}
+			serverID = s.ID
+		}
+		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, args[0], plan, description, serverID); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Database %s requested on plan %s.", args[0], plan)
@@ -139,6 +153,157 @@ func newDBCmd(app *App) *cobra.Command {
 		}),
 	}
 
-	cmd.AddCommand(create, list, info, users, userAdd, bind, unbind, remove)
+	cmd.AddCommand(create, list, info, users, userAdd, bind, unbind, remove, newDBServerCmd(app))
 	return cmd
+}
+
+func newDBServerCmd(app *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "server",
+		Short: "Run PostgreSQL servers in your own cloud",
+		Long: "Run PostgreSQL servers in your own cloud.\n\n" +
+			"A server is a managed PostgreSQL instance GoShip creates in a connected Google Cloud project. Databases on it are not billed by GoShip.",
+	}
+
+	list := newTargetListCmd(app, "list", "List the database servers the current project can use, or --all of them", (*portal.Client).DatabaseServers, skipForbiddenProjects)
+
+	create := &cobra.Command{
+		Use:   "create --account <account> --region <region> [--tier <tier>] [--name <name>]",
+		Short: "Create a PostgreSQL server in a connected cloud account",
+		Args:  cobra.NoArgs,
+	}
+	var account, region, tier, name string
+	create.Flags().StringVar(&account, "account", "", "cloud account (id, label or provider) (required)")
+	create.Flags().StringVar(&region, "region", "", "cloud region (required); see `goship cloud regions <account>`")
+	create.Flags().StringVar(&tier, "tier", "db-f1-micro", "machine size; see `goship db server tiers`")
+	create.Flags().StringVar(&name, "name", "", "server name (default pg-<account label>)")
+	_ = create.MarkFlagRequired("account")
+	_ = create.MarkFlagRequired("region")
+	create.RunE = cloudRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
+		acc, scope, err := app.resolveCloudScoped(cmd.Context(), app.projectView(cmd.Context(), t), account)
+		if err != nil {
+			return err
+		}
+		if acc.Scope == "org" {
+			scope.Project = ""
+		}
+		if name == "" {
+			name = "pg-" + slugify(acc.Label)
+		}
+		s, err := app.Portal().CreateDatabaseServer(cmd.Context(), scope.Org, scope.Project, portal.CreateDatabaseServerRequest{
+			CloudAccountID: acc.ID, Name: name, Region: region, Tier: tier,
+		})
+		if err != nil {
+			return err
+		}
+		if app.Global.Output == render.JSON {
+			return app.Renderer().Render(s)
+		}
+		return app.Renderer().Message("Server %s is %s. Google takes about ten minutes; watch it with `goship db server list`.", s.Name, s.Status)
+	})
+
+	tiers := &cobra.Command{
+		Use:   "tiers",
+		Short: "List the machine sizes a server can have",
+		Args:  cobra.NoArgs,
+		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
+			list, err := app.Portal().DatabaseServerTiers(cmd.Context(), t.Org, t.Project)
+			if err != nil {
+				return err
+			}
+			return app.Renderer().Render(list)
+		}),
+	}
+
+	retry := &cobra.Command{
+		Use:   "retry <server>",
+		Short: "Retry a server that failed to come up",
+		Args:  cobra.ExactArgs(1),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			s, scope, err := app.resolveDatabaseServerScoped(cmd.Context(), t, args[0])
+			if err != nil {
+				return err
+			}
+			if err := app.Portal().RetryDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
+				return err
+			}
+			return app.Renderer().Message("Retrying server %s.", s.Name)
+		}),
+	}
+
+	del := &cobra.Command{
+		Use:   "delete <server>",
+		Short: "Delete a server (its databases must be deleted first)",
+		Args:  cobra.ExactArgs(1),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			s, scope, err := app.resolveDatabaseServerScoped(cmd.Context(), t, args[0])
+			if err != nil {
+				return err
+			}
+			if err := app.Portal().DeleteDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
+				return err
+			}
+			return app.Renderer().Message("Deleting server %s; the Cloud SQL instance is removed from your project.", s.Name)
+		}),
+	}
+
+	cmd.AddCommand(list, create, tiers, retry, del)
+	return cmd
+}
+
+// resolveDatabaseServer matches a server by id, then by exact name.
+func resolveDatabaseServer(ctx context.Context, client *portal.Client, t Target, ref string) (*portal.DatabaseServer, error) {
+	servers, err := client.DatabaseServers(ctx, t.Org, t.Project)
+	if err != nil {
+		return nil, err
+	}
+	for i := range servers {
+		if servers[i].ID == ref {
+			return &servers[i], nil
+		}
+	}
+	for i := range servers {
+		if servers[i].Name == ref {
+			return &servers[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no database server %q in %s; run `goship db server list`", ref, cloudScope(t))
+}
+
+// resolveDatabaseServerScoped also returns the target to act through: an
+// organization's server is changed on the organization routes, which the API
+// requires.
+func (a *App) resolveDatabaseServerScoped(ctx context.Context, t Target, ref string) (*portal.DatabaseServer, Target, error) {
+	view := a.projectView(ctx, t)
+	s, err := resolveDatabaseServer(ctx, a.Portal(), view, ref)
+	if err != nil {
+		return nil, t, err
+	}
+	if s.Scope == "org" {
+		return s, Target{Org: t.Org}, nil
+	}
+	return s, view, nil
+}
+
+// projectView is the target a person sees in `db server list`: the selected
+// project, which includes what the organization shares with it. With no
+// project to resolve it stays at the organization.
+func (a *App) projectView(ctx context.Context, t Target) Target {
+	if t.Project != "" {
+		return t
+	}
+	if project, err := a.projectIn(ctx, t.Org); err == nil {
+		return Target{Org: t.Org, Project: project}
+	}
+	return t
+}
+
+var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
+
+func slugify(s string) string {
+	s = strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(s), "-"), "-")
+	if s == "" {
+		return "prod"
+	}
+	return s
 }

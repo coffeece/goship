@@ -19,6 +19,7 @@ type Database struct {
 	DBUser      string    `json:"db_user"`
 	DBPassword  string    `json:"db_password"`
 	Status      string    `json:"status" table:"STATUS"`
+	Placement   string    `json:"placement" table:"PLACEMENT"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -76,8 +77,11 @@ func (c *Client) CreateDatabaseUser(ctx context.Context, org, project, name, use
 	return &out, c.post(ctx, dbPath(org, project, name)+"/users", body, &out)
 }
 
-func (c *Client) CreateDatabase(ctx context.Context, org, project, name, plan, description string) error {
+func (c *Client) CreateDatabase(ctx context.Context, org, project, name, plan, description, serverID string) error {
 	body := map[string]string{"name": name, "plan": plan, "description": description}
+	if serverID != "" {
+		body["server_id"] = serverID
+	}
 	return c.post(ctx, instancesPath(org, project), body, nil)
 }
 
