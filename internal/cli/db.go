@@ -240,10 +240,13 @@ func newDBServerCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := confirm(cmd, app.Global.Yes, "Delete database server %q? The Cloud SQL instance is removed from your project.", s.Name); err != nil {
+				return err
+			}
 			if err := app.Portal().DeleteDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
 				return err
 			}
-			return app.Renderer().Message("Deleting server %s; the Cloud SQL instance is removed from your project.", s.Name)
+			return app.Renderer().Message("Deleting server %s; the Cloud SQL instance is being removed from your project.", s.Name)
 		}),
 	}
 
@@ -251,7 +254,9 @@ func newDBServerCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-// resolveDatabaseServer matches a server by id, then by exact name.
+// resolveDatabaseServer matches a server by id, then by exact name. Names are
+// unique per organization, but a project sees its own servers and the
+// organization's, so a name shared by two is refused rather than guessed.
 func resolveDatabaseServer(ctx context.Context, client *portal.Client, t Target, ref string) (*portal.DatabaseServer, error) {
 	servers, err := client.DatabaseServers(ctx, t.Org, t.Project)
 	if err != nil {
@@ -262,10 +267,18 @@ func resolveDatabaseServer(ctx context.Context, client *portal.Client, t Target,
 			return &servers[i], nil
 		}
 	}
+	var match *portal.DatabaseServer
 	for i := range servers {
-		if servers[i].Name == ref {
-			return &servers[i], nil
+		if servers[i].Name != ref {
+			continue
 		}
+		if match != nil {
+			return nil, fmt.Errorf("more than one database server named %q in %s; pass the id", ref, cloudScope(t))
+		}
+		match = &servers[i]
+	}
+	if match != nil {
+		return match, nil
 	}
 	return nil, fmt.Errorf("no database server %q in %s; run `goship db server list`", ref, cloudScope(t))
 }

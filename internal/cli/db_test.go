@@ -74,8 +74,44 @@ func TestDBServerListAndDelete(t *testing.T) {
 	if err != nil || !strings.Contains(out, "34.1.2.3") || !strings.Contains(out, "pg") {
 		t.Fatalf("list: %v %q", err, out)
 	}
-	if _, err := run(t, "", "db", "server", "delete", "pg"); err != nil || deleted != "s1" {
-		t.Fatalf("delete: %v, deleted %q", err, deleted)
+	if _, err := run(t, "n\n", "db", "server", "delete", "pg"); err == nil || deleted != "" {
+		t.Fatalf("delete without consent: %v, deleted %q; want it aborted", err, deleted)
+	}
+	out, err = run(t, "", "db", "server", "delete", "pg", "-y")
+	if err != nil || deleted != "s1" {
+		t.Fatalf("delete -y: %v, deleted %q", err, deleted)
+	}
+	if !strings.Contains(out, "is being removed from your project") {
+		t.Errorf("delete output = %q", out)
+	}
+}
+
+func TestDBServerAmbiguousNameIsRefused(t *testing.T) {
+	var deleted, body string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/projects/clave/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active","scope":"org"},{"id":"s2","name":"pg","status":"active","scope":"project"}]`)) //nolint:errcheck
+		case "DELETE /api/v1/orgs/acme/database-servers/s1", "DELETE /api/v1/orgs/acme/projects/clave/database-servers/s1",
+			"DELETE /api/v1/orgs/acme/database-servers/s2", "DELETE /api/v1/orgs/acme/projects/clave/database-servers/s2":
+			deleted = r.URL.Path
+			w.WriteHeader(http.StatusAccepted)
+		case "POST /api/v1/orgs/acme/projects/clave/services/postgresql/instances":
+			body = "posted"
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	_, err := run(t, "", "db", "server", "delete", "pg", "-y")
+	if err == nil || !strings.Contains(err.Error(), `more than one database server named "pg"`) || !strings.Contains(err.Error(), "pass the id") || deleted != "" {
+		t.Fatalf("ambiguous delete: %v, deleted %q", err, deleted)
+	}
+	if _, err := run(t, "", "db", "create", "shop", "--plan", "db-small", "--server", "pg"); err == nil || body != "" {
+		t.Fatalf("ambiguous --server: %v, posted %q", err, body)
+	}
+	if _, err := run(t, "", "db", "server", "delete", "s2", "-y"); err != nil || deleted != "/api/v1/orgs/acme/projects/clave/database-servers/s2" {
+		t.Fatalf("delete by id: %v, deleted %q", err, deleted)
 	}
 }
 
