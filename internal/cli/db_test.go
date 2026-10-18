@@ -86,6 +86,31 @@ func TestDBServerListAndDelete(t *testing.T) {
 	}
 }
 
+func TestDBServerDeleteForceForgets(t *testing.T) {
+	var deleted string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/projects/clave/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"error","cloud_instance_name":"goship-abc","cloud_account":{"label":"acme-prod"},"scope":"org"}]`)) //nolint:errcheck
+		case "DELETE /api/v1/orgs/acme/database-servers/s1":
+			deleted = r.URL.RawQuery
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	if _, err := run(t, "n\n", "db", "server", "delete", "pg", "--force"); err == nil || deleted != "" {
+		t.Fatalf("force without consent: %v, deleted %q; want it aborted", err, deleted)
+	}
+	out, err := run(t, "", "db", "server", "delete", "pg", "--force", "-y")
+	if err != nil || deleted != "force=true" {
+		t.Fatalf("delete --force: %v, query %q; want force=true", err, deleted)
+	}
+	if !strings.Contains(out, "forgotten") || !strings.Contains(out, "gcloud sql instances delete goship-abc --project acme-prod") {
+		t.Errorf("force output = %q, want the instance and the gcloud command", out)
+	}
+}
+
 func TestDBServerAmbiguousNameIsRefused(t *testing.T) {
 	var deleted, body string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {

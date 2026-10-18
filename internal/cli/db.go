@@ -231,24 +231,49 @@ func newDBServerCmd(app *App) *cobra.Command {
 		}),
 	}
 
+	var force bool
 	del := &cobra.Command{
 		Use:   "delete <server>",
 		Short: "Delete a server (its databases must be deleted first)",
-		Args:  cobra.ExactArgs(1),
+		Long: `Delete a server. Its databases must be deleted first; GoShip then removes the
+Cloud SQL instance from your project.
+
+--force drops the server from GoShip without touching your cloud: use it when
+GoShip can no longer reach the instance (the cloud account was disconnected,
+the project is gone, or every delete fails). The instance, if it still exists,
+keeps running and billing in your project until you delete it there.`,
+		Args: cobra.ExactArgs(1),
 		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			s, scope, err := app.resolveDatabaseServerScoped(cmd.Context(), t, args[0])
 			if err != nil {
 				return err
 			}
-			if err := confirm(cmd, app.Global.Yes, "Delete database server %q? The Cloud SQL instance is removed from your project.", s.Name); err != nil {
+			if !force {
+				if err := confirm(cmd, app.Global.Yes, "Delete database server %q? The Cloud SQL instance is removed from your project.", s.Name); err != nil {
+					return err
+				}
+				if err := app.Portal().DeleteDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
+					return err
+				}
+				return app.Renderer().Message("Deleting server %s; the Cloud SQL instance is being removed from your project.", s.Name)
+			}
+			instance, project := s.CloudInstanceName, "<project id>"
+			if instance == "" {
+				instance = "(none recorded)"
+			}
+			if s.CloudAccount != nil && s.CloudAccount.Label != "" {
+				project = s.CloudAccount.Label
+			}
+			if err := confirm(cmd, app.Global.Yes, "Forget database server %q? GoShip drops it without touching your cloud; Cloud SQL instance %s stays in your project if it still exists.", s.Name, instance); err != nil {
 				return err
 			}
-			if err := app.Portal().DeleteDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
+			if err := app.Portal().ForgetDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
 				return err
 			}
-			return app.Renderer().Message("Deleting server %s; the Cloud SQL instance is being removed from your project.", s.Name)
+			return app.Renderer().Message("Server %s forgotten. Cloud SQL instance %s was not touched; if it still exists, delete it in your project: gcloud sql instances delete %s --project %s", s.Name, instance, instance, project)
 		}),
 	}
+	del.Flags().BoolVar(&force, "force", false, "drop the server from GoShip without touching the cloud (the instance stays in your project)")
 
 	cmd.AddCommand(list, create, tiers, retry, del)
 	return cmd

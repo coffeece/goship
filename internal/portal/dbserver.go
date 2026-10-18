@@ -6,19 +6,22 @@ import (
 )
 
 type DatabaseServer struct {
-	ID                 string     `json:"id" table:"ID"`
-	Name               string     `json:"name" table:"NAME"`
-	Provider           string     `json:"provider" table:"PROVIDER"`
-	Region             string     `json:"region" table:"REGION"`
-	Tier               string     `json:"tier" table:"SIZE"`
-	Status             string     `json:"status" table:"STATUS"`
-	Stage              string     `json:"stage,omitempty"`
-	Host               string     `json:"host,omitempty" table:"HOST"`
-	DatabaseCount      int        `json:"database_count" table:"DATABASES"`
-	CloudInstanceName  string     `json:"cloud_instance_name,omitempty"`
-	ErrorMessage       string     `json:"error_message,omitempty"`
-	Scope              string     `json:"scope"`
-	CloudAccountID     string     `json:"cloud_account_id"`
+	ID                string `json:"id" table:"ID"`
+	Name              string `json:"name" table:"NAME"`
+	Provider          string `json:"provider" table:"PROVIDER"`
+	Region            string `json:"region" table:"REGION"`
+	Tier              string `json:"tier" table:"SIZE"`
+	Status            string `json:"status" table:"STATUS"`
+	Stage             string `json:"stage,omitempty"`
+	Host              string `json:"host,omitempty" table:"HOST"`
+	DatabaseCount     int    `json:"database_count" table:"DATABASES"`
+	CloudInstanceName string `json:"cloud_instance_name,omitempty"`
+	ErrorMessage      string `json:"error_message,omitempty"`
+	Scope             string `json:"scope"`
+	CloudAccountID    string `json:"cloud_account_id"`
+	CloudAccount      *struct {
+		Label string `json:"label"`
+	} `json:"cloud_account,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	BrokerRegisteredAt *time.Time `json:"broker_registered_at,omitempty"`
 }
@@ -60,6 +63,12 @@ func (c *Client) RetryDatabaseServer(ctx context.Context, org, project, id strin
 
 func (c *Client) DeleteDatabaseServer(ctx context.Context, org, project, id string) error {
 	return c.delete(ctx, databaseServersPath(org, project)+"/"+esc(id), nil)
+}
+
+// ForgetDatabaseServer drops the server from GoShip without touching the
+// cloud; the instance, if it still exists, stays in the customer's project.
+func (c *Client) ForgetDatabaseServer(ctx context.Context, org, project, id string) error {
+	return c.delete(ctx, databaseServersPath(org, project)+"/"+esc(id)+"?force=true", nil)
 }
 
 func (c *Client) DatabaseServerTiers(ctx context.Context, org, project string) ([]DatabaseServerTier, error) {
