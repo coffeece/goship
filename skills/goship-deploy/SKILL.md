@@ -167,6 +167,12 @@ rotate).
   → `goship_add_app_domain`, then CNAME the hostname to the app's address.
 - Roll back: `goship_rollback` with a version from `goship_list_releases`.
 - One-off commands (migrations): `goship_run`.
+- PostgreSQL extensions (PostGIS, pg_trgm, citext, pgcrypto, uuid-ossp…):
+  `goship_list_database_extensions` shows enabled and available ones,
+  `goship_enable_database_extension` turns one on (status `enabling` until the
+  server finishes; list again), `goship_disable_database_extension` turns it
+  off while no table uses it. `vector` (pgvector) is always on. Enable them
+  before running migrations that depend on them.
 - Cloud account scope: `goship_move_cloud_account` moves an account to one
   project or shares it with the whole organization.
 - Removing a database server: delete its databases first
