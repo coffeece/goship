@@ -161,6 +161,13 @@ func (c *Client) CloudConnectTicket(ctx context.Context, org, project, ticket st
 	return &t, c.get(ctx, cloudAccountsPath(org, project)+"/connect/"+esc(ticket), &t)
 }
 
+// MoveCloudAccount puts an account at a project, or back at the
+// organization when project is empty. The route is the organization's:
+// the scope decides who may use the account, so the organization decides.
+func (c *Client) MoveCloudAccount(ctx context.Context, org, id, project string) error {
+	return c.post(ctx, cloudAccountsPath(org, "")+"/"+esc(id)+"/move", map[string]string{"project": project}, nil)
+}
+
 func (c *Client) DeleteCloudAccount(ctx context.Context, org, project, id string) error {
 	return c.delete(ctx, cloudAccountsPath(org, project)+"/"+esc(id), nil)
 }

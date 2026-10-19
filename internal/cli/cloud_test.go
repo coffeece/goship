@@ -1233,3 +1233,73 @@ func TestCloudAccountCommandsRetryThroughTheSelectedProject(t *testing.T) {
 		})
 	}
 }
+
+func TestCloudMoveToProjectPostsTheOrgRoute(t *testing.T) {
+	var gotPath, gotBody string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod-do","scope":"org"}]`)) //nolint:errcheck
+		case http.MethodPost:
+			gotPath = r.URL.Path
+			buf, _ := io.ReadAll(r.Body)
+			gotBody = string(buf)
+			w.Write([]byte(`{"status":"moved","scope":"project"}`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	out, err := run(t, "y\n", "cloud", "move", "prod-do", "--to-project", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/orgs/acme/cloud-accounts/acc-1/move" {
+		t.Errorf("path = %q, want the organization's move route", gotPath)
+	}
+	if !strings.Contains(gotBody, `"project":"web"`) {
+		t.Errorf("body = %q", gotBody)
+	}
+	if !strings.Contains(out, "moved to project web") {
+		t.Errorf("output = %q", out)
+	}
+
+	out, err = run(t, "y\n", "cloud", "move", "prod-do", "--to-org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotBody, `"project":""`) || !strings.Contains(out, "shared with the organization") {
+		t.Errorf("--to-org: body = %q, output = %q", gotBody, out)
+	}
+}
+
+func TestCloudMoveNeedsExactlyOneTarget(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod-do"}]`)) //nolint:errcheck
+	})
+	for _, args := range [][]string{
+		{"cloud", "move", "prod-do"},
+		{"cloud", "move", "prod-do", "--to-project", "web", "--to-org"},
+	} {
+		_, err := run(t, "y\n", args...)
+		if err == nil || !strings.Contains(err.Error(), "--to-project") {
+			t.Errorf("%v: err = %v, want the flag hint", args, err)
+		}
+	}
+}
+
+func TestCloudMoveConfirms(t *testing.T) {
+	posted := false
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posted = true
+		}
+		w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod-do"}]`)) //nolint:errcheck
+	})
+	if _, err := run(t, "n\n", "cloud", "move", "prod-do", "--to-project", "web"); err == nil {
+		t.Fatal("expected the command to abort")
+	}
+	if posted {
+		t.Error("account was moved without consent")
+	}
+}
