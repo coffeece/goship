@@ -134,3 +134,16 @@ func TestMoveCloudAccount(t *testing.T) {
 		t.Errorf("to the organization: isError=%v %q posted %s", res.IsError, text(res), posted)
 	}
 }
+
+func TestDisableDatabaseExtensionDeletesIt(t *testing.T) {
+	var got string
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Method + " " + r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
+	res := call(t, cs, "goship_disable_database_extension", map[string]any{"database": "db", "extension": "postgis"})
+	if res.IsError || got != "DELETE /api/v1/orgs/acme/projects/clave/databases/db/extensions/postgis" {
+		t.Errorf("isError=%v %q called %s", res.IsError, text(res), got)
+	}
+}

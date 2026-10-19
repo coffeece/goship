@@ -75,6 +75,13 @@ func (r *registry) databases() {
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in EnableDBExtensionArgs) (*portal.DatabaseExtension, error) {
 			return c.EnableDatabaseExtension(ctx, t.Org, t.Project, in.Database, in.Extension)
 		})
+	tool(r, "goship_disable_database_extension", "Disable a PostgreSQL extension on a database; refused while tables still use it. vector (pgvector) is always on.", write,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in EnableDBExtensionArgs) (Message, error) {
+			if err := c.DisableDatabaseExtension(ctx, t.Org, t.Project, in.Database, in.Extension); err != nil {
+				return Message{}, err
+			}
+			return msgf("Extension %s disabled on %s.", in.Extension, in.Database)
+		})
 	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server the plan is billed; on one of the customer's own database servers (server) the same plan sets the quotas but nothing is billed by GoShip, and a server still provisioning queues the database until it is ready (status pending, then ready).", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (Message, error) {
 			var serverID string
