@@ -99,12 +99,46 @@ One call creates the app on first deploy, applies env and follows the build:
 Secrets go in `env` (MCP) or `--env-file` (CLI); both apply them as private
 variables. Never write secrets into `goship.yaml`.
 
-A database, when needed:
+A database, when needed. `goship_list_plans` with `kind: database` lists
+the plans: each sets a storage and connection quota and a monthly price,
+and every plan is billed on GoShip's server, so name the plan and its price
+to the user before creating one.
 
-- MCP: `goship_create_database` (plan from `goship_list_plans` with
-  `kind: database`), then `goship_bind_database` to the app.
-- CLI: `goship db create <app>-db --plan db-small` then
+- MCP: `goship_create_database` with `name` and `plan`, then
+  `goship_bind_database` to the app.
+- CLI: `goship db create <app>-db --plan db-micro` then
   `goship db bind <app>-db -a <app>`.
+
+**In the customer's own cloud, unbilled.** When the project or its
+organization has a Google Cloud account connected
+(`goship_list_cloud_accounts`, provider `gcp`; `goship cloud connect gcp`
+connects one in a terminal), the database can live on a *database server*:
+a Cloud SQL instance GoShip creates in that account, paid to Google by the
+customer, on which GoShip bills nothing. Only Google Cloud hosts database
+servers, one per cloud account.
+
+1. `goship_list_database_servers`: a server with status `ready` is reused.
+   Otherwise `goship_create_database_server` with `cloud_account` (id, label
+   or `gcp`) and `region` (`goship_list_cloud_regions`); `tier` comes from
+   `goship_list_database_server_tiers`, default `db-f1-micro`; `name`
+   defaults to `pg-<account label>`. Provisioning runs for about ten
+   minutes in the background; do not wait for it.
+2. `goship_create_database` with `server` set to the server's name. The
+   plan still sets the quotas but is not billed. While the server is still
+   provisioning the database is queued (status `pending`) and created once
+   the server is ready; `goship_get_database` shows `status` and `detail`.
+3. `goship_bind_database` once the database is `ready`.
+
+CLI: `goship db server create --account gcp --region southamerica-east1`,
+then `goship db create <app>-db --plan db-small --server pg-gcp`.
+
+The instance has a public IP and accepts TLS only, so apps on GoShip's
+cluster and on the project's own nodes reach it alike; `DATABASE_URL`
+carries `sslmode=require`. A server that fails to come up carries
+`error_message`: an account connected before October 2026 must run
+`goship cloud connect gcp` again, the Google project needs an active billing
+account, and an organization policy blocking public IP on Cloud SQL must be
+disabled by the customer. Fix the cause, then `goship_retry_database_server`.
 
 Binding injects `DATABASE_URL`, `DATABASE_HOST/PORT/NAME/USER/PASSWORD`,
 `DATABASE_SSLMODE` and `PGSSLMODE`, and restarts the app.
@@ -133,6 +167,14 @@ rotate).
   → `goship_add_app_domain`, then CNAME the hostname to the app's address.
 - Roll back: `goship_rollback` with a version from `goship_list_releases`.
 - One-off commands (migrations): `goship_run`.
+- Cloud account scope: `goship_move_cloud_account` moves an account to one
+  project or shares it with the whole organization.
+- Removing a database server: delete its databases first
+  (`goship_delete_database` drops the data on any server), then
+  `goship_delete_database_server` removes the Cloud SQL instance from the
+  customer's project. `force` only forgets the server in GoShip, for an
+  instance GoShip can no longer reach; it keeps running and billing at Google
+  until the customer deletes it there.
 
 Destructive tools (`goship_delete_*`, `goship_revoke_api_token`) must be
 confirmed with the user every time.
