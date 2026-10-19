@@ -91,7 +91,7 @@ func newCloudCmd(app *App) *cobra.Command {
 	// you are not rather than failing on the first.
 	list := newTargetListCmd(app, "list", "List the cloud accounts the current project can use, or --all of them", (*portal.Client).CloudAccounts, skipForbiddenProjects)
 
-	cmd.AddCommand(providers, list, newCloudConnectCmd(app), newCloudRegionsCmd(app), newCloudSizesCmd(app), newCloudDisconnectCmd(app))
+	cmd.AddCommand(providers, list, newCloudConnectCmd(app), newCloudRegionsCmd(app), newCloudSizesCmd(app), newCloudMoveCmd(app), newCloudDisconnectCmd(app))
 	return cmd
 }
 
@@ -417,6 +417,46 @@ func newCloudDisconnectCmd(app *App) *cobra.Command {
 			return app.Renderer().Message("Cloud account %s disconnected.", account.Label)
 		}),
 	}
+}
+
+func newCloudMoveCmd(app *App) *cobra.Command {
+	var toProject string
+	var toOrg bool
+	cmd := &cobra.Command{
+		Use:   "move <account> (--to-project <slug> | --to-org)",
+		Short: "Move a cloud account to a project, or share it with the organization",
+		Long: "Move a cloud account to a project, or share it with the organization.\n\n" +
+			"An account of the organization is inherited by every project; an account of a project is used by that project only. " +
+			"The move is refused while the target already has an account of that provider, or while a node or database server of another project still runs on it. " +
+			"Nodes and database servers already on the account keep working.",
+		Args: cobra.ExactArgs(1),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			if (toProject == "") == !toOrg {
+				return errors.New("pass --to-project <slug> or --to-org")
+			}
+			account, t, err := app.resolveCloudScoped(cmd.Context(), t, args[0])
+			if err != nil {
+				return err
+			}
+			if toOrg {
+				if err := confirm(cmd, app.Global.Yes, "Share cloud account %q with the organization?", account.Label); err != nil {
+					return err
+				}
+			} else if err := confirm(cmd, app.Global.Yes, "Move cloud account %q to project %q?", account.Label, toProject); err != nil {
+				return err
+			}
+			if err := app.Portal().MoveCloudAccount(cmd.Context(), t.Org, account.ID, toProject); err != nil {
+				return err
+			}
+			if toOrg {
+				return app.Renderer().Message("Cloud account %s is now shared with the organization.", account.Label)
+			}
+			return app.Renderer().Message("Cloud account %s moved to project %s.", account.Label, toProject)
+		}),
+	}
+	cmd.Flags().StringVar(&toProject, "to-project", "", "project slug the account moves to")
+	cmd.Flags().BoolVar(&toOrg, "to-org", false, "share the account with the whole organization")
+	return cmd
 }
 
 // cloudAccountMissing is resolveCloudAccount finding nothing, as opposed to
