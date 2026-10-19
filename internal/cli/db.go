@@ -4,6 +4,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
@@ -107,6 +108,53 @@ func newDBCmd(app *App) *cobra.Command {
 		}{created.User.Username, created.User.AccessMode, created.Password})
 	})
 
+	extensions := &cobra.Command{
+		Use:   "extensions <name>",
+		Short: "List database extensions: enabled, enabling and available",
+		Args:  cobra.ExactArgs(1),
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			exts, err := app.Portal().DatabaseExtensions(cmd.Context(), t.Org, t.Project, args[0])
+			if err != nil {
+				return err
+			}
+			if app.Global.Output == render.JSON {
+				return app.Renderer().Render(exts)
+			}
+			return app.Renderer().Render(exts.Rows())
+		}),
+	}
+
+	extensionAdd := &cobra.Command{
+		Use:   "extension-add <name> <extension>",
+		Short: "Enable a PostgreSQL extension (postgis, pg_trgm, ...)",
+		Args:  cobra.ExactArgs(2),
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			ext, err := app.Portal().EnableDatabaseExtension(cmd.Context(), t.Org, t.Project, args[0], args[1])
+			if err != nil {
+				return err
+			}
+			if app.Global.Output == render.JSON {
+				return app.Renderer().Render(ext)
+			}
+			if ext.Status == "enabling" {
+				return waitForExtension(cmd, app, t, args[0], args[1])
+			}
+			return app.Renderer().Message("Extension %s %s enabled on %s.", ext.Name, ext.Version, args[0])
+		}),
+	}
+
+	extensionRm := &cobra.Command{
+		Use:   "extension-rm <name> <extension>",
+		Short: "Disable a PostgreSQL extension (fails while tables still use it)",
+		Args:  cobra.ExactArgs(2),
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			if err := app.Portal().DisableDatabaseExtension(cmd.Context(), t.Org, t.Project, args[0], args[1]); err != nil {
+				return err
+			}
+			return app.Renderer().Message("Extension %s disabled on %s.", args[1], args[0])
+		}),
+	}
+
 	bind := &cobra.Command{
 		Use:   "bind <name> --app <app>",
 		Short: "Bind a database to an app, injecting its credentials",
@@ -153,7 +201,7 @@ func newDBCmd(app *App) *cobra.Command {
 		}),
 	}
 
-	cmd.AddCommand(create, list, info, users, userAdd, bind, unbind, remove, newDBServerCmd(app))
+	cmd.AddCommand(create, list, info, users, userAdd, extensions, extensionAdd, extensionRm, bind, unbind, remove, newDBServerCmd(app))
 	return cmd
 }
 
@@ -318,4 +366,32 @@ func slugify(s string) string {
 		return "prod"
 	}
 	return s
+}
+
+// A slow CREATE EXTENSION (PostGIS on a small server) keeps running after
+// the API answers "enabling"; the command waits for it to show as enabled.
+var (
+	extensionPollInterval = 3 * time.Second
+	extensionPollDeadline = 3 * time.Minute
+)
+
+func waitForExtension(cmd *cobra.Command, app *App, t Target, db, ext string) error {
+	deadline := time.Now().Add(extensionPollDeadline)
+	for {
+		exts, err := app.Portal().DatabaseExtensions(cmd.Context(), t.Org, t.Project, db)
+		if err != nil {
+			return err
+		}
+		if e, ok := exts.IsEnabled(ext); ok {
+			return app.Renderer().Message("Extension %s %s enabled on %s.", e.Name, e.Version, db)
+		}
+		if time.Now().After(deadline) {
+			return app.Renderer().Message("Still enabling; run `goship db extensions %s` later.", db)
+		}
+		select {
+		case <-cmd.Context().Done():
+			return cmd.Context().Err()
+		case <-time.After(extensionPollInterval):
+		}
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The password comes back once, so the table must show it.
@@ -158,5 +159,105 @@ func TestDBCreateOnAServer(t *testing.T) {
 	}
 	if body["server_id"] != "s1" {
 		t.Fatalf("body = %v", body)
+	}
+}
+
+const extensionsJSON = `{"enabled":[{"name":"postgis","version":"3.6.4"}],"available":[{"name":"pg_trgm","version":"1.6","comment":"text similarity"}],"pending":["citext"]}`
+
+func TestDBExtensionsListsEnabledPendingAndAvailable(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/orgs/acme/projects/clave/databases/shop/extensions" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		w.Write([]byte(extensionsJSON)) //nolint:errcheck
+	})
+	out, err := run(t, "", "db", "extensions", "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"NAME", "VERSION", "STATUS", "postgis", "3.6.4", "enabled", "citext", "enabling", "pg_trgm", "available"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDBExtensionAddPollsUntilEnabled(t *testing.T) {
+	saved, savedDeadline := extensionPollInterval, extensionPollDeadline
+	extensionPollInterval, extensionPollDeadline = 0, 5*time.Second
+	t.Cleanup(func() { extensionPollInterval, extensionPollDeadline = saved, savedDeadline })
+
+	gets := 0
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"name":"postgis","status":"enabling"}`)) //nolint:errcheck
+		case http.MethodGet:
+			gets++
+			if gets == 1 {
+				w.Write([]byte(`{"enabled":[],"available":[],"pending":["postgis"]}`)) //nolint:errcheck
+				return
+			}
+			w.Write([]byte(`{"enabled":[{"name":"postgis","version":"3.6.4"}],"available":[],"pending":[]}`)) //nolint:errcheck
+		}
+	})
+	out, err := run(t, "", "db", "extension-add", "shop", "postgis")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Extension postgis 3.6.4 enabled on shop.") || gets < 2 {
+		t.Fatalf("gets=%d out=%q", gets, out)
+	}
+}
+
+func TestDBExtensionAddGivesUpPolitely(t *testing.T) {
+	saved, savedDeadline := extensionPollInterval, extensionPollDeadline
+	extensionPollInterval, extensionPollDeadline = 0, 0
+	t.Cleanup(func() { extensionPollInterval, extensionPollDeadline = saved, savedDeadline })
+
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"name":"postgis","status":"enabling"}`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(`{"enabled":[],"available":[],"pending":["postgis"]}`)) //nolint:errcheck
+	})
+	out, err := run(t, "", "db", "extension-add", "shop", "postgis")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Still enabling") {
+		t.Fatalf("out=%q", out)
+	}
+}
+
+func TestDBExtensionAddPrintsTheEnabledLine(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"name":"pg_trgm","version":"1.6","status":"enabled"}`)) //nolint:errcheck
+	})
+	out, err := run(t, "", "db", "extension-add", "shop", "pg_trgm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Extension pg_trgm 1.6 enabled on shop.") {
+		t.Fatalf("out=%q", out)
+	}
+}
+
+func TestDBExtensionRm(t *testing.T) {
+	var got string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Method + " " + r.URL.Path
+		w.Write([]byte(`{"status":"disabled"}`)) //nolint:errcheck
+	})
+	out, err := run(t, "", "db", "extension-rm", "shop", "pg_trgm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "DELETE /api/v1/orgs/acme/projects/clave/databases/shop/extensions/pg_trgm" || !strings.Contains(out, "Extension pg_trgm disabled on shop.") {
+		t.Fatalf("got=%q out=%q", got, out)
 	}
 }

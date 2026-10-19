@@ -57,6 +57,17 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.CreateDatabaseUser(ctx, "acme", "clave", "shop", "reader", "ro")
 			return err
 		}},
+		{"database extensions", "GET", "/api/v1/orgs/acme/projects/clave/databases/shop/extensions", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseExtensions(ctx, "acme", "clave", "shop")
+			return err
+		}},
+		{"enable database extension", "POST", "/api/v1/orgs/acme/projects/clave/databases/shop/extensions", `{"name":"postgis"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.EnableDatabaseExtension(ctx, "acme", "clave", "shop", "postgis")
+			return err
+		}},
+		{"disable database extension", "DELETE", "/api/v1/orgs/acme/projects/clave/databases/shop/extensions/uuid-ossp", "", func(ctx context.Context, c *Client) error {
+			return c.DisableDatabaseExtension(ctx, "acme", "clave", "shop", "uuid-ossp")
+		}},
 		{"create database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
 			return c.CreateDatabase(ctx, "acme", "clave", "shop", "starter", "", "")
 		}},

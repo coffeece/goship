@@ -77,6 +77,70 @@ func (c *Client) CreateDatabaseUser(ctx context.Context, org, project, name, use
 	return &out, c.post(ctx, dbPath(org, project, name)+"/users", body, &out)
 }
 
+// DatabaseExtension is one extension of a database. Status is "enabled",
+// "enabling" (the server is still installing it) or "available" (it can be
+// enabled) when it comes from DatabaseExtensions.Rows.
+type DatabaseExtension struct {
+	Name    string `json:"name" table:"NAME"`
+	Version string `json:"version,omitempty" table:"VERSION"`
+	Status  string `json:"status,omitempty" table:"STATUS"`
+}
+
+type AvailableExtension struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Comment string `json:"comment"`
+}
+
+type DatabaseExtensions struct {
+	Enabled   []DatabaseExtension  `json:"enabled"`
+	Available []AvailableExtension `json:"available"`
+	Pending   []string             `json:"pending"`
+}
+
+// Rows flattens the three lists into one table: enabled, then enabling,
+// then available.
+func (e *DatabaseExtensions) Rows() []DatabaseExtension {
+	rows := make([]DatabaseExtension, 0, len(e.Enabled)+len(e.Pending)+len(e.Available))
+	for _, x := range e.Enabled {
+		rows = append(rows, DatabaseExtension{Name: x.Name, Version: x.Version, Status: "enabled"})
+	}
+	for _, n := range e.Pending {
+		rows = append(rows, DatabaseExtension{Name: n, Status: "enabling"})
+	}
+	for _, a := range e.Available {
+		rows = append(rows, DatabaseExtension{Name: a.Name, Version: a.Version, Status: "available"})
+	}
+	return rows
+}
+
+// IsEnabled reports whether name is in the enabled list.
+func (e *DatabaseExtensions) IsEnabled(name string) (DatabaseExtension, bool) {
+	for _, x := range e.Enabled {
+		if x.Name == name {
+			return x, true
+		}
+	}
+	return DatabaseExtension{}, false
+}
+
+func (c *Client) DatabaseExtensions(ctx context.Context, org, project, name string) (*DatabaseExtensions, error) {
+	var exts DatabaseExtensions
+	return &exts, c.get(ctx, dbPath(org, project, name)+"/extensions", &exts)
+}
+
+// EnableDatabaseExtension returns Status "enabled", or "enabling" when the
+// server lets a slow install finish in the background; poll
+// DatabaseExtensions until the name shows as enabled.
+func (c *Client) EnableDatabaseExtension(ctx context.Context, org, project, name, ext string) (*DatabaseExtension, error) {
+	var out DatabaseExtension
+	return &out, c.post(ctx, dbPath(org, project, name)+"/extensions", map[string]string{"name": ext}, &out)
+}
+
+func (c *Client) DisableDatabaseExtension(ctx context.Context, org, project, name, ext string) error {
+	return c.delete(ctx, dbPath(org, project, name)+"/extensions/"+esc(ext), nil)
+}
+
 func (c *Client) CreateDatabase(ctx context.Context, org, project, name, plan, description, serverID string) error {
 	body := map[string]string{"name": name, "plan": plan, "description": description}
 	if serverID != "" {

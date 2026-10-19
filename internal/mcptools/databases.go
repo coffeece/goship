@@ -34,6 +34,11 @@ type CreateDBUserArgs struct {
 	AccessMode string `json:"access_mode,omitempty" jsonschema:"readwrite (default) or readonly"`
 }
 
+type EnableDBExtensionArgs struct {
+	DBArg
+	Extension string `json:"extension" jsonschema:"extension name from the available list, e.g. postgis"`
+}
+
 type DBBindArgs struct {
 	DBArg
 	App string `json:"app" jsonschema:"app to bind; it gets DATABASE_URL and the PG* variables"`
@@ -61,6 +66,14 @@ func (r *registry) databases() {
 	tool(r, "goship_create_database_user", "Create a database user. The password is returned once, here only.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBUserArgs) (*portal.NewDatabaseUser, error) {
 			return c.CreateDatabaseUser(ctx, t.Org, t.Project, in.Database, in.Username, in.AccessMode)
+		})
+	tool(r, "goship_list_database_extensions", "List a database's PostgreSQL extensions: enabled, still enabling, and available to enable.", read,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in DBArg) (*portal.DatabaseExtensions, error) {
+			return c.DatabaseExtensions(ctx, t.Org, t.Project, in.Database)
+		})
+	tool(r, "goship_enable_database_extension", "Enable a PostgreSQL extension (postgis, pg_trgm, citext, ...) on a database. Status enabling means the server is still installing it; list the extensions again until it shows as enabled.", write,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in EnableDBExtensionArgs) (*portal.DatabaseExtension, error) {
+			return c.EnableDatabaseExtension(ctx, t.Org, t.Project, in.Database, in.Extension)
 		})
 	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server the plan is billed; on one of the customer's own database servers (server) the same plan sets the quotas but nothing is billed by GoShip, and a server still provisioning queues the database until it is ready (status pending, then ready).", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (Message, error) {
