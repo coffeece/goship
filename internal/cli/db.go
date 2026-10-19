@@ -2,10 +2,10 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
@@ -36,7 +36,7 @@ func newDBCmd(app *App) *cobra.Command {
 	create.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 		var serverID string
 		if server != "" {
-			s, err := resolveDatabaseServer(cmd.Context(), app.Portal(), t, server)
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), t, server)
 			if err != nil {
 				return err
 			}
@@ -282,38 +282,12 @@ keeps running and billing in your project until you delete it there.`,
 // resolveDatabaseServer matches a server by id, then by exact name. Names are
 // unique per organization, but a project sees its own servers and the
 // organization's, so a name shared by two is refused rather than guessed.
-func resolveDatabaseServer(ctx context.Context, client *portal.Client, t Target, ref string) (*portal.DatabaseServer, error) {
-	servers, err := client.DatabaseServers(ctx, t.Org, t.Project)
-	if err != nil {
-		return nil, err
-	}
-	for i := range servers {
-		if servers[i].ID == ref {
-			return &servers[i], nil
-		}
-	}
-	var match *portal.DatabaseServer
-	for i := range servers {
-		if servers[i].Name != ref {
-			continue
-		}
-		if match != nil {
-			return nil, fmt.Errorf("more than one database server named %q in %s; pass the id", ref, cloudScope(t))
-		}
-		match = &servers[i]
-	}
-	if match != nil {
-		return match, nil
-	}
-	return nil, fmt.Errorf("no database server %q in %s; run `goship db server list`", ref, cloudScope(t))
-}
-
 // resolveDatabaseServerScoped also returns the target to act through: an
 // organization's server is changed on the organization routes, which the API
 // requires.
 func (a *App) resolveDatabaseServerScoped(ctx context.Context, t Target, ref string) (*portal.DatabaseServer, Target, error) {
 	view := a.projectView(ctx, t)
-	s, err := resolveDatabaseServer(ctx, a.Portal(), view, ref)
+	s, err := deploy.ResolveDatabaseServer(ctx, a.Portal(), view, ref)
 	if err != nil {
 		return nil, t, err
 	}
