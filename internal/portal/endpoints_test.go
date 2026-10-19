@@ -57,6 +57,17 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.CreateDatabaseUser(ctx, "acme", "atlas", "shop", "reader", "ro")
 			return err
 		}},
+		{"database extensions", "GET", "/api/v1/orgs/acme/projects/atlas/databases/shop/extensions", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseExtensions(ctx, "acme", "atlas", "shop")
+			return err
+		}},
+		{"enable database extension", "POST", "/api/v1/orgs/acme/projects/atlas/databases/shop/extensions", `{"name":"postgis"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.EnableDatabaseExtension(ctx, "acme", "atlas", "shop", "postgis")
+			return err
+		}},
+		{"disable database extension", "DELETE", "/api/v1/orgs/acme/projects/atlas/databases/shop/extensions/uuid-ossp", "", func(ctx context.Context, c *Client) error {
+			return c.DisableDatabaseExtension(ctx, "acme", "atlas", "shop", "uuid-ossp")
+		}},
 		{"create database", "POST", "/api/v1/orgs/acme/projects/atlas/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
 			return c.CreateDatabase(ctx, "acme", "atlas", "shop", "starter", "", "")
 		}},

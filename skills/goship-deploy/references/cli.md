@@ -22,6 +22,7 @@
 | `goship_create_database_server` / `goship_retry_database_server` / `goship_delete_database_server` | `goship db server create --account a --region r [--tier t] [--name n]` / `goship db server retry <s>` / `goship db server delete <s> [--force]` |
 | `goship_bind_database` / `goship_unbind_database` | `goship db bind\|unbind <name> -a <app>` |
 | `goship_list_database_users` / `goship_create_database_user` | `goship db users <name>` / `goship db user-add <name> <user>` |
+| `goship_list_database_extensions` / `goship_enable_database_extension` | `goship db extensions <name>` / `goship db extension-add <name> <ext>` |
 | `goship_list_domains` / `goship_register_domain` / `goship_verify_domain` / `goship_delete_domain` | `goship domains` / `goship domain register\|verify\|rm` |
 | `goship_add_app_domain` / `goship_remove_app_domain` | `goship domain add\|rm <domain> -a <app>` |
 | `goship_list_nodes` / `goship_get_node` / `goship_create_node` / `goship_delete_node` | `goship nodes` / `goship node info\|create\|rm` |
