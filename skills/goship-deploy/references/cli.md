@@ -17,7 +17,9 @@
 | `goship_logs` | `goship logs -a <app> [-l N] [--source web]` |
 | `goship_run` | `goship run -a <app> [--once] [--isolated] -- <cmd>` |
 | `goship_list_databases` / `goship_get_database` / `goship_database_stats` | `goship dbs` / `goship db info <name>` / `goship db stats <name>` |
-| `goship_create_database` / `goship_delete_database` | `goship db create <name> --plan db-small` / `goship db rm <name>` |
+| `goship_create_database` / `goship_delete_database` | `goship db create <name> --plan db-micro [--server s]` / `goship db rm <name>` |
+| `goship_list_database_servers` / `goship_list_database_server_tiers` | `goship db server list` / `goship db server tiers` |
+| `goship_create_database_server` / `goship_retry_database_server` / `goship_delete_database_server` | `goship db server create --account a --region r [--tier t] [--name n]` / `goship db server retry <s>` / `goship db server delete <s> [--force]` |
 | `goship_bind_database` / `goship_unbind_database` | `goship db bind\|unbind <name> -a <app>` |
 | `goship_list_database_users` / `goship_create_database_user` | `goship db users <name>` / `goship db user-add <name> <user>` |
 | `goship_list_domains` / `goship_register_domain` / `goship_verify_domain` / `goship_delete_domain` | `goship domains` / `goship domain register\|verify\|rm` |
@@ -25,7 +27,8 @@
 | `goship_list_nodes` / `goship_get_node` / `goship_create_node` / `goship_delete_node` | `goship nodes` / `goship node info\|create\|rm` |
 | `goship_list_volumes` … `goship_delete_volume` | `goship volumes` / `goship volume create\|bind\|unbind\|rm` |
 | `goship_list_plans` | `goship plans [--kind database\|volume] [--node n]` |
-| `goship_list_cloud_accounts` / `_regions` / `_sizes` / `goship_delete_cloud_account` | `goship cloud list\|regions\|sizes\|rm` |
+| `goship_list_cloud_accounts` / `_regions` / `_sizes` / `goship_delete_cloud_account` | `goship cloud list\|regions\|sizes\|disconnect` |
+| `goship_move_cloud_account` | `goship cloud move <account> --to-project <slug>\|--to-org` |
 | `goship_list_api_tokens` / `goship_create_api_token` / `goship_revoke_api_token` | `goship tokens` / `goship token create\|revoke` |
 
 Not tools, CLI only (they need a browser or a terminal): `goship login`,

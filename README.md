@@ -139,7 +139,7 @@ goship deploy --env-file .env
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
 | `goship volume create\|info\|bind\|unbind\|rm` | persistent disks |
 | `goship node create\|info\|rm` | your own machines: create on a connected cloud or attach over SSH |
-| `goship cloud providers\|connect\|list\|regions\|sizes\|disconnect` | the cloud accounts your nodes run on — AWS connects with `--role-arn` or `--access-keys-stdin` |
+| `goship cloud providers\|connect\|list\|regions\|sizes\|move\|disconnect` | the cloud accounts your nodes and database servers run on — AWS connects with `--role-arn` or `--access-keys-stdin`; `move` sends an account to a project or shares it with the organization |
 | `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
@@ -206,8 +206,9 @@ Any other MCP client runs `goship mcp` as a stdio server:
 ```
 
 Tools are named after the commands (`goship_list_apps`, `goship_deploy`,
-`goship_logs`…). Deletes are marked destructive and ask the agent to confirm
-with you first; `login`, `cloud connect` and `shell` stay in the terminal.
+`goship_logs`, `goship_create_database_server`…). Deletes are marked
+destructive and ask the agent to confirm with you first; `login`,
+`cloud connect` and `shell` stay in the terminal.
 
 ## Configuration
 
