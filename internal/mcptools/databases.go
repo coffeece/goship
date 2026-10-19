@@ -25,6 +25,7 @@ type CreateDBArgs struct {
 	Name        string `json:"name" jsonschema:"database name"`
 	Plan        string `json:"plan" jsonschema:"database plan slug (goship_list_plans with kind=database)"`
 	Description string `json:"description,omitempty"`
+	Server      string `json:"server,omitempty" jsonschema:"place it on one of the customer's own database servers, by name or id (goship_list_database_servers); default: GoShip's managed server"`
 }
 
 type CreateDBUserArgs struct {
@@ -61,10 +62,21 @@ func (r *registry) databases() {
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBUserArgs) (*portal.NewDatabaseUser, error) {
 			return c.CreateDatabaseUser(ctx, t.Org, t.Project, in.Database, in.Username, in.AccessMode)
 		})
-	tool(r, "goship_create_database", "Create a managed PostgreSQL database.", write,
+	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server the plan is billed; on one of the customer's own database servers (server) the same plan sets the quotas but nothing is billed by GoShip, and a server still provisioning queues the database until it is ready (status pending, then ready).", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (Message, error) {
-			if err := c.CreateDatabase(ctx, t.Org, t.Project, in.Name, in.Plan, in.Description, ""); err != nil {
+			var serverID string
+			if in.Server != "" {
+				s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
+				if err != nil {
+					return Message{}, err
+				}
+				serverID = s.ID
+			}
+			if err := c.CreateDatabase(ctx, t.Org, t.Project, in.Name, in.Plan, in.Description, serverID); err != nil {
 				return Message{}, err
+			}
+			if serverID != "" {
+				return msgf("Database %s is being created on server %s; it is queued while the server is still provisioning.", in.Name, in.Server)
 			}
 			return msgf("Database %s is being created.", in.Name)
 		})

@@ -50,6 +50,7 @@ func Register(s *mcp.Server, c Clients, o Options) {
 	r.releases(o.Deploy)
 	r.runtime()
 	r.databases()
+	r.dbservers()
 	r.domains()
 	r.nodes()
 	r.volumes()
