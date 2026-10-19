@@ -261,3 +261,27 @@ func TestDBExtensionRm(t *testing.T) {
 		t.Fatalf("got=%q out=%q", got, out)
 	}
 }
+
+// Once the server drops the name from both lists the install failed; waiting
+// the full deadline and then claiming it is "still enabling" would be false.
+func TestDBExtensionAddReportsAFailedInstall(t *testing.T) {
+	saved, savedDeadline := extensionPollInterval, extensionPollDeadline
+	extensionPollInterval, extensionPollDeadline = 0, 5*time.Second
+	t.Cleanup(func() { extensionPollInterval, extensionPollDeadline = saved, savedDeadline })
+
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"name":"postgis","status":"enabling"}`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(`{"enabled":[],"available":[{"name":"postgis","version":"3.6.4","comment":"geo"}],"pending":[]}`)) //nolint:errcheck
+	})
+	out, err := run(t, "", "db", "extension-add", "shop", "postgis")
+	if err == nil || !strings.Contains(err.Error(), "did not complete") {
+		t.Fatalf("err = %v, out = %q; want a 'did not complete' error", err, out)
+	}
+	if strings.Contains(out, "Still enabling") {
+		t.Fatalf("must not claim it is still enabling: %q", out)
+	}
+}

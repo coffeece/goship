@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -384,6 +386,11 @@ func waitForExtension(cmd *cobra.Command, app *App, t Target, db, ext string) er
 		}
 		if e, ok := exts.IsEnabled(ext); ok {
 			return app.Renderer().Message("Extension %s %s enabled on %s.", e.Name, e.Version, db)
+		}
+		// Gone from both lists: the server gave up on the install (it is
+		// rolled back, nothing is half-done). Enabling again reruns it.
+		if !slices.Contains(exts.Pending, ext) {
+			return fmt.Errorf("enabling %s did not complete on the server; run the command again", ext)
 		}
 		if time.Now().After(deadline) {
 			return app.Renderer().Message("Still enabling; run `goship db extensions %s` later.", db)
