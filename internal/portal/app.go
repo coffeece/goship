@@ -22,6 +22,7 @@ type App struct {
 	Tags        []string  `json:"tags,omitempty"`
 	TeamOwner   string    `json:"team_owner,omitempty"`
 	Status      string    `json:"status" table:"STATUS"`
+	Visibility  string    `json:"visibility" table:"VISIBILITY"`
 	Units       []AppUnit `json:"units"`
 	Addresses   []string  `json:"addresses,omitempty" table:"ADDRESS"`
 	CNames      []string  `json:"cnames,omitempty"`
@@ -47,6 +48,7 @@ type CreateAppRequest struct {
 	Plan        string  `json:"plan,omitempty"`
 	Description string  `json:"description,omitempty"`
 	NodeID      *string `json:"node_id,omitempty"`
+	Private     bool    `json:"private,omitempty"`
 }
 
 func (c *Client) Apps(ctx context.Context, org, project string) ([]App, error) {

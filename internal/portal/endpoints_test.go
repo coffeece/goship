@@ -26,6 +26,36 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.CreateApp(ctx, "acme", "atlas", CreateAppRequest{Name: "api", Platform: "go", NodeID: &node})
 			return err
 		}},
+		{"create private app", "POST", "/api/v1/orgs/acme/projects/atlas/apps", `{"name":"api","platform":"go","private":true}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateApp(ctx, "acme", "atlas", CreateAppRequest{Name: "api", Platform: "go", Private: true})
+			return err
+		}},
+		{"visibility", "PUT", "/api/v1/orgs/acme/projects/atlas/apps/api/visibility", `{"visibility":"private"}`, func(ctx context.Context, c *Client) error {
+			return c.SetAppVisibility(ctx, "acme", "atlas", "api", "private")
+		}},
+		{"access users", "GET", "/api/v1/orgs/acme/projects/atlas/apps/api/access/users", "", func(ctx context.Context, c *Client) error {
+			_, err := c.ListAppAccess(ctx, "acme", "atlas", "api")
+			return err
+		}},
+		{"add access user", "POST", "/api/v1/orgs/acme/projects/atlas/apps/api/access/users", `{"username":"ana"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.AddAppAccess(ctx, "acme", "atlas", "api", "ana", "")
+			return err
+		}},
+		{"reset access user", "PUT", "/api/v1/orgs/acme/projects/atlas/apps/api/access/users/a%20na", `{"password":"pw"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ResetAppAccess(ctx, "acme", "atlas", "api", "a na", "pw")
+			return err
+		}},
+		{"remove access user", "DELETE", "/api/v1/orgs/acme/projects/atlas/apps/api/access/users/ana", "", func(ctx context.Context, c *Client) error {
+			return c.RemoveAppAccess(ctx, "acme", "atlas", "api", "ana")
+		}},
+		{"access token", "GET", "/api/v1/orgs/acme/projects/atlas/apps/api/access/token", "", func(ctx context.Context, c *Client) error {
+			_, err := c.AppAccessToken(ctx, "acme", "atlas", "api", false)
+			return err
+		}},
+		{"rotate access token", "POST", "/api/v1/orgs/acme/projects/atlas/apps/api/access/token/rotate", "", func(ctx context.Context, c *Client) error {
+			_, err := c.RotateAppAccessToken(ctx, "acme", "atlas", "api")
+			return err
+		}},
 		{"delete app", "DELETE", "/api/v1/orgs/acme/projects/atlas/apps/api", "", func(ctx context.Context, c *Client) error { return c.DeleteApp(ctx, "acme", "atlas", "api") }},
 		{"lifecycle", "POST", "/api/v1/orgs/acme/projects/atlas/apps/api/restart", "", func(ctx context.Context, c *Client) error { return c.Lifecycle(ctx, "acme", "atlas", "api", "restart") }},
 		{"scale", "PUT", "/api/v1/orgs/acme/projects/atlas/apps/api/units", `{"units":3}`, func(ctx context.Context, c *Client) error { return c.ScaleApp(ctx, "acme", "atlas", "api", 3) }},
@@ -230,6 +260,23 @@ func TestEndpoints(t *testing.T) {
 				t.Error(err)
 			}
 		})
+	}
+}
+
+func TestAppAccessTokenRevealQuery(t *testing.T) {
+	for _, reveal := range []bool{false, true} {
+		var gotQuery string
+		c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+			gotQuery = r.URL.RawQuery
+			w.Write([]byte(`{"token":"tok","masked":false}`)) //nolint:errcheck
+		})
+		tok, err := c.AppAccessToken(context.Background(), "acme", "atlas", "api", reveal)
+		if err != nil || tok != "tok" {
+			t.Fatalf("token = %q, err = %v", tok, err)
+		}
+		if want := map[bool]string{false: "", true: "reveal=1"}[reveal]; gotQuery != want {
+			t.Errorf("reveal=%v: query = %q, want %q", reveal, gotQuery, want)
+		}
 	}
 }
 
