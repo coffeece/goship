@@ -23,6 +23,7 @@ type CreateAppArgs struct {
 	Platform string `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; omit for an app built from a Dockerfile"`
 	Plan     string `json:"plan,omitempty" jsonschema:"plan slug from goship_list_plans; required unless the org has a free plan or node is set"`
 	Node     string `json:"node,omitempty" jsonschema:"name of one of the project's own nodes to run the app on (never billed), or goship for GoShip's servers; omitted, the project's default placement decides"`
+	Private  bool   `json:"private,omitempty" jsonschema:"true puts a GoShip login page in front of the app from its first deploy"`
 }
 
 type ScaleArgs struct {
@@ -47,7 +48,7 @@ func (r *registry) apps() {
 		})
 	tool(r, "goship_create_app", "Create an app without deploying it. goship_deploy creates the app itself when it is missing, so this is only for creating ahead of a deploy.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateAppArgs) (*portal.App, error) {
-			req := portal.CreateAppRequest{Name: in.Name, Platform: in.Platform, Plan: in.Plan}
+			req := portal.CreateAppRequest{Name: in.Name, Platform: in.Platform, Plan: in.Plan, Private: in.Private}
 			nodeID, _, err := deploy.PlaceNewApp(ctx, c, t, in.Node)
 			if err != nil {
 				return nil, err
