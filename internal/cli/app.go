@@ -29,6 +29,8 @@ func newAppCmd(app *App) *cobra.Command {
 		appLifecycleCmd(app, "restart", "Restart an app"),
 		appScaleCmd(app),
 		appPlanCmd(app),
+		appVisibilityCmd(app),
+		appAccessCmd(app),
 	)
 	return cmd
 }
@@ -62,6 +64,7 @@ func appCreateCmd(app *App) *cobra.Command {
 	f.StringVar(&req.Plan, "plan", "", "plan slug; required on GoShip's servers, app-small on a node when omitted")
 	f.StringVar(&req.Description, "description", "", "human description")
 	f.StringVar(&node, "node", "", "run on one of your own nodes, by name, or goship for GoShip's servers (default: the project's default placement)")
+	f.BoolVar(&req.Private, "private", false, "put a GoShip login page in front of the app from its first deploy")
 	_ = cmd.MarkFlagRequired("platform")
 
 	return cmd

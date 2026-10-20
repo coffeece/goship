@@ -139,6 +139,8 @@ func TestNodeRmDestroySurfacesAPIMessage(t *testing.T) {
 func TestDestructiveCommandsAllConfirm(t *testing.T) {
 	for _, args := range [][]string{
 		{"app", "rm", "api"},
+		{"app", "access", "rm", "api", "ana"},
+		{"app", "access", "token", "api", "--rotate"},
 		{"db", "rm", "main"},
 		{"volume", "rm", "uploads"},
 		{"node", "rm", "n1"},
