@@ -144,7 +144,7 @@ func (a *App) projectIn(ctx context.Context, org string) (string, error) {
 // reach, which the API only answers with a bare 404 or 403. Anything else is
 // returned as it came.
 func (a *App) explainProject(ctx context.Context, t Target, err error) error {
-	if err == nil || !(portal.IsNotFound(err) || portal.IsForbidden(err)) || a.explicitProject(t.Org) != "" {
+	if err == nil || (!portal.IsNotFound(err) && !portal.IsForbidden(err)) || a.explicitProject(t.Org) != "" {
 		return err
 	}
 	if t.Project == "" || a.Config.SelectedProject(t.Org) != t.Project {
