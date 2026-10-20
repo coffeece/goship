@@ -151,7 +151,12 @@ the cause and deploy again rather than retrying blindly.
 ## 6. Verify
 
 1. `goship_get_app`: status `running`, units healthy, the address.
-2. Request the URL (or its health route) and confirm a 200.
+2. Request the URL (or its health route) and confirm a 200. If `visibility`
+   in `goship_get_app` is `private`, the login gate answers 401 (403 to
+   non-browser clients on GoShip's shared servers): call
+   `goship_get_app_access_token` with `reveal: true` and send
+   `X-GoShip-Access: <token>` (or `?goship_access=<token>`). A 401/403 without
+   the header means the gate works, not that the deploy failed.
 3. `goship_logs` for the first lines after start; look for crashes.
 
 Report the URL, what was created (app, database, plan and its price) and
@@ -165,7 +170,7 @@ rotate).
 - More units: `goship_scale_app`.
 - Custom domain: `goship_register_domain` → publish the TXT → `goship_verify_domain`
   → `goship_add_app_domain`, then CNAME the hostname to the app's address.
-- Hide a work-in-progress app: `goship_set_app_visibility` private, then `goship_add_app_access` per person and hand them the username and password; `goship_get_app_access_token` gives automation a header (`X-GoShip-Access`) to pass the login page. Custom domains are covered too. Apps on connected Kubernetes clusters cannot be private yet.
+- Hide a work-in-progress app: `goship_set_app_visibility` private, then `goship_add_app_access` per person (up to 25; the password is returned once; 5 wrong passwords in a row lock a username for 10 minutes) and hand them the username and password. For your own checks call `goship_get_app_access_token` with `reveal: true` (the default is masked and no header accepts it) and send it as `X-GoShip-Access`. `goship_deploy` creates public apps, so for private from the first deploy call `goship_create_app` with `private: true`, then deploy. Custom domains are covered too. Apps on connected Kubernetes clusters cannot be private yet.
 - Roll back: `goship_rollback` with a version from `goship_list_releases`.
 - One-off commands (migrations): `goship_run`.
 - PostgreSQL extensions (PostGIS, pg_trgm, citext, pgcrypto, uuid-ossp…):
