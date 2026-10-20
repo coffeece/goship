@@ -6,11 +6,14 @@
 | `goship_list_orgs` | `goship orgs` |
 | `goship_list_projects` | `goship projects` |
 | `goship_list_apps` / `goship_get_app` | `goship apps` / `goship app info <name>` |
-| `goship_create_app` | `goship app create <name> --platform go [--plan p] [--node n]` |
+| `goship_create_app` | `goship app create <name> --platform go [--plan p] [--node n] [--private]` |
 | `goship_delete_app` | `goship app rm <name>` |
 | `goship_start_app` / `_stop_app` / `_restart_app` | `goship app start\|stop\|restart <name>` |
 | `goship_scale_app` | `goship app scale <name> --units N` |
 | `goship_set_app_plan` | `goship app plan <name> <plan>` |
+| `goship_set_app_visibility` | `goship app visibility <name> public\|private` |
+| `goship_list_app_access` / `goship_add_app_access` / `goship_reset_app_access` / `goship_remove_app_access` | `goship app access list\|add\|reset\|rm <name> [user]` |
+| `goship_get_app_access_token` / `goship_rotate_app_access_token` | `goship app access token <name> [--reveal\|--rotate]` |
 | `goship_get_env` / `goship_set_env` / `goship_unset_env` | `goship env list\|set\|unset -a <app> [--no-restart]` |
 | `goship_deploy` | `goship deploy [dir] [-a app] [--platform p] [--dockerfile f] [--plan p] [--node n] [--env-file .env] [-m msg]` |
 | `goship_list_releases` / `goship_rollback` | `goship releases -a <app>` / `goship rollback <version> -a <app>` |
