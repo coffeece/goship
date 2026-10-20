@@ -21,7 +21,7 @@ func appVisibilityCmd(app *App) *cobra.Command {
 				return err
 			}
 			msg := "App %s is now %s."
-			if a, err := app.Portal().App(cmd.Context(), t.Org, t.Project, name); err == nil && a.Deploys == 0 {
+			if a, err := app.Portal().App(cmd.Context(), t.Org, t.Project, name); err == nil && a.Deploys == 0 && value == "private" {
 				msg += " It takes effect on the first deploy."
 			}
 			return app.Renderer().Message(msg, name, value)

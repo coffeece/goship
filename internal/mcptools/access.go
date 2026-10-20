@@ -25,7 +25,7 @@ type AccessUserRef struct {
 
 type AccessTokenArgs struct {
 	AppArg
-	Reveal bool `json:"reveal,omitempty"`
+	Reveal bool `json:"reveal,omitempty" jsonschema:"true returns the whole token; false (default) returns it masked and unusable as a header"`
 }
 
 type AccessUserList struct {
