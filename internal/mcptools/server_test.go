@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -409,5 +411,48 @@ func TestDeployUsesTheOrgGoshipYmlPins(t *testing.T) {
 		if strings.Contains(p, "/orgs/acme/projects/clave") {
 			t.Errorf("touched the selected org's project: %s", p)
 		}
+	}
+}
+
+func TestPrivateAppTools(t *testing.T) {
+	base := "/api/v1/orgs/acme/projects/clave/apps/api"
+	cases := []struct {
+		tool, method, path, query, body string
+		args                            map[string]any
+	}{
+		{"goship_set_app_visibility", http.MethodPut, base + "/visibility", "", `"visibility":"private"`, map[string]any{"visibility": "private"}},
+		{"goship_list_app_access", http.MethodGet, base + "/access/users", "", "", nil},
+		{"goship_add_app_access", http.MethodPost, base + "/access/users", "", `"username":"ana"`, map[string]any{"username": "ana"}},
+		{"goship_reset_app_access", http.MethodPut, base + "/access/users/ana", "", "", map[string]any{"username": "ana"}},
+		{"goship_remove_app_access", http.MethodDelete, base + "/access/users/ana", "", "", map[string]any{"username": "ana"}},
+		{"goship_get_app_access_token", http.MethodGet, base + "/access/token", "reveal=1", "", map[string]any{"reveal": true}},
+		{"goship_rotate_app_access_token", http.MethodPost, base + "/access/token/rotate", "", "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.tool, func(t *testing.T) {
+			var method, path, query, body string
+			url := api(t, func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				method, path, query, body = r.Method, r.URL.Path, r.URL.RawQuery, string(b)
+				switch {
+				case r.Method == http.MethodDelete || strings.HasSuffix(path, "/visibility"):
+					w.WriteHeader(http.StatusNoContent)
+				case strings.HasSuffix(path, "/access/users") && r.Method == http.MethodGet:
+					w.Write([]byte(`{"users":[{"username":"ana","created_at":"2026-10-20T10:00:00Z"}]}`)) //nolint:errcheck
+				default:
+					w.Write([]byte(`{"username":"ana","password":"pw","token":"tk"}`)) //nolint:errcheck
+				}
+			})
+			cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
+			args := map[string]any{"app": "api"}
+			maps.Copy(args, tc.args)
+			res := call(t, cs, tc.tool, args)
+			if res.IsError {
+				t.Fatal(text(res))
+			}
+			if method != tc.method || path != tc.path || query != tc.query || !strings.Contains(body, tc.body) {
+				t.Errorf("%s %s?%s %s", method, path, query, body)
+			}
+		})
 	}
 }

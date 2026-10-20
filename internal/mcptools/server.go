@@ -46,6 +46,7 @@ func Register(s *mcp.Server, c Clients, o Options) {
 	r := &registry{s: s, clients: c}
 	r.identity()
 	r.apps()
+	r.access()
 	r.env()
 	r.releases(o.Deploy)
 	r.runtime()
