@@ -51,7 +51,7 @@ var gcloudAccount = func(ctx context.Context) string {
 }
 
 var runSetup = func(ctx context.Context, command string, stdout, stderr io.Writer) error {
-	c := exec.CommandContext(ctx, "bash", "-c", command)
+	c := exec.CommandContext(ctx, "bash", "-c", command) //nolint:gosec // callers only pass a command that matched gcpSetupCommand
 	c.Stdout, c.Stderr = stdout, stderr
 	return c.Run()
 }

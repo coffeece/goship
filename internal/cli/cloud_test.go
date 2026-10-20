@@ -1159,10 +1159,10 @@ func TestCloudConnectGCPExplainsTheRenamedFlag(t *testing.T) {
 	for name, status := range map[string]int{"project not found": http.StatusNotFound, "project forbidden": http.StatusForbidden} {
 		t.Run(name, func(t *testing.T) {
 			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-				switch {
-				case r.URL.Path == "/api/v1/cloud/providers":
+				switch r.URL.Path {
+				case "/api/v1/cloud/providers":
 					w.Write([]byte(`[{"name":"gcp","label":"Google Cloud","kind":"federated","status":"available"}]`)) //nolint:errcheck
-				case r.URL.Path == "/api/v1/orgs/acme/projects":
+				case "/api/v1/orgs/acme/projects":
 					w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
 				default:
 					w.WriteHeader(status)
