@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
@@ -90,7 +91,15 @@ func appInfoCmd(app *App) *cobra.Command {
 			if err := r.Render(found); err != nil {
 				return err
 			}
-			if app.Global.Output == render.JSON || len(found.Units) == 0 {
+			if app.Global.Output == render.JSON {
+				return nil
+			}
+			if found.Visibility == "private" {
+				if err := r.Message("Access check: %s", accessCheckText(found.AccessCheck)); err != nil {
+					return err
+				}
+			}
+			if len(found.Units) == 0 {
 				return nil
 			}
 			if err := r.Message(""); err != nil {
@@ -98,6 +107,17 @@ func appInfoCmd(app *App) *cobra.Command {
 			}
 			return r.Render(found.Units)
 		},
+	}
+}
+
+func accessCheckText(c *portal.AccessCheck) string {
+	switch {
+	case c == nil:
+		return "pending"
+	case c.OK:
+		return fmt.Sprintf("protected (checked %s)", c.CheckedAt.Format(time.RFC3339))
+	default:
+		return fmt.Sprintf("NOT confirmed on %s (checked %s) — the app may be open", c.Host, c.CheckedAt.Format(time.RFC3339))
 	}
 }
 
