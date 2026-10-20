@@ -127,7 +127,8 @@ goship deploy --env-file .env
 |---|---|
 | `goship apps\|dbs\|volumes\|nodes [-A]` | list in the current project; `--all`, or nothing selected, spans every project as `org/project` |
 | `goship domains [-A]` | list the organization's domains |
-| `goship app create\|info\|rm\|start\|stop\|restart\|scale\|plan` | manage one app |
+| `goship app create\|info\|rm\|start\|stop\|restart\|scale\|plan\|visibility\|access` | manage one app |
+| `goship app access list\|add\|reset\|rm\|token <app>` | who can open a private app |
 | `goship init [dir]` | write a `goship.yml` with what it can work out |
 | `goship deploy [dir]` | create if needed, apply env, deploy |
 | `goship logs -a api [-f]` | stream logs |
