@@ -165,6 +165,7 @@ rotate).
 - More units: `goship_scale_app`.
 - Custom domain: `goship_register_domain` → publish the TXT → `goship_verify_domain`
   → `goship_add_app_domain`, then CNAME the hostname to the app's address.
+- Hide a work-in-progress app: `goship_set_app_visibility` private, then `goship_add_app_access` per person and hand them the username and password; `goship_get_app_access_token` gives automation a header (`X-GoShip-Access`) to pass the login page. Custom domains are covered too. Apps on connected Kubernetes clusters cannot be private yet.
 - Roll back: `goship_rollback` with a version from `goship_list_releases`.
 - One-off commands (migrations): `goship_run`.
 - PostgreSQL extensions (PostGIS, pg_trgm, citext, pgcrypto, uuid-ossp…):
