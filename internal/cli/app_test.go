@@ -307,3 +307,34 @@ func TestOrgsLists(t *testing.T) {
 		t.Fatalf("orgs = %q, %v", out, err)
 	}
 }
+
+func TestAppInfoShowsTheAccessCheckOfPrivateApps(t *testing.T) {
+	cases := []struct {
+		name, body, want string
+	}{
+		{"ok", `{"name":"api","visibility":"private","access_check":{"checked_at":"2026-10-20T10:00:00Z","ok":true}}`, "Access check: protected (checked 2026-10-20T10:00:00Z)"},
+		{"failed", `{"name":"api","visibility":"private","access_check":{"checked_at":"2026-10-20T10:00:00Z","ok":false,"host":"api.example.com"}}`, "Access check: NOT confirmed on api.example.com"},
+		{"pending", `{"name":"api","visibility":"private"}`, "Access check: pending"},
+		{"public", `{"name":"api","visibility":"public"}`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(tc.body)) //nolint:errcheck
+			})
+			out, err := run(t, "", "app", "info", "api")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == "" {
+				if strings.Contains(out, "Access check") {
+					t.Errorf("public app shows a check: %q", out)
+				}
+				return
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("output = %q, want %q", out, tc.want)
+			}
+		})
+	}
+}

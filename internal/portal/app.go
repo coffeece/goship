@@ -33,6 +33,14 @@ type App struct {
 	IdleWarned  bool      `json:"idle_warned,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// Latest probe that the login page fronts a private app; nil until one ran.
+	AccessCheck *AccessCheck `json:"access_check,omitempty"`
+}
+
+type AccessCheck struct {
+	CheckedAt time.Time `json:"checked_at"`
+	OK        bool      `json:"ok"`
+	Host      string    `json:"host,omitempty"`
 }
 
 type AppUnit struct {
