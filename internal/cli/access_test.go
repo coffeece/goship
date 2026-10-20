@@ -45,6 +45,23 @@ func TestAppVisibilityPutsTheValue(t *testing.T) {
 	}
 }
 
+func TestAppVisibilityPublicOnNewAppSkipsFirstDeployHint(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"name":"api","deploys":0}`)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	out, err := run(t, "", "app", "visibility", "api", "public")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "App api is now public.") || strings.Contains(out, "first deploy") {
+		t.Errorf("output = %q", out)
+	}
+}
+
 func TestAppVisibilityRefusesOtherValues(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("reached the API: %s", r.URL.Path)
