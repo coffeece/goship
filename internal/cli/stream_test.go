@@ -48,6 +48,40 @@ func TestRunSendsTheCommandAsTyped(t *testing.T) {
 	}
 }
 
+// The platform runs the command through a shell, so arguments the local shell
+// already split must keep their boundaries: `-- sh -c 'echo ok'` ran `sh -c echo
+// ok` and printed an empty line.
+func TestRunKeepsEachArgumentWhole(t *testing.T) {
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&body)                 //nolint:errcheck
+		w.Write([]byte(`{"type":"result","ok":true}` + "\n")) //nolint:errcheck
+	})
+
+	if _, err := run(t, "", "run", "-a", "blog", "--", "sh", "-c", "echo it's ok", ""); err != nil {
+		t.Fatal(err)
+	}
+	if want := `sh -c 'echo it'\''s ok' ''`; body["command"] != want {
+		t.Errorf("command = %v, want %s", body["command"], want)
+	}
+}
+
+// A single argument is a shell line the user wrote for the app's shell.
+func TestRunPassesASingleArgumentAsAShellLine(t *testing.T) {
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&body)                 //nolint:errcheck
+		w.Write([]byte(`{"type":"result","ok":true}` + "\n")) //nolint:errcheck
+	})
+
+	if _, err := run(t, "", "run", "-a", "blog", "cd tmp && ls | wc -l"); err != nil {
+		t.Fatal(err)
+	}
+	if body["command"] != "cd tmp && ls | wc -l" {
+		t.Errorf("command = %v", body["command"])
+	}
+}
+
 func TestRunExitsNonZeroWhenTheCommandFails(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"type":"result","ok":false,"error":"command failed: command terminated with exit code 2"}` + "\n")) //nolint:errcheck
