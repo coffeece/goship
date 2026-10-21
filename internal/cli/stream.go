@@ -87,7 +87,9 @@ func newRunCmd(app *App) *cobra.Command {
 		Use:   "run --app <app> -- <command> [args...]",
 		Short: "Run a one-off command in the app's image",
 		Long: "Runs a command where the app's code and environment are. By default it\n" +
-			"runs in every unit; --once picks one, --isolated starts a fresh container.",
+			"runs in every unit; --once picks one, --isolated starts a fresh container.\n\n" +
+			"Arguments reach the app as typed. For pipes, && or $VARS expanded in the app,\n" +
+			"pass the whole line as one quoted argument: goship run -a api 'cd x && make'.",
 		Args: cobra.MinimumNArgs(1),
 	}
 	f := cmd.Flags()
@@ -102,10 +104,31 @@ func newRunCmd(app *App) *cobra.Command {
 		}
 		ctx, stop := interruptible(cmd.Context())
 		defer stop()
-		err := app.Portal().Run(ctx, t.Org, t.Project, appName, strings.Join(args, " "), once, isolated, cmd.OutOrStdout())
+		err := app.Portal().Run(ctx, t.Org, t.Project, appName, shellJoin(args), once, isolated, cmd.OutOrStdout())
 		return explainStreamError(err, "command", false)
 	})
 	return cmd
+}
+
+// shellJoin turns the arguments back into the line the platform's shell runs.
+// A single argument is that line already; several are quoted one by one so
+// the remote shell splits them where the local one did.
+func shellJoin(args []string) string {
+	if len(args) == 1 {
+		return args[0]
+	}
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = shellQuote(a)
+	}
+	return strings.Join(quoted, " ")
+}
+
+func shellQuote(s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%+=:,./_-") == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func newReleasesCmd(app *App) *cobra.Command {
