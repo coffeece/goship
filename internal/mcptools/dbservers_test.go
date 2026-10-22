@@ -147,3 +147,108 @@ func TestDisableDatabaseExtensionDeletesIt(t *testing.T) {
 		t.Errorf("isError=%v %q called %s", res.IsError, text(res), got)
 	}
 }
+
+func TestSetDatabaseServerDiskLimitResolvesNameAndScope(t *testing.T) {
+	var calls []string
+	url := serversAPI(t, func(r *http.Request, body string) {
+		if r.Method == http.MethodPut {
+			calls = append(calls, r.URL.Path+" "+body)
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
+	for _, c := range []struct {
+		args map[string]any
+		want string
+	}{
+		{map[string]any{"server": "pg-prod", "disk_limit_gb": 200}, `/api/v1/orgs/acme/projects/clave/database-servers/srv-own/disk-limit {"disk_limit_gb":200}`},
+		{map[string]any{"server": "srv-org", "disk_limit_gb": 0}, `/api/v1/orgs/acme/database-servers/srv-org/disk-limit {"disk_limit_gb":0}`},
+	} {
+		calls = nil
+		res := call(t, cs, "goship_set_database_server_disk_limit", c.args)
+		if res.IsError {
+			t.Fatal(text(res))
+		}
+		if len(calls) != 1 || calls[0] != c.want {
+			t.Errorf("%v called %v, want %s", c.args, calls, c.want)
+		}
+	}
+	res := call(t, cs, "goship_set_database_server_disk_limit", map[string]any{"server": "pg-prod", "disk_limit_gb": -1})
+	if !res.IsError {
+		t.Error("a negative cap must be refused")
+	}
+	res = call(t, cs, "goship_set_database_server_disk_limit", map[string]any{"server": "nope", "disk_limit_gb": 50})
+	if !res.IsError || !strings.Contains(text(res), "goship_list_database_servers") {
+		t.Errorf("unknown server: %q", text(res))
+	}
+}
+
+func TestSetDatabaseSizeLimitZeroClears(t *testing.T) {
+	var bodies []string
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/size-limit") {
+			bodies = append(bodies, string(b))
+		}
+		w.Write([]byte(`{"message":"ok"}`)) //nolint:errcheck
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
+	for _, c := range []struct {
+		mb   int
+		want string
+	}{{500, `{"size_limit_mb":500}`}, {0, `{"size_limit_mb":null}`}} {
+		bodies = nil
+		res := call(t, cs, "goship_set_database_size_limit", map[string]any{"database": "db", "size_limit_mb": c.mb})
+		if res.IsError {
+			t.Fatal(text(res))
+		}
+		if len(bodies) != 1 || bodies[0] != c.want {
+			t.Errorf("mb=%d sent %v, want %s", c.mb, bodies, c.want)
+		}
+	}
+	res := call(t, cs, "goship_set_database_size_limit", map[string]any{"database": "db", "size_limit_mb": 5})
+	if !res.IsError || !strings.Contains(text(res), "minimum is 10") {
+		t.Errorf("5 MB: %q", text(res))
+	}
+}
+
+func TestCreateDatabaseSizeLimitAndPlanRules(t *testing.T) {
+	var posted string
+	url := serversAPI(t, func(r *http.Request, body string) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/instances") {
+			posted = body
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
+	res := call(t, cs, "goship_create_database", map[string]any{"name": "db", "server": "pg-prod", "size_limit_mb": 500})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	if !strings.Contains(posted, `"size_limit_mb":500`) {
+		t.Errorf("posted %s", posted)
+	}
+	for _, args := range []map[string]any{
+		{"name": "db"},
+		{"name": "db", "plan": "db-small", "size_limit_mb": 500},
+		{"name": "db", "server": "pg-prod", "size_limit_mb": 5},
+	} {
+		if res := call(t, cs, "goship_create_database", args); !res.IsError {
+			t.Errorf("%v should be refused", args)
+		}
+	}
+}
+
+func TestCreateDatabaseServerSendsDiskLimit(t *testing.T) {
+	var posted string
+	url := serversAPI(t, func(r *http.Request, body string) {
+		if r.Method == http.MethodPost {
+			posted = body
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
+	if res := call(t, cs, "goship_create_database_server", map[string]any{"cloud_account": "gcp", "region": "r", "disk_limit_gb": 50}); res.IsError {
+		t.Fatal(text(res))
+	}
+	if !strings.Contains(posted, `"disk_limit_gb":50`) {
+		t.Errorf("posted %s", posted)
+	}
+}

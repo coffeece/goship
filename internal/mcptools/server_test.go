@@ -136,6 +136,26 @@ func TestEveryToolIsPrefixedAndAnnotated(t *testing.T) {
 	}
 }
 
+func TestLimitToolsAreRegisteredAsWrites(t *testing.T) {
+	cs := session(t, fakeClients{}, Options{})
+	tools, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	for _, tl := range tools.Tools {
+		if tl.Name == "goship_set_database_size_limit" || tl.Name == "goship_set_database_server_disk_limit" {
+			found[tl.Name] = true
+			if tl.Annotations == nil || tl.Annotations.ReadOnlyHint || (tl.Annotations.DestructiveHint != nil && *tl.Annotations.DestructiveHint) {
+				t.Errorf("%s must be a non-destructive write", tl.Name)
+			}
+		}
+	}
+	if len(found) != 2 {
+		t.Errorf("registered %v", found)
+	}
+}
+
 func TestNoTokenIsExplainedAsAToolError(t *testing.T) {
 	cs := session(t, fakeClients{url: "http://127.0.0.1:1", org: "acme", project: "clave"}, Options{})
 	res := call(t, cs, "goship_list_apps", nil)

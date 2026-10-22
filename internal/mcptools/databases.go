@@ -2,6 +2,8 @@ package mcptools
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
@@ -23,9 +25,15 @@ type DBUserList struct {
 type CreateDBArgs struct {
 	ProjectArg
 	Name        string `json:"name" jsonschema:"database name"`
-	Plan        string `json:"plan" jsonschema:"database plan slug (goship_list_plans with kind=database)"`
+	Plan        string `json:"plan,omitempty" jsonschema:"database plan slug; required on GoShip, ignored on the customer's own server"`
 	Description string `json:"description,omitempty"`
 	Server      string `json:"server,omitempty" jsonschema:"place it on one of the customer's own database servers, by name or id (goship_list_database_servers); default: GoShip's managed server"`
+	SizeLimitMB *int   `json:"size_limit_mb,omitempty" jsonschema:"size limit in MB (minimum 10), only for a database on the customer's own server; default: none"`
+}
+
+type SetDBSizeLimitArgs struct {
+	DBArg
+	SizeLimitMB int `json:"size_limit_mb" jsonschema:"size limit in MB (minimum 10); 0 removes the limit"`
 }
 
 type CreateDBUserArgs struct {
@@ -82,8 +90,19 @@ func (r *registry) databases() {
 			}
 			return msgf("Extension %s disabled on %s.", in.Extension, in.Database)
 		})
-	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server the plan is billed; on one of the customer's own database servers (server) the same plan sets the quotas but nothing is billed by GoShip, and a server still provisioning queues the database until it is ready (status pending, then ready).", write,
+	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server a plan is required and billed. On one of the customer's own database servers (server) there is no plan and GoShip bills nothing: the server's disk and connections are the limits, and an optional size_limit_mb caps this database. A server still provisioning queues the database until it is ready (status pending, then ready).", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (Message, error) {
+			if in.Server == "" && in.Plan == "" {
+				return Message{}, errors.New("plan is required unless the database goes on the customer's own server (server)")
+			}
+			if in.Server == "" && in.SizeLimitMB != nil {
+				return Message{}, errors.New("size_limit_mb is only for databases on the customer's own server (server)")
+			}
+			if in.SizeLimitMB != nil {
+				if err := checkSizeLimitMB(*in.SizeLimitMB); err != nil {
+					return Message{}, err
+				}
+			}
 			var serverID string
 			if in.Server != "" {
 				s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
@@ -92,13 +111,31 @@ func (r *registry) databases() {
 				}
 				serverID = s.ID
 			}
-			if err := c.CreateDatabase(ctx, t.Org, t.Project, in.Name, in.Plan, in.Description, serverID, nil); err != nil {
+			if err := c.CreateDatabase(ctx, t.Org, t.Project, in.Name, in.Plan, in.Description, serverID, in.SizeLimitMB); err != nil {
 				return Message{}, err
 			}
 			if serverID != "" {
 				return msgf("Database %s is being created on server %s; it is queued while the server is still provisioning.", in.Name, in.Server)
 			}
 			return msgf("Database %s is being created.", in.Name)
+		})
+	tool(r, "goship_set_database_size_limit", "Set or remove the size limit of a database on the customer's own server (0 removes it). A periodic check enforces it, so it applies within minutes, not instantly. Databases on GoShip's server are limited by their plan instead.", write,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetDBSizeLimitArgs) (Message, error) {
+			var limit *int
+			if in.SizeLimitMB != 0 {
+				if err := checkSizeLimitMB(in.SizeLimitMB); err != nil {
+					return Message{}, err
+				}
+				limit = &in.SizeLimitMB
+			}
+			msg, err := c.SetDatabaseSizeLimit(ctx, t.Org, t.Project, in.Database, limit)
+			if err != nil {
+				return Message{}, err
+			}
+			if msg == "" {
+				msg = "Size limit saved; it applies within 5 minutes."
+			}
+			return Message{Message: msg}, nil
 		})
 	tool(r, "goship_delete_database", "Delete a database and all of its data.", destructive,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in DBArg) (Message, error) {
@@ -121,4 +158,11 @@ func (r *registry) databases() {
 			}
 			return msgf("Database %s unbound from %s.", in.Database, in.App)
 		})
+}
+
+func checkSizeLimitMB(mb int) error {
+	if mb < 10 {
+		return fmt.Errorf("size limit %d MB is too small: the minimum is 10 MB", mb)
+	}
+	return nil
 }

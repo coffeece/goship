@@ -2,6 +2,7 @@ package mcptools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -29,6 +30,12 @@ type CreateDBServerArgs struct {
 	Region       string `json:"region" jsonschema:"cloud region slug (goship_list_cloud_regions)"`
 	Tier         string `json:"tier,omitempty" jsonschema:"machine size slug (goship_list_database_server_tiers); default db-f1-micro"`
 	Name         string `json:"name,omitempty" jsonschema:"server name; default pg-<account label>"`
+	DiskLimitGB  *int   `json:"disk_limit_gb,omitempty" jsonschema:"cap in GB on how far the server's disk may auto-grow (minimum 10); 0 means no cap; default 100"`
+}
+
+type SetDBServerDiskLimitArgs struct {
+	DBServerArg
+	DiskLimitGB int `json:"disk_limit_gb" jsonschema:"cap in GB on how far the server's disk may auto-grow (minimum 10, not below its current size); 0 removes the cap"`
 }
 
 type DeleteDBServerArgs struct {
@@ -47,7 +54,7 @@ func (r *registry) dbservers() {
 			tiers, err := c.DatabaseServerTiers(ctx, t.Org, t.Project)
 			return DBServerTierList{Tiers: tiers}, err
 		})
-	tool(r, "goship_create_database_server", "Create a PostgreSQL server (a Cloud SQL instance) in a connected Google Cloud account. The cloud provider bills the instance; GoShip bills nothing for it or the databases on it. Provisioning takes about ten minutes in the background: goship_list_database_servers shows the stage, and databases created on it meanwhile are queued until it is ready. One server per cloud account.", write,
+	tool(r, "goship_create_database_server", "Create a PostgreSQL server (a Cloud SQL instance) in a connected Google Cloud account. The cloud provider bills the instance; GoShip bills nothing for it or the databases on it. Provisioning takes about ten minutes in the background: goship_list_database_servers shows the stage, and databases created on it meanwhile are queued until it is ready. The disk auto-grows up to disk_limit_gb (default 100 GB). One server per cloud account.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBServerArgs) (*portal.DatabaseServer, error) {
 			acc, err := resolveCloudAccount(ctx, c, t, in.CloudAccount)
 			if err != nil {
@@ -65,8 +72,26 @@ func (r *registry) dbservers() {
 				tier = "db-f1-micro"
 			}
 			return c.CreateDatabaseServer(ctx, scope.Org, scope.Project, portal.CreateDatabaseServerRequest{
-				CloudAccountID: acc.ID, Name: name, Region: in.Region, Tier: tier,
+				CloudAccountID: acc.ID, Name: name, Region: in.Region, Tier: tier, DiskLimitGB: in.DiskLimitGB,
 			})
+		})
+	tool(r, "goship_set_database_server_disk_limit", "Set or remove the disk cap of a database server: how far its disk may auto-grow (0 removes the cap). The cap must be at least 10 GB and not below the disk's current size; the cloud bill grows with the disk, so it is the customer's spending ceiling.", write,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetDBServerDiskLimitArgs) (Message, error) {
+			if in.DiskLimitGB < 0 {
+				return Message{}, errors.New("disk_limit_gb cannot be negative; 0 removes the cap")
+			}
+			s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
+			if err != nil {
+				return Message{}, err
+			}
+			st := deploy.ServerTarget(s, t)
+			if err := c.SetDatabaseServerDiskLimit(ctx, st.Org, st.Project, s.ID, in.DiskLimitGB); err != nil {
+				return Message{}, err
+			}
+			if in.DiskLimitGB == 0 {
+				return msgf("Disk cap removed from server %s.", s.Name)
+			}
+			return msgf("Disk cap of server %s set to %d GB.", s.Name, in.DiskLimitGB)
 		})
 	tool(r, "goship_retry_database_server", "Retry a database server that failed to come up, after fixing the cause its error_message names.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in DBServerArg) (Message, error) {
