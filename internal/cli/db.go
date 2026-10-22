@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -31,25 +32,62 @@ func newDBCmd(app *App) *cobra.Command {
 		Short: "Provision a database",
 		Args:  cobra.ExactArgs(1),
 	}
-	var plan, description, server string
-	create.Flags().StringVar(&plan, "plan", "", "database plan (required)")
+	var plan, description, server, sizeLimit string
+	create.Flags().StringVar(&plan, "plan", "", "database plan (required unless --server is set)")
 	create.Flags().StringVar(&description, "description", "", "human description")
 	create.Flags().StringVar(&server, "server", "", "place the database on one of your own database servers (name or id); default: GoShip")
-	_ = create.MarkFlagRequired("plan")
+	create.Flags().StringVar(&sizeLimit, "size-limit", "", "size limit for a database on your own server, like 500MB or 2GB (default: none)")
 	create.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		var serverID string
+		if server == "" && plan == "" {
+			return errors.New("--plan is required unless the database goes on your own server (--server)")
+		}
+		var limit *int
+		if sizeLimit != "" {
+			var err error
+			if limit, err = parseSizeMB(sizeLimit); err != nil {
+				return err
+			}
+		}
+		var serverID, serverName string
 		if server != "" {
 			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), t, server)
 			if err != nil {
 				return err
 			}
-			serverID = s.ID
+			serverID, serverName = s.ID, s.Name
+			if plan != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "note: databases on your own server have no plan; --plan ignored")
+				plan = ""
+			}
 		}
-		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, args[0], plan, description, serverID, nil); err != nil {
+		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, args[0], plan, description, serverID, limit); err != nil {
 			return err
+		}
+		if serverID != "" {
+			return app.Renderer().Message("Database %s requested on server %s.", args[0], serverName)
 		}
 		return app.Renderer().Message("Database %s requested on plan %s.", args[0], plan)
 	})
+
+	sizeLimitCmd := &cobra.Command{
+		Use:   "size-limit <name> <size|none>",
+		Short: "Set or clear the size limit of a database on your own server (500MB, 2GB, none)",
+		Args:  cobra.ExactArgs(2),
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			limit, err := parseSizeMB(args[1])
+			if err != nil {
+				return err
+			}
+			msg, err := app.Portal().SetDatabaseSizeLimit(cmd.Context(), t.Org, t.Project, args[0], limit)
+			if err != nil {
+				return err
+			}
+			if msg == "" {
+				msg = "Size limit saved; it applies within 5 minutes."
+			}
+			return app.Renderer().Message("%s", msg)
+		}),
+	}
 
 	list := deprecatedList(newDBsCmd(app))
 
@@ -70,7 +108,18 @@ func newDBCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return r.Render(stats)
+			if err := r.Render(stats); err != nil {
+				return err
+			}
+			if stats.ServerConnections == nil || app.Global.Output == render.JSON {
+				return nil
+			}
+			limit := "none"
+			if stats.MaxSizeMB > 0 {
+				limit = fmt.Sprintf("%d MB", stats.MaxSizeMB)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "size limit: %s\nserver connections: %d of %d\n", limit, *stats.ServerConnections, stats.MaxConns)
+			return nil
 		}),
 	}
 
@@ -203,7 +252,7 @@ func newDBCmd(app *App) *cobra.Command {
 		}),
 	}
 
-	cmd.AddCommand(create, list, info, users, userAdd, extensions, extensionAdd, extensionRm, bind, unbind, remove, newDBServerCmd(app))
+	cmd.AddCommand(create, sizeLimitCmd, list, info, users, userAdd, extensions, extensionAdd, extensionRm, bind, unbind, remove, newDBServerCmd(app))
 	return cmd
 }
 
@@ -222,14 +271,23 @@ func newDBServerCmd(app *App) *cobra.Command {
 		Short: "Create a PostgreSQL server in a connected cloud account",
 		Args:  cobra.NoArgs,
 	}
-	var account, region, tier, name string
+	var account, region, tier, name, diskLimit string
 	create.Flags().StringVar(&account, "account", "", "cloud account (id, label or provider) (required)")
 	create.Flags().StringVar(&region, "region", "", "cloud region (required); see `goship cloud regions <account>`")
 	create.Flags().StringVar(&tier, "tier", "db-f1-micro", "machine size; see `goship db server tiers`")
 	create.Flags().StringVar(&name, "name", "", "server name (default pg-<account label>)")
+	create.Flags().StringVar(&diskLimit, "disk-limit", "", "most the disk may grow to, in GB, or none (default 100)")
 	_ = create.MarkFlagRequired("account")
 	_ = create.MarkFlagRequired("region")
 	create.RunE = cloudRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
+		var diskCap *int
+		if cmd.Flags().Changed("disk-limit") {
+			gb, err := parseDiskGB(diskLimit)
+			if err != nil {
+				return err
+			}
+			diskCap = &gb
+		}
 		acc, scope, err := app.resolveCloudScoped(cmd.Context(), app.projectView(cmd.Context(), t), account)
 		if err != nil {
 			return err
@@ -241,7 +299,7 @@ func newDBServerCmd(app *App) *cobra.Command {
 			name = "pg-" + slugify(acc.Label)
 		}
 		s, err := app.Portal().CreateDatabaseServer(cmd.Context(), scope.Org, scope.Project, portal.CreateDatabaseServerRequest{
-			CloudAccountID: acc.ID, Name: name, Region: region, Tier: tier,
+			CloudAccountID: acc.ID, Name: name, Region: region, Tier: tier, DiskLimitGB: diskCap,
 		})
 		if err != nil {
 			return err
@@ -262,6 +320,29 @@ func newDBServerCmd(app *App) *cobra.Command {
 				return err
 			}
 			return app.Renderer().Render(list)
+		}),
+	}
+
+	diskLimitCmd := &cobra.Command{
+		Use:   "disk-limit <server> <GB|none>",
+		Short: "Set how far a server's disk may grow (none removes the cap)",
+		Args:  cobra.ExactArgs(2),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			gb, err := parseDiskGB(args[1])
+			if err != nil {
+				return err
+			}
+			s, scope, err := app.resolveDatabaseServerScoped(cmd.Context(), t, args[0])
+			if err != nil {
+				return err
+			}
+			if err := app.Portal().SetDatabaseServerDiskLimit(cmd.Context(), scope.Org, scope.Project, s.ID, gb); err != nil {
+				return err
+			}
+			if gb == 0 {
+				return app.Renderer().Message("Disk cap removed from server %s.", s.Name)
+			}
+			return app.Renderer().Message("Disk cap of server %s set to %d GB.", s.Name, gb)
 		}),
 	}
 
@@ -325,7 +406,7 @@ keeps running and billing in your project until you delete it there.`,
 	}
 	del.Flags().BoolVar(&force, "force", false, "drop the server from GoShip without touching the cloud (the instance stays in your project)")
 
-	cmd.AddCommand(list, create, tiers, retry, del)
+	cmd.AddCommand(list, create, tiers, diskLimitCmd, retry, del)
 	return cmd
 }
 
