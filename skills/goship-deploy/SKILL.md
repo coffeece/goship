@@ -123,14 +123,15 @@ servers, one per cloud account.
    `goship_list_database_server_tiers`, default `db-f1-micro`; `name`
    defaults to `pg-<account label>`. Provisioning runs for about ten
    minutes in the background; do not wait for it.
-2. `goship_create_database` with `server` set to the server's name. The
-   plan still sets the quotas but is not billed. While the server is still
+2. `goship_create_database` with `server` set to the server's name. There
+   is no plan on an own server (any `plan` is ignored); an optional
+   `size_limit_mb` caps the database. While the server is still
    provisioning the database is queued (status `pending`) and created once
    the server is ready; `goship_get_database` shows `status` and `detail`.
 3. `goship_bind_database` once the database is `ready`.
 
 CLI: `goship db server create --account gcp --region southamerica-east1`,
-then `goship db create <app>-db --plan db-small --server pg-gcp`.
+then `goship db create <app>-db --server pg-gcp [--size-limit 2GB]`.
 
 The instance has a public IP and accepts TLS only, so apps on GoShip's
 cluster and on the project's own nodes reach it alike; `DATABASE_URL`
@@ -139,6 +140,25 @@ carries `sslmode=require`. A server that fails to come up carries
 `goship cloud connect gcp` again, the Google project needs an active billing
 account, and an organization policy blocking public IP on Cloud SQL must be
 disabled by the customer. Fix the cause, then `goship_retry_database_server`.
+
+Limits on an own server are the server's, never a plan: its disk (starts at
+10 GB, grows on its own up to a cap, 100 GB by default; `disk_limit_gb` on
+`goship_create_database_server`, 0 means no cap) and its connections. The
+optional per-database size limit turns the database read-only within 5
+minutes of going over it. If an own-server database is read-only for space,
+check the cause and fix it; never change a plan:
+
+- Its size limit is the cause (`goship db info <name>` prints `size limit`):
+  `goship_set_database_size_limit` with a larger `size_limit_mb`, or 0 to
+  remove it (`goship db size-limit <name> <size|none>`). Writes return
+  within 5 minutes.
+- The server disk reached its cap (`goship db server list` shows DISK, CAP
+  and USED): `goship_set_database_server_disk_limit` with a higher
+  `disk_limit_gb` (`goship db server disk-limit <server> <GB|none>`; the cap
+  must be at least the current disk size, at most 65536; no restart). The
+  customer pays Google for the disk and it never shrinks, so tell them the
+  new ceiling before raising it. GoShip emails the owner at 80% and 95% of
+  the cap.
 
 Binding injects `DATABASE_URL`, `DATABASE_HOST/PORT/NAME/USER/PASSWORD`,
 `DATABASE_SSLMODE` and `PGSSLMODE`, and restarts the app.
