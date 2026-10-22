@@ -34,16 +34,16 @@ func parseSizeMB(s string) (*int, error) {
 	return &mb, nil
 }
 
-// parseDiskGB reads a disk cap in GB: "none" is 0 (no cap), otherwise a whole
+// parseDiskGB reads a disk cap in GB: "none" or 0 is 0 (no cap), otherwise a whole
 // number with an optional GB suffix.
 func parseDiskGB(s string) (int, error) {
 	v := strings.ToLower(strings.TrimSpace(s))
-	if v == "none" {
+	if v == "none" || v == "0" {
 		return 0, nil
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(strings.TrimSuffix(v, "gb")))
 	if err != nil || n <= 0 {
-		return 0, fmt.Errorf("invalid disk cap %q: use a whole number of GB, like 100 or 100GB, or none", s)
+		return 0, fmt.Errorf("invalid disk cap %q: use a whole number of GB, like 100 or 100GB, or none (or 0) for no cap", s)
 	}
 	return n, nil
 }

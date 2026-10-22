@@ -301,11 +301,43 @@ func TestDBServerCreateDiskLimit(t *testing.T) {
 	}
 }
 
+func TestDBInfoOwnServerIdleAndGoShip(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs/acme/projects/clave/databases/shop":
+			w.Write([]byte(`{"name":"shop","status":"active","placement":"pg","server_id":"s1"}`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/clave/databases/hosted":
+			w.Write([]byte(`{"name":"hosted","status":"active","placement":"goship"}`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/clave/databases/shop/stats", "/api/v1/orgs/acme/projects/clave/databases/hosted/stats":
+			w.Write([]byte(`{"size_mb":"12","connections":0,"max_connections":25}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	out, err := run(t, "", "db", "info", "shop")
+	if err != nil || !strings.Contains(out, "size limit: none") || !strings.Contains(out, "server connections: 0 of 25") {
+		t.Fatalf("own server: out = %q, err = %v", out, err)
+	}
+	out, err = run(t, "", "db", "info", "hosted")
+	if err != nil || strings.Contains(out, "size limit:") || strings.Contains(out, "server connections:") {
+		t.Fatalf("goship: out = %q, err = %v", out, err)
+	}
+}
+
+func TestDBCreateSizeLimitNeedsServer(t *testing.T) {
+	var body map[string]any
+	stubServerCreate(t, &body)
+	_, err := run(t, "", "db", "create", "shop", "--plan", "db-small", "--size-limit", "2GB")
+	if err == nil || !strings.Contains(err.Error(), "--size-limit is only for databases on your own server") || body != nil {
+		t.Fatalf("err = %v, body = %v", err, body)
+	}
+}
+
 func TestDBInfoOnOwnServerShowsLimits(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs/acme/projects/clave/databases/shop":
-			w.Write([]byte(`{"name":"shop","status":"active","placement":"pg"}`)) //nolint:errcheck
+			w.Write([]byte(`{"name":"shop","status":"active","placement":"pg","server_id":"s1"}`)) //nolint:errcheck
 		case "/api/v1/orgs/acme/projects/clave/databases/shop/stats":
 			w.Write([]byte(`{"size_mb":"12","connections":2,"max_size_mb":2048,"max_connections":25,"server_connections":9}`)) //nolint:errcheck
 		default:
