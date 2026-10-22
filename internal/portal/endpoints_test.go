@@ -99,7 +99,7 @@ func TestEndpoints(t *testing.T) {
 			return c.DisableDatabaseExtension(ctx, "acme", "clave", "shop", "uuid-ossp")
 		}},
 		{"create database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
-			return c.CreateDatabase(ctx, "acme", "clave", "shop", "starter", "", "")
+			return c.CreateDatabase(ctx, "acme", "clave", "shop", "starter", "", "", nil)
 		}},
 		{"database servers", "GET", "/api/v1/orgs/acme/projects/clave/database-servers", "", func(ctx context.Context, c *Client) error {
 			_, err := c.DatabaseServers(ctx, "acme", "clave")
@@ -117,7 +117,23 @@ func TestEndpoints(t *testing.T) {
 			return err
 		}},
 		{"create database on server", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","plan":"db-small","server_id":"s1"}`, func(ctx context.Context, c *Client) error {
-			return c.CreateDatabase(ctx, "acme", "clave", "shop", "db-small", "", "s1")
+			return c.CreateDatabase(ctx, "acme", "clave", "shop", "db-small", "", "s1", nil)
+		}},
+		{"create database on server without plan", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","server_id":"s1","size_limit_mb":2048}`, func(ctx context.Context, c *Client) error {
+			mb := 2048
+			return c.CreateDatabase(ctx, "acme", "clave", "shop", "", "", "s1", &mb)
+		}},
+		{"set database size limit", "PUT", "/api/v1/orgs/acme/projects/clave/databases/shop/size-limit", `{"size_limit_mb":500}`, func(ctx context.Context, c *Client) error {
+			mb := 500
+			_, err := c.SetDatabaseSizeLimit(ctx, "acme", "clave", "shop", &mb)
+			return err
+		}},
+		{"clear database size limit", "PUT", "/api/v1/orgs/acme/projects/clave/databases/shop/size-limit", `{"size_limit_mb":null}`, func(ctx context.Context, c *Client) error {
+			_, err := c.SetDatabaseSizeLimit(ctx, "acme", "clave", "shop", nil)
+			return err
+		}},
+		{"set database server disk limit", "PUT", "/api/v1/orgs/acme/database-servers/s1/disk-limit", `{"disk_limit_gb":200}`, func(ctx context.Context, c *Client) error {
+			return c.SetDatabaseServerDiskLimit(ctx, "acme", "", "s1", 200)
 		}},
 		{"delete database", "DELETE", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop", "", func(ctx context.Context, c *Client) error { return c.DeleteDatabase(ctx, "acme", "clave", "shop") }},
 		{"bind database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop/bind", `{"app_name":"api"}`, func(ctx context.Context, c *Client) error { return c.BindDatabase(ctx, "acme", "clave", "shop", "api") }},
