@@ -20,9 +20,10 @@
 | `goship_logs` | `goship logs -a <app> [-l N] [--source web]` |
 | `goship_run` | `goship run -a <app> [--once] [--isolated] -- <cmd>` |
 | `goship_list_databases` / `goship_get_database` / `goship_database_stats` | `goship dbs` / `goship db info <name>` / `goship db stats <name>` |
-| `goship_create_database` / `goship_delete_database` | `goship db create <name> --plan db-micro [--server s]` / `goship db rm <name>` |
+| `goship_create_database` / `goship_delete_database` | `goship db create <name> --plan db-micro` (GoShip) or `goship db create <name> --server s [--size-limit 2GB]` (own server, no plan) / `goship db rm <name>` |
 | `goship_list_database_servers` / `goship_list_database_server_tiers` | `goship db server list` / `goship db server tiers` |
-| `goship_create_database_server` / `goship_retry_database_server` / `goship_delete_database_server` | `goship db server create --account a --region r [--tier t] [--name n]` / `goship db server retry <s>` / `goship db server delete <s> [--force]` |
+| `goship_create_database_server` / `goship_retry_database_server` / `goship_delete_database_server` | `goship db server create --account a --region r [--tier t] [--name n] [--disk-limit GB\|none]` / `goship db server retry <s>` / `goship db server delete <s> [--force]` |
+| `goship_set_database_size_limit` / `goship_set_database_server_disk_limit` | `goship db size-limit <name> <size\|none>` / `goship db server disk-limit <s> <GB\|none>` |
 | `goship_bind_database` / `goship_unbind_database` | `goship db bind\|unbind <name> -a <app>` |
 | `goship_list_database_users` / `goship_create_database_user` | `goship db users <name>` / `goship db user-add <name> <user>` |
 | `goship_list_database_extensions` / `goship_enable_database_extension` / `goship_disable_database_extension` | `goship db extensions <name>` / `goship db extension-add <name> <ext>` / `goship db extension-rm <name> <ext>` |
