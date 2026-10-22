@@ -41,6 +41,9 @@ func newDBCmd(app *App) *cobra.Command {
 		if server == "" && plan == "" {
 			return errors.New("--plan is required unless the database goes on your own server (--server)")
 		}
+		if server == "" && sizeLimit != "" {
+			return errors.New("--size-limit is only for databases on your own server (--server)")
+		}
 		var limit *int
 		if sizeLimit != "" {
 			var err error
@@ -111,14 +114,14 @@ func newDBCmd(app *App) *cobra.Command {
 			if err := r.Render(stats); err != nil {
 				return err
 			}
-			if stats.ServerConnections == nil || app.Global.Output == render.JSON {
+			if db.ServerID == "" || app.Global.Output == render.JSON {
 				return nil
 			}
 			limit := "none"
 			if stats.MaxSizeMB > 0 {
 				limit = fmt.Sprintf("%d MB", stats.MaxSizeMB)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "size limit: %s\nserver connections: %d of %d\n", limit, *stats.ServerConnections, stats.MaxConns)
+			fmt.Fprintf(cmd.OutOrStdout(), "size limit: %s\nserver connections: %d of %d\n", limit, stats.ServerConnections, stats.MaxConns)
 			return nil
 		}),
 	}

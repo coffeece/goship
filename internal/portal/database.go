@@ -20,6 +20,7 @@ type Database struct {
 	DBPassword  string    `json:"db_password"`
 	Status      string    `json:"status" table:"STATUS"`
 	Placement   string    `json:"placement" table:"PLACEMENT"`
+	ServerID    string    `json:"server_id,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -31,9 +32,10 @@ type DatabaseStats struct {
 	MaxSizeMB   int    `json:"max_size_mb" table:"MAX (MB)"`
 	MaxConns    int    `json:"max_connections" table:"MAX CONNS"`
 
-	// ServerConnections is set only for a database on your own server, where
-	// MaxConns is the server's and MaxSizeMB 0 means no size limit.
-	ServerConnections *int `json:"server_connections,omitempty"`
+	// On a database on your own server MaxConns is the server's, MaxSizeMB 0
+	// means no size limit and ServerConnections counts the whole server
+	// (absent when 0).
+	ServerConnections int `json:"server_connections,omitempty"`
 }
 
 type DatabaseUser struct {

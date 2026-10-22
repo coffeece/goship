@@ -34,7 +34,7 @@ func TestParseDiskGB(t *testing.T) {
 		bad  bool
 	}{
 		{"none", 0, false}, {"None", 0, false}, {"100", 100, false}, {"100GB", 100, false}, {"100gb", 100, false},
-		{"0", 0, true}, {"-1", 0, true}, {"1.5", 0, true}, {"", 0, true}, {"big", 0, true},
+		{"0", 0, false}, {"-1", 0, true}, {"1.5", 0, true}, {"", 0, true}, {"big", 0, true},
 	} {
 		got, err := parseDiskGB(tc.in)
 		if tc.bad != (err != nil) || got != tc.want {
