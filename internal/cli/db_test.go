@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -154,11 +156,165 @@ func TestDBCreateOnAServer(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	})
-	if _, err := run(t, "", "db", "create", "shop", "--plan", "db-small", "--server", "pg"); err != nil {
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "db", "create", "shop", "--plan", "db-small", "--server", "pg")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if body["server_id"] != "s1" {
 		t.Fatalf("body = %v", body)
+	}
+	if _, sent := body["plan"]; sent {
+		t.Fatalf("plan sent with a server: %v", body)
+	}
+	if !strings.Contains(out, "Database shop requested on server pg.") || !strings.Contains(stderr, "note: databases on your own server have no plan; --plan ignored") {
+		t.Fatalf("out = %q, stderr = %q", out, stderr)
+	}
+}
+
+func stubServerCreate(t *testing.T, body *map[string]any) {
+	t.Helper()
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/projects/clave/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/projects/clave/services/postgresql/instances":
+			json.NewDecoder(r.Body).Decode(body) //nolint:errcheck
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+}
+
+func TestDBCreateOnServerNeedsNoPlan(t *testing.T) {
+	var body map[string]any
+	stubServerCreate(t, &body)
+	out, err := run(t, "", "db", "create", "shop", "--server", "pg")
+	if err != nil || !strings.Contains(out, "Database shop requested on server pg.") || strings.Contains(out, "note:") {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	if _, sent := body["plan"]; sent || body["server_id"] != "s1" {
+		t.Fatalf("body = %v", body)
+	}
+}
+
+func TestDBCreateWithoutServerNeedsPlan(t *testing.T) {
+	var body map[string]any
+	stubServerCreate(t, &body)
+	if _, err := run(t, "", "db", "create", "shop"); err == nil || !strings.Contains(err.Error(), "--plan is required") || body != nil {
+		t.Fatalf("err = %v, body = %v", err, body)
+	}
+	out, err := run(t, "", "db", "create", "shop", "--plan", "db-small")
+	if err != nil || !strings.Contains(out, "Database shop requested on plan db-small.") || body["plan"] != "db-small" {
+		t.Fatalf("out = %q, err = %v, body = %v", out, err, body)
+	}
+}
+
+func TestDBCreateSendsSizeLimit(t *testing.T) {
+	var body map[string]any
+	stubServerCreate(t, &body)
+	if _, err := run(t, "", "db", "create", "shop", "--server", "pg", "--size-limit", "2GB"); err != nil {
+		t.Fatal(err)
+	}
+	if body["size_limit_mb"] != float64(2048) {
+		t.Fatalf("body = %v", body)
+	}
+	if _, err := run(t, "", "db", "create", "shop", "--server", "pg", "--size-limit", "5"); err == nil {
+		t.Fatal("a limit under 10 MB was accepted")
+	}
+}
+
+func TestDBSizeLimitSetsAndClears(t *testing.T) {
+	var raw string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/orgs/acme/projects/clave/databases/shop/size-limit" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		b, _ := io.ReadAll(r.Body)
+		raw = strings.TrimSpace(string(b))
+		w.Write([]byte(`{"message":"Size limit saved; it applies within 5 minutes."}`)) //nolint:errcheck
+	})
+	out, err := run(t, "", "db", "size-limit", "shop", "500MB")
+	if err != nil || raw != `{"size_limit_mb":500}` || !strings.Contains(out, "applies within 5 minutes") {
+		t.Fatalf("set: out = %q, err = %v, body = %s", out, err, raw)
+	}
+	if _, err := run(t, "", "db", "size-limit", "shop", "none"); err != nil || raw != `{"size_limit_mb":null}` {
+		t.Fatalf("clear: err = %v, body = %s", err, raw)
+	}
+}
+
+func TestDBServerDiskLimit(t *testing.T) {
+	var path, raw string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/projects/clave/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active","scope":"org"}]`)) //nolint:errcheck
+		case "PUT /api/v1/orgs/acme/database-servers/s1/disk-limit":
+			path = r.URL.Path
+			b, _ := io.ReadAll(r.Body)
+			raw = strings.TrimSpace(string(b))
+			w.Write([]byte(`{"id":"s1"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	out, err := run(t, "", "db", "server", "disk-limit", "pg", "200")
+	if err != nil || path == "" || raw != `{"disk_limit_gb":200}` || !strings.Contains(out, "200 GB") {
+		t.Fatalf("out = %q, err = %v, body = %s", out, err, raw)
+	}
+	if _, err := run(t, "", "db", "server", "disk-limit", "s1", "none"); err != nil || raw != `{"disk_limit_gb":0}` {
+		t.Fatalf("none: err = %v, body = %s", err, raw)
+	}
+	if _, err := run(t, "", "db", "server", "disk-limit", "pg", "lots"); err == nil {
+		t.Fatal("bad cap accepted")
+	}
+}
+
+func TestDBServerCreateDiskLimit(t *testing.T) {
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/cloud-accounts", "GET /api/v1/orgs/acme/projects/clave/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","label":"prod","provider":"gcp","scope":"org"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/database-servers":
+			body = map[string]any{}
+			json.NewDecoder(r.Body).Decode(&body)                               //nolint:errcheck
+			w.Write([]byte(`{"id":"s1","name":"pg-prod","status":"creating"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	if _, err := run(t, "", "db", "server", "create", "--account", "gcp", "--region", "r1", "--disk-limit", "none"); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := body["disk_limit_gb"]; !ok || v != float64(0) {
+		t.Fatalf("none: body = %v", body)
+	}
+	if _, err := run(t, "", "db", "server", "create", "--account", "gcp", "--region", "r1", "--disk-limit", "50GB"); err != nil || body["disk_limit_gb"] != float64(50) {
+		t.Fatalf("50GB: err = %v, body = %v", err, body)
+	}
+	if _, err := run(t, "", "db", "server", "create", "--account", "gcp", "--region", "r1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, sent := body["disk_limit_gb"]; sent {
+		t.Fatalf("default sent a cap: %v", body)
+	}
+}
+
+func TestDBInfoOnOwnServerShowsLimits(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs/acme/projects/clave/databases/shop":
+			w.Write([]byte(`{"name":"shop","status":"active","placement":"pg"}`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/clave/databases/shop/stats":
+			w.Write([]byte(`{"size_mb":"12","connections":2,"max_size_mb":2048,"max_connections":25,"server_connections":9}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	out, err := run(t, "", "db", "info", "shop")
+	if err != nil || !strings.Contains(out, "size limit: 2048 MB") || !strings.Contains(out, "server connections: 9 of 25") {
+		t.Fatalf("out = %q, err = %v", out, err)
 	}
 }
 
