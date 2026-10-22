@@ -45,7 +45,7 @@ func newDBCmd(app *App) *cobra.Command {
 			}
 			serverID = s.ID
 		}
-		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, args[0], plan, description, serverID); err != nil {
+		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, args[0], plan, description, serverID, nil); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Database %s requested on plan %s.", args[0], plan)

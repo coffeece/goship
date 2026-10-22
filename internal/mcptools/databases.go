@@ -92,7 +92,7 @@ func (r *registry) databases() {
 				}
 				serverID = s.ID
 			}
-			if err := c.CreateDatabase(ctx, t.Org, t.Project, in.Name, in.Plan, in.Description, serverID); err != nil {
+			if err := c.CreateDatabase(ctx, t.Org, t.Project, in.Name, in.Plan, in.Description, serverID, nil); err != nil {
 				return Message{}, err
 			}
 			if serverID != "" {

@@ -30,6 +30,10 @@ type DatabaseStats struct {
 	Connections int    `json:"connections" table:"CONNS"`
 	MaxSizeMB   int    `json:"max_size_mb" table:"MAX (MB)"`
 	MaxConns    int    `json:"max_connections" table:"MAX CONNS"`
+
+	// ServerConnections is set only for a database on your own server, where
+	// MaxConns is the server's and MaxSizeMB 0 means no size limit.
+	ServerConnections *int `json:"server_connections,omitempty"`
 }
 
 type DatabaseUser struct {
@@ -141,12 +145,30 @@ func (c *Client) DisableDatabaseExtension(ctx context.Context, org, project, nam
 	return c.delete(ctx, dbPath(org, project, name)+"/extensions/"+esc(ext), nil)
 }
 
-func (c *Client) CreateDatabase(ctx context.Context, org, project, name, plan, description, serverID string) error {
-	body := map[string]string{"name": name, "plan": plan, "description": description}
+// CreateDatabase leaves the plan out when it is empty, which is how a database
+// on your own server is created. sizeLimitMB nil means no limit.
+func (c *Client) CreateDatabase(ctx context.Context, org, project, name, plan, description, serverID string, sizeLimitMB *int) error {
+	body := map[string]any{"name": name, "description": description}
+	if plan != "" {
+		body["plan"] = plan
+	}
 	if serverID != "" {
 		body["server_id"] = serverID
 	}
+	if sizeLimitMB != nil {
+		body["size_limit_mb"] = *sizeLimitMB
+	}
 	return c.post(ctx, instancesPath(org, project), body, nil)
+}
+
+// SetDatabaseSizeLimit sets the size limit of a database on your own server;
+// nil clears it. The limit is enforced by a periodic check, not immediately.
+func (c *Client) SetDatabaseSizeLimit(ctx context.Context, org, project, name string, mb *int) (string, error) {
+	var out struct {
+		Message string `json:"message"`
+	}
+	err := c.put(ctx, dbPath(org, project, name)+"/size-limit", map[string]*int{"size_limit_mb": mb}, &out)
+	return out.Message, err
 }
 
 func (c *Client) DeleteDatabase(ctx context.Context, org, project, name string) error {
