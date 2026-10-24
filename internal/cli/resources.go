@@ -197,7 +197,6 @@ func newVolumeCmd(app *App) *cobra.Command {
 	return cmd
 }
 
-// newNodesCmd is the plural lister, matching `apps`.
 // resizeRow is a sizeRow with a marker for the size the node runs on.
 type resizeRow struct {
 	Slug     string `table:"SLUG"`
@@ -209,6 +208,7 @@ type resizeRow struct {
 	Current  string `table:"CURRENT"`
 }
 
+// newNodesCmd is the plural lister, matching `apps`.
 func newNodesCmd(app *App) *cobra.Command {
 	return newTargetListCmd(app, "nodes", "List your nodes in the current project, or --all of them", (*portal.Client).Nodes)
 }
@@ -297,7 +297,7 @@ func newNodeCmd(app *App) *cobra.Command {
 			rows := make([]resizeRow, len(options))
 			for i, o := range options {
 				r := newSizeRow(o.CloudSize)
-				rows[i] = resizeRow{r.Slug, r.VCPU, r.Memory, r.Disk, r.Provider, r.GoShip, ""}
+				rows[i] = resizeRow{Slug: r.Slug, VCPU: r.VCPU, Memory: r.Memory, Disk: r.Disk, Provider: r.Provider, GoShip: r.GoShip}
 				if o.Current {
 					rows[i].Current = "current"
 				}
