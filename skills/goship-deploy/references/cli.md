@@ -30,6 +30,7 @@
 | `goship_list_domains` / `goship_register_domain` / `goship_verify_domain` / `goship_delete_domain` | `goship domains` / `goship domain register\|verify\|rm` |
 | `goship_add_app_domain` / `goship_remove_app_domain` | `goship domain add\|rm <domain> -a <app>` |
 | `goship_list_nodes` / `goship_get_node` / `goship_create_node` / `goship_delete_node` | `goship nodes` / `goship node info\|create\|rm` |
+| `goship_list_node_sizes` / `goship_resize_node` | `goship node sizes <node>` / `goship node resize <node> --size <slug>` |
 | `goship_list_volumes` … `goship_delete_volume` | `goship volumes` / `goship volume create\|bind\|unbind\|rm` |
 | `goship_list_plans` | `goship plans [--kind database\|volume] [--node n]` |
 | `goship_list_cloud_accounts` / `_regions` / `_sizes` / `goship_delete_cloud_account` | `goship cloud list\|regions\|sizes\|disconnect` |
