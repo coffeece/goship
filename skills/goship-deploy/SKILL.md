@@ -27,6 +27,10 @@ Find out, asking only for what is not already known:
   needs no choice. Pass `project` to the tools, or set `project:` in goship.yml.
 - **Placement**: the shared cluster (billed per unit by plan) or one of the
   project's own nodes (`goship_list_nodes`; apps there are not billed).
+  A node that is too small can be resized: `goship_list_node_sizes` shows the
+  options, `goship_resize_node` applies one. It restarts the machine, so every
+  app on it is down for a few minutes; confirm with the user first. Apps keep
+  their plans, so to give one app more CPU or memory change its plan instead.
 - **Plan**: `goship_list_plans` shows what the project can pick and the price.
   A plan with `billed: false` is free to choose. Never pick a paid plan
   without the user saying which.
