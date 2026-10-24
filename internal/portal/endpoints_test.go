@@ -165,6 +165,14 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.CreateNode(ctx, "acme", "clave", CreateNodeRequest{Name: "box", CloudAccountID: "acc1", Region: "nyc1", Size: "s-1vcpu-1gb"})
 			return err
 		}},
+		{"node sizes", "GET", "/api/v1/orgs/acme/projects/clave/nodes/n1/sizes", "", func(ctx context.Context, c *Client) error {
+			_, err := c.NodeSizes(ctx, "acme", "clave", "n1")
+			return err
+		}},
+		{"resize node", "POST", "/api/v1/orgs/acme/projects/clave/nodes/n1/resize", `{"size":"e2-standard-4"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ResizeNode(ctx, "acme", "clave", "n1", "e2-standard-4")
+			return err
+		}},
 		{"delete node", "DELETE", "/api/v1/orgs/acme/projects/clave/nodes/n1", `{"destroy_server":true}`, func(ctx context.Context, c *Client) error { return c.DeleteNode(ctx, "acme", "clave", "n1", true) }},
 
 		{"cloud providers", "GET", "/api/v1/cloud/providers", "", func(ctx context.Context, c *Client) error { _, err := c.CloudProviders(ctx); return err }},

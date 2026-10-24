@@ -139,7 +139,7 @@ goship deploy --env-file .env
 | `goship db server list\|create\|tiers\|disk-limit\|retry\|delete` | PostgreSQL servers in your own Google Cloud project, unbilled by GoShip; `disk-limit` caps disk growth (`create --disk-limit`); `delete --force` forgets one GoShip can no longer reach |
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
 | `goship volume create\|info\|bind\|unbind\|rm` | persistent disks |
-| `goship node create\|info\|rm` | your own machines: create on a connected cloud or attach over SSH |
+| `goship node create\|info\|sizes\|resize\|rm` | your own machines: create on a connected cloud or attach over SSH; change the size of one GoShip created |
 | `goship cloud providers\|connect\|list\|regions\|sizes\|move\|disconnect` | the cloud accounts your nodes and database servers run on — AWS connects with `--role-arn` or `--access-keys-stdin`; `move` sends an account to a project or shares it with the organization |
 | `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
 | `goship releases` / `goship rollback` | deploy history |

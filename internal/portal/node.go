@@ -17,6 +17,9 @@ type Node struct {
 	CloudServerID string `json:"cloud_server_id,omitempty"`
 	CloudRegion   string `json:"cloud_region,omitempty"`
 	CloudSize     string `json:"cloud_size,omitempty"`
+	ResizeFrom    string `json:"resize_from,omitempty"`
+	ResizeTarget  string `json:"resize_target,omitempty"`
+	ResizeMessage string `json:"resize_message,omitempty"`
 	CloudAccount  *struct {
 		ID       string `json:"id"`
 		Provider string `json:"provider"`
@@ -53,6 +56,22 @@ func (c *Client) CreateNode(ctx context.Context, org, project string, req Create
 
 func (c *Client) DeleteNode(ctx context.Context, org, project, id string, destroyServer bool) error {
 	return c.delete(ctx, nodesPath(org, project)+"/"+esc(id), map[string]any{"destroy_server": destroyServer})
+}
+
+// ResizeOption is a size a node can be resized to; Current marks the one it runs on.
+type ResizeOption struct {
+	CloudSize
+	Current bool `json:"current"`
+}
+
+func (c *Client) NodeSizes(ctx context.Context, org, project, id string) ([]ResizeOption, error) {
+	var sizes []ResizeOption
+	return sizes, c.get(ctx, nodesPath(org, project)+"/"+esc(id)+"/sizes", &sizes)
+}
+
+func (c *Client) ResizeNode(ctx context.Context, org, project, id, size string) (*Node, error) {
+	var n Node
+	return &n, c.post(ctx, nodesPath(org, project)+"/"+esc(id)+"/resize", map[string]string{"size": size}, &n)
 }
 
 // GoShipPlacement is the node_id that asks for GoShip's servers explicitly,

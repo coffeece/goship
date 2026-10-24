@@ -136,6 +136,73 @@ func TestNodeRmDestroySurfacesAPIMessage(t *testing.T) {
 	}
 }
 
+func TestNodeResizeYesSkipsPrompt(t *testing.T) {
+	var body map[string]any
+	var path string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
+			return
+		}
+		path = r.URL.Path
+		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{"id":"n1","name":"n1","status":"resizing"}`)) //nolint:errcheck
+	})
+
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "--yes", "node", "resize", "n1", "--size", "e2-standard-4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stderr != "" {
+		t.Errorf("--yes should not prompt: %q", stderr)
+	}
+	if path != "/api/v1/orgs/acme/projects/clave/nodes/n1/resize" || body["size"] != "e2-standard-4" {
+		t.Errorf("request = %s %v", path, body)
+	}
+	if !strings.Contains(out, "Node n1 is resizing to e2-standard-4. Follow it with `goship node info n1`.") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestNodeResizeShowsReconnectMessage(t *testing.T) {
+	const msg = "Reconnect your Google Cloud account to let GoShip resize machines."
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"` + msg + `","code":"reconnect_required"}`)) //nolint:errcheck
+	})
+	_, err := run(t, "", "--yes", "node", "resize", "n1", "--size", "x")
+	if err == nil || err.Error() != msg {
+		t.Errorf("error = %v, want %q", err, msg)
+	}
+}
+
+func TestNodeSizesMarksCurrent(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/sizes") {
+			w.Write([]byte(`[{"slug":"e2-small","vcpu":2,"memory_mb":2048,"disk_gb":20,"current":true},{"slug":"e2-standard-4","vcpu":4,"memory_mb":16384,"disk_gb":20}]`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
+	})
+	out, err := run(t, "", "node", "sizes", "n1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "CURRENT") || !strings.Contains(out, "e2-standard-4") {
+		t.Errorf("output = %q", out)
+	}
+	for l := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(l, "e2-small") && !strings.Contains(l, "current") {
+			t.Errorf("current size is not marked: %q", l)
+		}
+	}
+}
+
 func TestDestructiveCommandsAllConfirm(t *testing.T) {
 	for _, args := range [][]string{
 		{"app", "rm", "api"},
@@ -144,6 +211,7 @@ func TestDestructiveCommandsAllConfirm(t *testing.T) {
 		{"db", "rm", "main"},
 		{"volume", "rm", "uploads"},
 		{"node", "rm", "n1"},
+		{"node", "resize", "n1", "--size", "x"},
 		{"cloud", "disconnect", "acme-do"},
 	} {
 		t.Run(args[0], func(t *testing.T) {
