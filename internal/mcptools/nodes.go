@@ -28,6 +28,15 @@ type CreateNodeArgs struct {
 	Size           string `json:"size,omitempty" jsonschema:"cloud machine size slug (goship_list_cloud_sizes)"`
 }
 
+type NodeSizeList struct {
+	Sizes []portal.ResizeOption `json:"sizes"`
+}
+
+type ResizeNodeArgs struct {
+	NodeArg
+	Size string `json:"size" jsonschema:"machine size slug from goship_list_node_sizes"`
+}
+
 type DeleteNodeArgs struct {
 	NodeArg
 	DestroyServer bool `json:"destroy_server,omitempty" jsonschema:"also destroy the cloud machine the node runs on"`
@@ -53,6 +62,26 @@ func (r *registry) nodes() {
 				Name: in.Name, Host: in.Host, Port: in.Port, SSHUser: in.SSHUser, SSHKey: in.SSHKey,
 				CloudAccountID: in.CloudAccountID, Region: in.Region, Size: in.Size,
 			})
+		})
+	tool(r, "goship_list_node_sizes", "List the machine sizes a node can be resized to, with prices; the current one comes first.", read,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in NodeArg) (NodeSizeList, error) {
+			id, err := deploy.ResolveNode(ctx, c, t, in.Node)
+			if err != nil {
+				return NodeSizeList{}, err
+			}
+			s, err := c.NodeSizes(ctx, t.Org, t.Project, id)
+			return NodeSizeList{Sizes: s}, err
+		})
+	tool(r, "goship_resize_node", "Change a node's machine size in place. Every app on the node is down for a few minutes while the machine restarts.", destructive,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in ResizeNodeArgs) (Message, error) {
+			id, err := deploy.ResolveNode(ctx, c, t, in.Node)
+			if err != nil {
+				return Message{}, err
+			}
+			if _, err := c.ResizeNode(ctx, t.Org, t.Project, id, in.Size); err != nil {
+				return Message{}, err
+			}
+			return msgf("Node %s is resizing to %s. goship_get_node shows its stage.", in.Node, in.Size)
 		})
 	tool(r, "goship_delete_node", "Remove a node and every app on it; with destroy_server the cloud machine is destroyed too.", destructive,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in DeleteNodeArgs) (Message, error) {

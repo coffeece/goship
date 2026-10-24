@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
+	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -196,6 +198,17 @@ func newVolumeCmd(app *App) *cobra.Command {
 }
 
 // newNodesCmd is the plural lister, matching `apps`.
+// resizeRow is a sizeRow with a marker for the size the node runs on.
+type resizeRow struct {
+	Slug     string `table:"SLUG"`
+	VCPU     int    `table:"VCPU"`
+	Memory   string `table:"MEMORY"`
+	Disk     string `table:"DISK"`
+	Provider string `table:"PROVIDER"`
+	GoShip   string `table:"GOSHIP"`
+	Current  string `table:"CURRENT"`
+}
+
 func newNodesCmd(app *App) *cobra.Command {
 	return newTargetListCmd(app, "nodes", "List your nodes in the current project, or --all of them", (*portal.Client).Nodes)
 }
@@ -249,9 +262,71 @@ func newNodeCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return app.Renderer().Render(n)
+			if err := app.Renderer().Render(n); err != nil {
+				return err
+			}
+			if app.Global.Output == render.JSON {
+				return nil
+			}
+			if n.Status == "resizing" && n.Stage != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "Resize stage: %s\n", n.Stage)
+			}
+			if n.ResizeMessage != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), n.ResizeMessage)
+			}
+			return nil
 		}),
 	}
+
+	sizes := &cobra.Command{
+		Use:   "sizes <node>",
+		Short: "List the sizes a node can be resized to, with prices",
+		Args:  cobra.ExactArgs(1),
+		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+			id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), t, args[0])
+			if err != nil {
+				return err
+			}
+			options, err := app.Portal().NodeSizes(cmd.Context(), t.Org, t.Project, id)
+			if err != nil {
+				return err
+			}
+			if app.Global.Output == render.JSON {
+				return app.Renderer().Render(options)
+			}
+			rows := make([]resizeRow, len(options))
+			for i, o := range options {
+				r := newSizeRow(o.CloudSize)
+				rows[i] = resizeRow{r.Slug, r.VCPU, r.Memory, r.Disk, r.Provider, r.GoShip, ""}
+				if o.Current {
+					rows[i].Current = "current"
+				}
+			}
+			return app.Renderer().Render(rows)
+		}),
+	}
+
+	var size string
+	resize := &cobra.Command{
+		Use:   "resize <node> --size <slug>",
+		Short: "Change a node's machine size (see `goship node sizes`)",
+		Args:  cobra.ExactArgs(1),
+	}
+	resize.Flags().StringVar(&size, "size", "", "machine size slug (required, see `goship node sizes`)")
+	_ = resize.MarkFlagRequired("size")
+	resize.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		id, err := deploy.ResolveNode(cmd.Context(), app.Portal(), t, args[0])
+		if err != nil {
+			return err
+		}
+		if err := confirm(cmd, app.Global.Yes, "Resize %s to %s? Every app on it is down for a few minutes.", args[0], size); err != nil {
+			return err
+		}
+		if _, err := app.Portal().ResizeNode(cmd.Context(), t.Org, t.Project, id, size); err != nil {
+			return err
+		}
+		return app.Renderer().Message("Node %s is resizing to %s. Follow it with `goship node info %s`.", args[0], size, args[0])
+	})
 
 	remove := &cobra.Command{
 		Use:     "rm <node>",
@@ -284,6 +359,6 @@ func newNodeCmd(app *App) *cobra.Command {
 		return app.Renderer().Message("Node %s disconnected.", args[0])
 	})
 
-	cmd.AddCommand(add, newNodeCreateCmd(app), list, info, remove)
+	cmd.AddCommand(add, newNodeCreateCmd(app), list, info, sizes, resize, remove)
 	return cmd
 }
