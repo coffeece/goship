@@ -5,6 +5,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/goship ./cmd/goship
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/goship-mcp ./cmd/goship-mcp
 
 install:
 	go install -trimpath -ldflags "$(LDFLAGS)" ./cmd/goship

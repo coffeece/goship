@@ -211,6 +211,34 @@ Tools are named after the commands (`goship_list_apps`, `goship_deploy`,
 destructive and ask the agent to confirm with you first; `login`,
 `cloud connect` and `shell` stay in the terminal.
 
+### Hosted MCP server (claude.ai connector)
+
+For clients that cannot run a local process, GoShip hosts the same tools at:
+
+```
+https://mcp.goship.sh/mcp
+```
+
+It speaks Streamable HTTP and signs you in with your GoShip account over
+OAuth, so there is no token to copy.
+
+- **claude.ai** (also Claude Desktop and mobile): Customize > Connectors > Add
+  custom connector, paste the URL, then sign in with GoShip when asked.
+- **Claude Code**: `claude mcp add --transport http goship https://mcp.goship.sh/mcp`,
+  then `/mcp` to sign in.
+
+With no machine to read config from, there is no selected organization or
+project: tools use the only one you have, or ask for `org` and `project`.
+Deploying a directory reads files on your machine, so `goship_deploy` only
+works with the local `goship mcp`; everything else works the same.
+
+The server is `cmd/goship-mcp`, deployed on GoShip itself
+(`tsuru app deploy -a goship-mcp .`; `Procfile` and `tsuru.yaml` are its).
+It holds no credential: it checks each request's token against
+`https://goship.sh/.well-known/jwks.json` and calls the API with it.
+`PORT`, `GOSHIP_API_URL`, `GOSHIP_MCP_URL` and `GOSHIP_ISSUER` override the
+production defaults.
+
 ## Configuration
 
 | | |

@@ -1,0 +1,7 @@
+# Tsuru deploys the hosted MCP server (cmd/goship-mcp) from this repo:
+#   tsuru app deploy -a goship-mcp .
+# The Go platform builds every command into /home/application/bin; the
+# Procfile runs the server.
+healthcheck:
+  path: /healthz
+  scheme: http
