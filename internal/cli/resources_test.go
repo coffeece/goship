@@ -176,8 +176,9 @@ func TestNodeResizeShowsReconnectMessage(t *testing.T) {
 		w.Write([]byte(`{"error":"` + msg + `","code":"reconnect_required"}`)) //nolint:errcheck
 	})
 	_, err := run(t, "", "--yes", "node", "resize", "n1", "--size", "x")
-	if err == nil || err.Error() != msg {
-		t.Errorf("error = %v, want %q", err, msg)
+	want := strings.TrimSuffix(msg, ".") + ". Reconnect it from the dashboard: "
+	if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.HasSuffix(err.Error(), "/orgs/acme/projects/clave/nodes/n1/resize") {
+		t.Errorf("error = %v, want prefix %q", err, want)
 	}
 }
 

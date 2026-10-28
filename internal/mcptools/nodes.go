@@ -79,7 +79,7 @@ func (r *registry) nodes() {
 				return Message{}, err
 			}
 			if _, err := c.ResizeNode(ctx, t.Org, t.Project, id, in.Size); err != nil {
-				return Message{}, err
+				return Message{}, deploy.ResizeReconnectHint(c.DashboardURL(), t.Org, t.Project, id, err)
 			}
 			return msgf("Node %s is resizing to %s. goship_get_node shows its stage.", in.Node, in.Size)
 		})

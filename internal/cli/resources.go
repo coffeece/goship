@@ -323,7 +323,7 @@ func newNodeCmd(app *App) *cobra.Command {
 			return err
 		}
 		if _, err := app.Portal().ResizeNode(cmd.Context(), t.Org, t.Project, id, size); err != nil {
-			return err
+			return deploy.ResizeReconnectHint(app.Portal().DashboardURL(), t.Org, t.Project, id, err)
 		}
 		return app.Renderer().Message("Node %s is resizing to %s. Follow it with `goship node info %s`.", args[0], size, args[0])
 	})
