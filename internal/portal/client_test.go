@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -118,5 +119,29 @@ func TestAvailablePlansAsksForTheNodesPool(t *testing.T) {
 	// For a node the platform's order is the contract; sort_order is ignored.
 	if plans[0].Slug != "b" || !plans[0].Default {
 		t.Errorf("got %+v", plans)
+	}
+}
+
+func TestDecodeErrorKeepsCode(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"m","code":"reconnect_required"}`)) //nolint:errcheck
+	})
+	_, err := c.Orgs(context.Background())
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.Code != "reconnect_required" || apiErr.Message != "m" {
+		t.Fatalf("err = %#v", err)
+	}
+}
+
+func TestDashboardURL(t *testing.T) {
+	for base, want := range map[string]string{
+		"https://api.goship.sh":  "https://goship.sh",
+		"https://api.goship.sh/": "https://goship.sh",
+		"http://localhost:8888":  "http://localhost:8888",
+	} {
+		if got := New(base, "t").DashboardURL(); got != want {
+			t.Errorf("DashboardURL(%q) = %q, want %q", base, got, want)
+		}
 	}
 }

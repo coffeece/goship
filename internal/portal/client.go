@@ -41,10 +41,22 @@ func New(base, token string, opts ...Option) *Client {
 	return c
 }
 
+// DashboardURL is the web dashboard's address: the API base without its
+// leading "api." host label.
+func (c *Client) DashboardURL() string {
+	u, err := url.Parse(c.base)
+	if err != nil || !strings.HasPrefix(u.Host, "api.") {
+		return c.base
+	}
+	u.Host = strings.TrimPrefix(u.Host, "api.")
+	return strings.TrimRight(u.String(), "/")
+}
+
 // Error is a non-2xx response from the API.
 type Error struct {
 	Status  int
 	Message string
+	Code    string
 }
 
 func (e *Error) Error() string {
@@ -148,6 +160,7 @@ func (c *Client) decorate(req *http.Request) {
 func decodeError(resp *http.Response) error {
 	var payload struct {
 		Error string `json:"error"`
+		Code  string `json:"code"`
 	}
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	_ = json.Unmarshal(data, &payload)
@@ -155,7 +168,7 @@ func decodeError(resp *http.Response) error {
 	if payload.Error == "" && len(data) > 0 && len(data) < 200 {
 		payload.Error = strings.TrimSpace(string(data))
 	}
-	return &Error{Status: resp.StatusCode, Message: payload.Error}
+	return &Error{Status: resp.StatusCode, Message: payload.Error, Code: payload.Code}
 }
 
 func esc(s string) string { return url.PathEscape(s) }
