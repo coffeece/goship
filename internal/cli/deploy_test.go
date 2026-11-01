@@ -1044,3 +1044,28 @@ func TestDeployRefusesWhenTheDefaultCannotBeRead(t *testing.T) {
 	}
 }
 
+// Deploying another directory reads that directory's goship.yaml only: the
+// working directory's file names its own org, project and environment.
+func TestDeployReadsOnlyTheDeployDirectorysFile(t *testing.T) {
+	var touched []string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		touched = append(touched, r.Method+" "+r.URL.Path)
+		switch {
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/environments/production/apps/quake":
+			w.Write([]byte(`{"name":"quake","platform":"go"}`)) //nolint:errcheck
+		case strings.HasSuffix(r.URL.Path, "/deploys"):
+			io.Copy(io.Discard, r.Body)                           //nolint:errcheck
+			w.Write([]byte(`{"type":"result","ok":true}` + "\n")) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	here := t.TempDir()
+	write(t, filepath.Join(here, "goship.yaml"), "app: other\nproject: mova\nenvironment: staging\n")
+	t.Chdir(here)
+
+	run(t, "", "deploy", quakeDir(t)) //nolint:errcheck
+	if !slices.Contains(touched, "POST /api/v1/orgs/acme/projects/clave/environments/production/apps/quake/deploys") {
+		t.Errorf("touched %q, want acme/clave/production", touched)
+	}
+}

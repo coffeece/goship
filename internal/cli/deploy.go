@@ -54,12 +54,12 @@ func newDeployCmd(app *App) *cobra.Command {
 			if proj.Org != "" {
 				app.Global.Org = firstNonEmpty(app.Global.Org, proj.Org)
 			}
-			// The directory's file speaks for itself, so selectedProject can
-			// tell whether its project belongs to the org that was resolved,
-			// and the environment whether it belongs to that project.
-			if proj.Org != "" || proj.ProjectSlug != "" || proj.Environment != "" {
-				app.ProjectOrg, app.ProjectProject, app.ProjectEnvironment = proj.Org, proj.ProjectSlug, proj.Environment
-			}
+			// The deploy directory's file speaks for itself, even when it says
+			// nothing: the working directory's file is about another project.
+			// selectedProject can then tell whether its project belongs to
+			// the org that was resolved, and the environment whether it
+			// belongs to that project.
+			app.ProjectOrg, app.ProjectProject, app.ProjectEnvironment = proj.Org, proj.ProjectSlug, proj.Environment
 			target, targetErr := app.TargetToChange(cmd.Context())
 			if targetErr != nil && !errors.Is(targetErr, errNoOrg) && !errors.Is(targetErr, errNoProject) {
 				return targetErr
