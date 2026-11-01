@@ -94,7 +94,8 @@ func (c *Client) ScaleApp(ctx context.Context, org, project, env, name string, u
 
 func (c *Client) SetAppPlan(ctx context.Context, org, project, env, name, plan string) (Change, error) {
 	var out Change
-	return out, c.put(ctx, appPath(org, project, env, name)+"/plan", map[string]string{"plan": plan}, &out)
+	err := c.put(ctx, appPath(org, project, env, name)+"/plan", map[string]string{"plan": plan}, &out)
+	return out, madeChange(err)
 }
 
 type EnvVar struct {

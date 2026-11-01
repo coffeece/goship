@@ -125,3 +125,47 @@ func TestOrgTrialOfTheOwnerAndOfAMember(t *testing.T) {
 		t.Errorf("org with no trial has %+v", orgs[2].Trial)
 	}
 }
+
+// A change that was made stays a success when the answer has no body; reads
+// still fail on one.
+func TestAppPlanWithAnEmptyAnswerIsDone(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	got, err := c.SetAppPlan(context.Background(), "acme", "atlas", "staging", "api", "app-small")
+	if err != nil || got.BillingStartsAt != nil {
+		t.Errorf("change = %+v, err = %v; want a success with no billing_starts_at", got, err)
+	}
+	if _, err := c.App(context.Background(), "acme", "atlas", "staging", "api"); err == nil {
+		t.Error("a GET with an empty body succeeded")
+	}
+}
+
+func TestCreateDatabaseWithAnEmptyAnswerIsDone(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	got, err := c.CreateDatabase(context.Background(), "acme", "atlas", "staging", "shop", "db-micro", "", "", nil)
+	if err != nil || got.BillingStartsAt != nil {
+		t.Errorf("change = %+v, err = %v; want a success with no billing_starts_at", got, err)
+	}
+}
+
+// A connection that dies before any answer says nothing about whether the
+// change was made: that EOF is still an error.
+func TestAChangeWhoseConnectionDiesIsAnError(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close() //nolint:errcheck
+	})
+	if _, err := c.SetAppPlan(context.Background(), "acme", "atlas", "staging", "api", "app-small"); err == nil {
+		t.Error("SetAppPlan succeeded on a dropped connection")
+	}
+	if _, err := c.CreateDatabase(context.Background(), "acme", "atlas", "staging", "shop", "db-micro", "", "", nil); err == nil {
+		t.Error("CreateDatabase succeeded on a dropped connection")
+	}
+}

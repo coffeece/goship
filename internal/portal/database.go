@@ -164,7 +164,8 @@ func (c *Client) CreateDatabase(ctx context.Context, org, project, env, name, pl
 		body["size_limit_mb"] = *sizeLimitMB
 	}
 	var out Change
-	return out, c.post(ctx, instancesPath(org, project, env), body, &out)
+	err := c.post(ctx, instancesPath(org, project, env), body, &out)
+	return out, madeChange(err)
 }
 
 // SetDatabaseSizeLimit sets the size limit of a database on your own server;
