@@ -203,8 +203,8 @@ app: %s
 %s
 
 # Environment to deploy to ("goship environments" lists them). Left out, goship
-# uses the one "goship environment use" selected, else the organization's
-# default. Set here, it beats both.
+# uses GOSHIP_ENVIRONMENT, else the one "goship environment use" selected, else
+# the organization's default. Set here, it beats all of them.
 %s
 
 %s

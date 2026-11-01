@@ -37,7 +37,7 @@ func newEnvironmentCmd(app *App) *cobra.Command {
 		Long: "Every project exists in each environment of its organization. Commands act\n" +
 			"in the environment chosen by --environment, the environment: of goship.yaml,\n" +
 			"GOSHIP_ENVIRONMENT or `goship environment use`, in that order, else in the\n" +
-			"organization's default (production).",
+			"organization's default (production unless changed).",
 	}
 
 	use := &cobra.Command{

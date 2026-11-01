@@ -157,6 +157,7 @@ func newMovedNodeCmds() []*cobra.Command {
 	moved := func(use string) *cobra.Command {
 		return &cobra.Command{
 			Use:                use,
+			Short:              "moved: use goship cluster …",
 			Hidden:             true,
 			DisableFlagParsing: true,
 			Args:               cobra.ArbitraryArgs,
