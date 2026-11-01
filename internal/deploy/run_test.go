@@ -166,8 +166,23 @@ func TestRunNamesTheEnvironmentOfAnAppElsewhere(t *testing.T) {
 	_, err := Run(context.Background(), portal.New(srv.URL, "t"), Options{
 		Dir: dir, App: "web", Org: "acme", Project: "clave", Environment: "staging",
 	}, &heard{})
-	if err == nil || !strings.Contains(err.Error(), "acme/mova/production") || !strings.Contains(err.Error(), "--environment production") {
+	if err == nil || !strings.Contains(err.Error(), "acme/mova/production") || !strings.Contains(err.Error(), "--environment production") ||
+		!strings.Contains(err.Error(), "`goship environment use production`") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Selecting the place an app was found takes the environment too: org and
+// project alone would send the next command to the organization's default.
+func TestElsewhereErrorSaysHowToSelectTheEnvironment(t *testing.T) {
+	current := Target{Org: "acme", Project: "clave", Environment: "production"}
+	one := ElsewhereError("web", current, []Target{{Org: "acme", Project: "mova", Environment: "staging"}}, false)
+	if !strings.Contains(one.Error(), "`goship org use acme`, `goship project use mova` and `goship environment use staging`") {
+		t.Errorf("one place: %v", one)
+	}
+	several := ElsewhereError("web", current, []Target{{Org: "acme", Project: "mova", Environment: "staging"}, {Org: "acme", Project: "mova", Environment: "production"}}, false)
+	if !strings.Contains(several.Error(), "`goship org use <slug>`, `goship project use <slug>` and `goship environment use <slug>`") {
+		t.Errorf("several places: %v", several)
 	}
 }
 
