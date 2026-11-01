@@ -213,7 +213,7 @@ func TestEnvironmentsSurviveASaveAndLoad(t *testing.T) {
 func TestForgetEnvironmentDropsOnlyThatOrgsSelections(t *testing.T) {
 	c := &Config{Environments: map[string]string{
 		"acme/clave":    "staging",
-		"acme/mova":     "staging",
+		"acme/labs":     "staging",
 		"acme/web":      "development",
 		"acme-labs/web": "staging",
 		"globex/clave":  "staging",
