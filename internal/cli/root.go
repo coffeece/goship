@@ -316,6 +316,19 @@ func targetRunE(app *App, fn func(cmd *cobra.Command, t Target, args []string) e
 	}
 }
 
+// readTargetRunE is targetRunE for a command that only reads: an environment
+// guessed because the organization's default could not be read is noted and
+// used (Target), not refused.
+func readTargetRunE(app *App, fn func(cmd *cobra.Command, t Target, args []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		t, err := app.Target(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return app.explainProject(cmd.Context(), t, fn(cmd, t, args))
+	}
+}
+
 func (a *App) Portal() *portal.Client {
 	return a.portalWithToken(a.Config.Credential())
 }
@@ -386,13 +399,16 @@ func NewRoot(version string) *cobra.Command {
 		newDomainCmd(app),
 		newVolumesCmd(app),
 		newVolumeCmd(app),
-		newNodesCmd(app),
-		newNodeCmd(app),
+		newEnvironmentsCmd(app),
+		newEnvironmentCmd(app),
+		newClustersCmd(app),
+		newClusterCmd(app),
 		newPlansCmd(app),
 		newCloudCmd(app),
 		newMCPCmd(app),
 	)
 	root.AddCommand(newStreamCmds(app)...)
+	root.AddCommand(newMovedNodeCmds()...)
 
 	return root
 }

@@ -29,7 +29,7 @@ func TestAppsListsUnderTheCurrentOrg(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/acme/projects/clave/apps" {
+	if gotPath != "/api/v1/orgs/acme/projects/clave/environments/production/apps" {
 		t.Errorf("path = %q", gotPath)
 	}
 	if !strings.Contains(out, "api") || !strings.Contains(out, "Small") {
@@ -47,7 +47,7 @@ func TestOrgFlagOverridesTheStoredOrg(t *testing.T) {
 	if _, err := run(t, "", "apps", "--org", "other"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/other/projects/clave/apps" {
+	if gotPath != "/api/v1/orgs/other/projects/clave/environments/production/apps" {
 		t.Errorf("path = %q", gotPath)
 	}
 }
@@ -112,7 +112,7 @@ func TestLifecycleCommandsHitTheirEndpoint(t *testing.T) {
 			if _, err := run(t, "", "app", action, "api"); err != nil {
 				t.Fatal(err)
 			}
-			if want := "/api/v1/orgs/acme/projects/clave/apps/api/" + action; gotPath != want {
+			if want := "/api/v1/orgs/acme/projects/clave/environments/production/apps/api/" + action; gotPath != want {
 				t.Errorf("path = %q, want %q", gotPath, want)
 			}
 			if gotMethod != http.MethodPost {
@@ -190,14 +190,14 @@ func TestProjectFileOrgBeatsTheSelectedOrg(t *testing.T) {
 	if _, err := run(t, "", "apps"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/from-project/projects/clave/apps" {
+	if gotPath != "/api/v1/orgs/from-project/projects/clave/environments/production/apps" {
 		t.Errorf("path = %q, want the project's org", gotPath)
 	}
 
 	if _, err := run(t, "", "apps", "--org", "explicit"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/explicit/projects/clave/apps" {
+	if gotPath != "/api/v1/orgs/explicit/projects/clave/environments/production/apps" {
 		t.Errorf("path = %q, want --org to win", gotPath)
 	}
 }
@@ -212,9 +212,9 @@ func TestAppsAllSpansEveryProject(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/projects/default/apps":
+		case "/api/v1/orgs/games/projects/default/environments/production/apps":
 			w.Write([]byte(`[{"name":"arcade","status":"stopped","plan_name":"Medium"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/projects/default/apps":
+		case "/api/v1/orgs/globex/projects/default/environments/production/apps":
 			w.Write([]byte(`[{"name":"globex-api","status":"running","plan_name":"Small"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -244,7 +244,7 @@ func TestAppsAllJSONKeysByOrgAndProject(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"games"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/projects/default/apps":
+		case "/api/v1/orgs/games/projects/default/environments/production/apps":
 			w.Write([]byte(`[{"name":"arcade"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -274,9 +274,9 @@ func TestAppsWithNoOrgListsEverything(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/projects/default/apps":
+		case "/api/v1/orgs/games/projects/default/environments/production/apps":
 			w.Write([]byte(`[{"name":"arcade"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/projects/default/apps":
+		case "/api/v1/orgs/globex/projects/default/environments/production/apps":
 			w.Write([]byte(`[{"name":"globex-api"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)

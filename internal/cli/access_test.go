@@ -37,7 +37,7 @@ func TestAppVisibilityPutsTheValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if method != http.MethodPut || path != "/api/v1/orgs/acme/projects/clave/apps/api/visibility" || body["visibility"] != "private" {
+	if method != http.MethodPut || path != "/api/v1/orgs/acme/projects/clave/environments/production/apps/api/visibility" || body["visibility"] != "private" {
 		t.Errorf("got %s %s %v", method, path, body)
 	}
 	if !strings.Contains(out, "App api is now private.") || !strings.Contains(out, "first deploy") {

@@ -53,10 +53,11 @@ func newInitCmd(app *App) *cobra.Command {
 
 			// The selected org is local state, so init needs no network for it.
 			org := app.Config.SelectedOrg()
-			project, projectNote := initProject(cmd.Context(), app, org)
+			project, actual, projectNote := initProject(cmd.Context(), app, org)
+			environment := initEnvironment(cmd.Context(), app, Target{Org: org, Project: actual})
 
 			path := filepath.Join(dir, initFile)
-			if err := os.WriteFile(path, []byte(renderProject(name, org, project, platform, dockerfile)), 0o644); err != nil { //nolint:gosec // G306: a project file, meant to be committed
+			if err := os.WriteFile(path, []byte(renderProject(name, org, project, environment, platform, dockerfile)), 0o644); err != nil { //nolint:gosec // G306: a project file, meant to be committed
 				return err
 			}
 
@@ -83,6 +84,11 @@ func newInitCmd(app *App) *cobra.Command {
 					return err
 				}
 			}
+			if environment != "" {
+				if err := r.Message("  environment: %s (the one you have selected)", environment); err != nil {
+					return err
+				}
+			}
 			switch {
 			case platform != "":
 				return r.Message("  platform: %s (detected from %s)", platform, evidence)
@@ -103,28 +109,46 @@ func newInitCmd(app *App) *cobra.Command {
 // only one, in which case there is nothing to choose. The count needs the
 // network, so a machine that is signed out pins what it has selected and asks
 // nothing. Once the list is known, a selection that is not in it (a stale
-// config, a typo in GOSHIP_PROJECT) is not pinned. note says why the project
-// was left empty.
-func initProject(ctx context.Context, app *App, org string) (project, note string) {
+// config, a typo in GOSHIP_PROJECT) is not pinned. actual is the project the
+// directory deploys to, pinned or not; note says why the project was left
+// empty.
+func initProject(ctx context.Context, app *App, org string) (project, actual, note string) {
 	if org == "" {
-		return "", ""
+		return "", "", ""
 	}
 	project = app.selectedProject(org)
 	if app.Config.Credential() == "" {
-		return project, ""
+		return project, project, ""
 	}
 	projects, err := app.Portal().Projects(ctx, org)
 	switch {
 	case err != nil:
-		return project, ""
+		return project, project, ""
 	case len(projects) == 0:
-		return "", "left empty — you cannot reach any project in " + org
+		return "", "", "left empty — you cannot reach any project in " + org
 	case len(projects) == 1:
-		return "", ""
+		return "", projects[0].Slug, ""
 	case slices.ContainsFunc(projects, func(p portal.Project) bool { return p.Slug == project }):
-		return project, ""
+		return project, project, ""
 	}
-	return "", "left empty — " + org + " has several projects, pick one with `goship project use`"
+	return "", "", "left empty — " + org + " has several projects, pick one with `goship project use`"
+}
+
+// initEnvironment is the environment to pin for t: the one selected, unless
+// it is the organization's default, which every deploy lands in anyway.
+// Signed out, or with the default unreadable, what is selected is pinned.
+func initEnvironment(ctx context.Context, app *App, t Target) string {
+	if t.Org == "" {
+		return ""
+	}
+	env := app.environmentChoice().Chosen(t)
+	if env == "" || app.Config.Credential() == "" {
+		return env
+	}
+	if def, err := deploy.ResolveEnvironment(ctx, t, deploy.EnvironmentChoice{}, app.orgList); err == nil && def == env {
+		return ""
+	}
+	return env
 }
 
 func existingConfig(dir string) (string, error) {
@@ -154,9 +178,13 @@ func appNameFor(dir string) string {
 	return strings.Trim(name, "-")
 }
 
-func renderProject(name, org, project, platform, dockerfile string) string {
+func renderProject(name, org, project, environment, platform, dockerfile string) string {
 	orgLine := strings.TrimRight("org: "+org, " ")
 	projectLine := strings.TrimRight("project: "+project, " ")
+	environmentLine := "# environment: staging"
+	if environment != "" {
+		environmentLine = "environment: " + environment
+	}
 	build := strings.TrimRight("platform: "+platform, " ")
 	if platform == "" && dockerfile != "" {
 		build = "# No platform: the container file below builds the image.\nplatform:\ndockerfile: " + dockerfile
@@ -174,16 +202,17 @@ app: %s
 # whatever "goship project use" last selected.
 %s
 
+# Environment to deploy to ("goship environments" lists them). Left out, goship
+# uses the one "goship environment use" selected, else the organization's
+# default. Set here, it beats both.
+%s
+
 %s
 
 # Plan for the app the first time it is created. Run "goship plans" to see what
 # your organization can choose. Left empty, goship picks a free plan if you have
 # one and asks otherwise.
 plan:
-
-# Place the app on one of your own machines, by name ("goship nodes").
-# A node-placed app is never billed and needs no plan.
-node:
 
 # Environment variables applied on every deploy. Secrets do not belong in a file
 # you commit — pass those with --env-file instead.
@@ -206,5 +235,5 @@ env:
 # processes:
 #   - name: web
 #     command: ./server
-`, name, orgLine, projectLine, build)
+`, name, orgLine, projectLine, environmentLine, build)
 }

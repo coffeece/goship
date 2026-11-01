@@ -61,7 +61,7 @@ func newLogsCmd(app *App) *cobra.Command {
 		defer stop()
 
 		out := cmd.OutOrStdout()
-		err := app.Portal().Logs(ctx, t.Org, t.Project, appName, opts, func(l portal.LogEntry) error {
+		err := app.Portal().Logs(ctx, t.Org, t.Project, t.Environment, appName, opts, func(l portal.LogEntry) error {
 			prefix := fmt.Sprintf("[%s][%s]", l.Source, l.Unit)
 			if !noDate {
 				prefix = l.Date.Local().Format("2006-01-02 15:04:05") + " " + prefix
@@ -104,7 +104,7 @@ func newRunCmd(app *App) *cobra.Command {
 		}
 		ctx, stop := interruptible(cmd.Context())
 		defer stop()
-		err := app.Portal().Run(ctx, t.Org, t.Project, appName, shellJoin(args), once, isolated, cmd.OutOrStdout())
+		err := app.Portal().Run(ctx, t.Org, t.Project, t.Environment, appName, shellJoin(args), once, isolated, cmd.OutOrStdout())
 		return explainStreamError(err, "command", false)
 	})
 	return cmd
@@ -146,7 +146,7 @@ func newReleasesCmd(app *App) *cobra.Command {
 	_ = cmd.MarkFlagRequired("app")
 
 	cmd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
-		deploys, err := app.Portal().Deploys(cmd.Context(), t.Org, t.Project, appName, limit)
+		deploys, err := app.Portal().Deploys(cmd.Context(), t.Org, t.Project, t.Environment, appName, limit)
 		if err != nil {
 			return err
 		}
@@ -177,7 +177,7 @@ func newRollbackCmd(app *App) *cobra.Command {
 		}
 		p := newProgress(cmd.OutOrStdout(), app.Global.Verbose)
 		p.Header("Rolling back %s to %s", appName, version)
-		err := app.Portal().Rollback(cmd.Context(), t.Org, t.Project, appName, version, p.Event)
+		err := app.Portal().Rollback(cmd.Context(), t.Org, t.Project, t.Environment, appName, version, p.Event)
 		p.Finish(err)
 		ran := isOperationError(err)
 		err = explainStreamError(err, "rollback of "+appName, true)
@@ -245,7 +245,7 @@ func newShellCmd(app *App) *cobra.Command {
 			opts.Width, opts.Height, _ = term.GetSize(int(in.Fd()))
 		}
 
-		conn, err := app.Portal().Shell(cmd.Context(), t.Org, t.Project, appName, opts)
+		conn, err := app.Portal().Shell(cmd.Context(), t.Org, t.Project, t.Environment, appName, opts)
 		if err != nil {
 			return err
 		}

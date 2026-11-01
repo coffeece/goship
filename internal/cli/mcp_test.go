@@ -43,7 +43,7 @@ func TestMCPServesToolsOverStdio(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("tool error: %v", res.Content)
 	}
-	if gotAuth != "Bearer tok" || gotPath != "/api/v1/orgs/acme/projects/clave/apps" {
+	if gotAuth != "Bearer tok" || gotPath != "/api/v1/orgs/acme/projects/clave/environments/production/apps" {
 		t.Errorf("API got %q %s", gotAuth, gotPath)
 	}
 	raw, _ := json.Marshal(res.StructuredContent)

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
@@ -8,57 +10,47 @@ import (
 )
 
 func newPlansCmd(app *App) *cobra.Command {
-	var kind, node string
+	var kind string
 
 	cmd := &cobra.Command{
 		Use:   "plans",
-		Short: "List the plans the current project can choose, per placement",
-		Long: "Plans on GoShip's shared cluster carry a price. On a node you own they\n" +
-			"are sizes: nothing there is billed, and the node's pool decides which are\n" +
-			"available and which applies by default.",
+		Short: "List the plans the current environment can choose",
+		Long: "The plans come from the cluster the environment runs on. On GoShip's shared\n" +
+			"cluster they carry a price. On a cluster of your own they are sizes: nothing\n" +
+			"there is billed, and the cluster decides which are available and which\n" +
+			"applies by default.",
 		Args: cobra.NoArgs,
-		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
-			ctx, client, r := cmd.Context(), app.Portal(), app.Renderer()
-
-			if node != "" {
-				id, err := deploy.ResolveNode(ctx, client, t, node)
-				if err != nil {
-					return err
-				}
-				plans, err := client.AvailablePlans(ctx, t.Org, t.Project, kind, id)
-				if err != nil {
-					return err
-				}
-				return r.Render(app.planView(plans))
-			}
-
-			shared, err := client.AvailablePlans(ctx, t.Org, t.Project, kind, "")
+		RunE: readTargetRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
+			k, err := planKind(kind)
 			if err != nil {
 				return err
 			}
-			nodes, err := client.Nodes(ctx, t.Org, t.Project)
+			plans, err := app.Portal().AvailablePlans(cmd.Context(), t.Org, t.Project, t.Environment, k)
 			if err != nil {
 				return err
 			}
-			sections := []section[portal.Plan]{{key: "shared", title: "GoShip (shared)", items: shared}}
-			for _, n := range nodes {
-				plans, err := client.AvailablePlans(ctx, t.Org, t.Project, kind, n.ID)
-				if err != nil {
-					return err
-				}
-				sections = append(sections, section[portal.Plan]{key: n.Name, title: n.Name + " (your hardware — not billed)", items: plans})
-			}
-			return renderSections(app, sections, app.planView)
+			return app.Renderer().Render(app.planView(plans))
 		}),
 	}
-	cmd.Flags().StringVar(&kind, "kind", "app", `plan kind: "app", "db", or "" for all`)
-	cmd.Flags().StringVar(&node, "node", "", "show only what this node's pool admits (name or id)")
+	cmd.Flags().StringVar(&kind, "kind", "app", `plan kind: "app" or "database"`)
 
 	return cmd
 }
 
+// planKind is the portal's name for a --kind; "db" is what it was called
+// before.
+func planKind(kind string) (string, error) {
+	switch kind {
+	case "app", "database":
+		return kind, nil
+	case "db":
+		return "database", nil
+	}
+	return "", fmt.Errorf(`unknown --kind %q: use "app" or "database"`, kind)
+}
+
 // planRow is a plan as the table shows it: priced, and marked when it is what
-// the placement applies by default.
+// the cluster applies by default.
 type planRow struct {
 	Slug   string `table:"SLUG"`
 	Name   string `table:"NAME"`

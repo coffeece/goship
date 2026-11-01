@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime/debug"
@@ -18,6 +19,11 @@ func main() {
 	root.SetArgs(cli.Rewrite(os.Args[1:]))
 
 	if err := root.Execute(); err != nil {
+		// The command already said why; only its status is left.
+		var code cli.ExitCode
+		if errors.As(err, &code) {
+			os.Exit(int(code))
+		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		if portal.IsUnauthorized(err) {
 			fmt.Fprintln(os.Stderr, "Your session has expired or is not valid. Run `goship login`.")

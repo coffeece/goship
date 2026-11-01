@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
 )
 
-// newOrgListCmd is the plural lister for an org-scoped noun (`domains`). It
-// lists the current org; --all spans every org you belong to, grouped under
-// each slug — as does having no org selected, since demanding `org use`
-// first for a read is friction.
-func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string) ([]T, error)) *cobra.Command {
+// newOrgListCmd is the plural lister for an org-scoped noun (`domains`,
+// `clusters`). It lists the current org; --all spans every org you belong to,
+// grouped under each slug — as does having no org selected, since demanding
+// `org use` first for a read is friction.
+func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string) ([]T, error), opts ...listOption) *cobra.Command {
+	skipForbidden := slices.Contains(opts, skipForbiddenPlaces)
 	var all bool
 	cmd := &cobra.Command{
 		Use:   use,
@@ -32,13 +34,17 @@ func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client
 					return app.Renderer().Render(items)
 				}
 			}
-			orgs, err := client.Orgs(ctx)
+			orgs, err := app.orgList(ctx)
 			if err != nil {
 				return err
 			}
 			sections := make([]section[T], 0, len(orgs))
 			for _, o := range orgs {
 				items, err := fetch(client, ctx, o.Slug)
+				if skipForbidden && portal.IsForbidden(err) {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s: your role there cannot see this.\n", o.Slug)
+					continue
+				}
 				if err != nil {
 					return err
 				}
@@ -52,12 +58,12 @@ func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client
 }
 
 // newTargetListCmd is the plural lister every project-scoped noun shares:
-// `apps`, `dbs`, `volumes`, `nodes`. The listing shows the current project;
-// --all spans every project you can reach in every org, grouped under
-// org/project — as does having no project selected and several to choose
-// from, since demanding `project use` first for a read is friction.
-func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string, string) ([]T, error), opts ...listOption) *cobra.Command {
-	skipForbidden := slices.Contains(opts, skipForbiddenProjects)
+// `apps`, `dbs`, `volumes`. The listing shows the current project's
+// environment; --all spans every project you can reach in every org, each in
+// its own environment, grouped under org/project — as does having no project
+// selected and several to choose from, since demanding `project use` first
+// for a read is friction.
+func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string, string, string) ([]T, error)) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
 		Use:   use,
@@ -72,7 +78,7 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 				t, err := app.Target(ctx)
 				switch {
 				case err == nil:
-					items, err := fetch(client, ctx, t.Org, t.Project)
+					items, err := fetch(client, ctx, t.Org, t.Project, t.Environment)
 					if err != nil {
 						return app.explainProject(ctx, t, err)
 					}
@@ -89,7 +95,7 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 			if org != "" {
 				orgs = []string{org}
 			} else {
-				list, err := client.Orgs(ctx)
+				list, err := app.orgList(ctx)
 				if err != nil {
 					return err
 				}
@@ -107,11 +113,7 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 					if only != "" && p.Slug != only {
 						continue
 					}
-					items, err := fetch(client, ctx, o, p.Slug)
-					if skipForbidden && portal.IsForbidden(err) {
-						fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s/%s: your role there cannot see this.\n", o, p.Slug)
-						continue
-					}
+					items, err := fetch(client, ctx, o, p.Slug, app.listEnvironment(ctx, Target{Org: o, Project: p.Slug}))
 					if err != nil {
 						return err
 					}
@@ -126,15 +128,26 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 	return cmd
 }
 
-// listOption tunes newTargetListCmd for a noun that needs it.
+// listEnvironment is the environment an --all listing shows t in: the one
+// chosen for it, else its organization's default. A default that cannot be
+// read is noted and production is listed.
+func (a *App) listEnvironment(ctx context.Context, t Target) string {
+	env, err := deploy.ResolveEnvironment(ctx, t, a.environmentChoice(), a.orgList)
+	if err != nil {
+		a.noteGuess(err)
+	}
+	return env
+}
+
+// listOption tunes newOrgListCmd for a noun that needs it.
 type listOption int
 
-// skipForbiddenProjects leaves a project that answers 403 out of an --all
+// skipForbiddenPlaces leaves an organization that answers 403 out of an --all
 // listing, with a note on stderr, instead of failing the whole listing on it.
-const skipForbiddenProjects listOption = iota + 1
+const skipForbiddenPlaces listOption = iota + 1
 
-// section is one group of a listing that spans several places: an org, a
-// project, or a placement. key names it in JSON, title above its table.
+// section is one group of a listing that spans several places: an org or a
+// project. key names it in JSON, title above its table.
 type section[T any] struct {
 	key, title string
 	items      []T

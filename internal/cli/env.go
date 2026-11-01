@@ -26,7 +26,7 @@ func newEnvCmd(app *App) *cobra.Command {
 			Short: "List environment variables",
 			Args:  cobra.NoArgs,
 			RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-				envs, err := app.Portal().Env(cmd.Context(), t.Org, t.Project, appName)
+				envs, err := app.Portal().Env(cmd.Context(), t.Org, t.Project, t.Environment, appName)
 				if err != nil {
 					return err
 				}
@@ -46,7 +46,7 @@ func newEnvCmd(app *App) *cobra.Command {
 					}
 					envs = append(envs, portal.EnvVar{Name: key, Value: value})
 				}
-				if err := app.Portal().SetEnv(cmd.Context(), t.Org, t.Project, appName, envs, noRestart); err != nil {
+				if err := app.Portal().SetEnv(cmd.Context(), t.Org, t.Project, t.Environment, appName, envs, noRestart); err != nil {
 					return err
 				}
 				return app.Renderer().Message("Set %d variable(s) on %s.", len(envs), appName)
@@ -57,7 +57,7 @@ func newEnvCmd(app *App) *cobra.Command {
 			Short: "Remove environment variables",
 			Args:  cobra.MinimumNArgs(1),
 			RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-				if err := app.Portal().UnsetEnv(cmd.Context(), t.Org, t.Project, appName, args, noRestart); err != nil {
+				if err := app.Portal().UnsetEnv(cmd.Context(), t.Org, t.Project, t.Environment, appName, args, noRestart); err != nil {
 					return err
 				}
 				return app.Renderer().Message("Removed %d variable(s) from %s.", len(args), appName)
