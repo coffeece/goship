@@ -22,7 +22,7 @@ type resizeRow struct {
 
 // newClustersCmd is the plural lister, matching `apps`.
 func newClustersCmd(app *App) *cobra.Command {
-	return newOrgListCmd(app, "clusters", "List the clusters the current organization can use, its own and GoShip's shared ones, or --all of them", (*portal.Client).Clusters)
+	return newOrgListCmd(app, "clusters", "List the clusters the current organization can use, its own and GoShip's shared ones, or --all of them", (*portal.Client).Clusters, skipForbiddenPlaces)
 }
 
 func newClusterCmd(app *App) *cobra.Command {

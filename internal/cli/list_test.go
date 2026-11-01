@@ -156,6 +156,60 @@ func TestAppsAllHonoursAChosenEnvironment(t *testing.T) {
 	}
 }
 
+// A chosen environment need not exist in every organization an --all listing
+// spans: the stop where it does not is skipped and the rest is listed. One
+// that was listed and still answers 404 is a real failure.
+func TestAppsAllSkipsAChosenEnvironmentAnOrgLacks(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"acme"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"atlas"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/globex/projects":
+			w.Write([]byte(`[{"slug":"web"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/atlas/environments/qa/apps":
+			w.Write([]byte(`[{"name":"api"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/globex/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/environments":
+			w.Write([]byte(`[{"slug":"production"},{"slug":"qa"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/atlas/environments/production/apps":
+			w.Write([]byte(`[{"name":"web"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"not found"}`)) //nolint:errcheck
+		}
+	})
+	t.Setenv("GOSHIP_ORG", "")
+	t.Setenv("GOSHIP_PROJECT", "")
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+
+	for name, env := range map[string]func(t *testing.T) []string{
+		"flag":    func(*testing.T) []string { return []string{"--environment", "qa"} },
+		"env var": func(t *testing.T) []string { t.Setenv("GOSHIP_ENVIRONMENT", "qa"); return nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), append([]string{"apps", "--all"}, env(t)...)...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := sectionHeaders(out), []string{"acme/atlas/qa"}; !slices.Equal(got, want) {
+				t.Errorf("sections = %q, want %q\n%s", got, want, out)
+			}
+			if !strings.Contains(stderr, "Skipping globex/web/qa: no such environment.") {
+				t.Errorf("stderr = %q, want the skipped stop", stderr)
+			}
+		})
+	}
+
+	// Listed from the organization, the stop must exist: globex lists only
+	// production, whose apps answer 404 here.
+	if _, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), "apps", "--all"); err == nil {
+		t.Error("a listed environment that answers 404 should fail the listing")
+	}
+}
+
 func TestDBsAllSpansEveryProject(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
