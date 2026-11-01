@@ -298,3 +298,26 @@ func TestEnvironmentDescriptionTellsTheTruthPerServer(t *testing.T) {
 		}
 	}
 }
+
+// A destructive tool's result names the organization, project and
+// environment it deleted from, so a transcript says where it happened.
+func TestDeleteToolsNameTheirTarget(t *testing.T) {
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"goship_delete_app", map[string]any{"app": "api", "environment": "staging"}, "App api deleted from acme/clave/staging."},
+		{"goship_delete_database", map[string]any{"database": "main"}, "Database main deleted from acme/clave/production."},
+		{"goship_delete_volume", map[string]any{"volume": "uploads", "project": "globex", "environment": "qa"}, "Volume uploads deleted from acme/globex/qa."},
+	} {
+		res := call(t, cs, c.tool, c.args)
+		if res.IsError || !strings.Contains(text(res), c.want) {
+			t.Errorf("%s: isError=%v %q, want %q", c.tool, res.IsError, text(res), c.want)
+		}
+	}
+}

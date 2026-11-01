@@ -62,7 +62,7 @@ func (r *registry) apps() {
 			if err := c.DeleteApp(ctx, t.Org, t.Project, t.Environment, in.App); err != nil {
 				return Message{}, err
 			}
-			return msgf("App %s deleted.", in.App)
+			return msgf("App %s deleted from %s.", in.App, t)
 		})
 	for _, action := range []string{"start", "stop", "restart"} {
 		tool(r, "goship_"+action+"_app", fmt.Sprintf("%s an app's units.", capitalize(action)), write,

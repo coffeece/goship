@@ -63,6 +63,6 @@ func (r *registry) volumes() {
 			if err := c.DeleteVolume(ctx, t.Org, t.Project, t.Environment, in.Volume); err != nil {
 				return Message{}, err
 			}
-			return msgf("Volume %s deleted.", in.Volume)
+			return msgf("Volume %s deleted from %s.", in.Volume, t)
 		})
 }

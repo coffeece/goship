@@ -126,13 +126,13 @@ func appRemoveCmd(app *App) *cobra.Command {
 		Short:   "Delete an app and everything it runs",
 		Args:    cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if err := confirm(cmd, app.Global.Yes, "Delete app %q? This cannot be undone.", args[0]); err != nil {
+			if err := confirm(cmd, app.Global.Yes, "Delete app %q in %s? This cannot be undone.", args[0], t); err != nil {
 				return err
 			}
 			if err := app.Portal().DeleteApp(cmd.Context(), t.Org, t.Project, t.Environment, args[0]); err != nil {
 				return err
 			}
-			return app.Renderer().Message("App %s deleted.", args[0])
+			return app.Renderer().Message("App %s deleted from %s.", args[0], t)
 		}),
 	}
 }
