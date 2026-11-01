@@ -107,15 +107,23 @@ func ElsewhereError(name string, current Target, found []Target, forbidden bool)
 	}
 	if len(found) == 1 {
 		f := found[0]
-		return fmt.Errorf("%s, but %q exists in %s.\nDeploy that one with %s, or `goship org use %s` and `goship project use %s`",
-			problem, name, f, targetFlags(f), f.Org, f.Project)
+		return fmt.Errorf("%s, but %q exists in %s.\nDeploy that one with %s, or %s",
+			problem, name, f, targetFlags(f), useCommands(f))
 	}
 	names := make([]string, len(found))
 	for i, t := range found {
 		names[i] = t.String()
 	}
-	return fmt.Errorf("%s, but %q exists in: %s.\nPick one with --org, --project and --environment, or `goship org use <slug>` and `goship project use <slug>`",
-		problem, name, strings.Join(names, ", "))
+	return fmt.Errorf("%s, but %q exists in: %s.\nPick one with --org, --project and --environment, or %s",
+		problem, name, strings.Join(names, ", "), useCommands(Target{Org: "<slug>", Project: "<slug>", Environment: "<slug>"}))
+}
+
+// useCommands are the commands that select t for the commands that follow.
+func useCommands(t Target) string {
+	if t.Environment == "" {
+		return fmt.Sprintf("`goship org use %s` and `goship project use %s`", t.Org, t.Project)
+	}
+	return fmt.Sprintf("`goship org use %s`, `goship project use %s` and `goship environment use %s`", t.Org, t.Project, t.Environment)
 }
 
 // targetFlags are the flags that point a command at t.
