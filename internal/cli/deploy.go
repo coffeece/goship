@@ -60,7 +60,7 @@ func newDeployCmd(app *App) *cobra.Command {
 			if proj.Org != "" || proj.ProjectSlug != "" || proj.Environment != "" {
 				app.ProjectOrg, app.ProjectProject, app.ProjectEnvironment = proj.Org, proj.ProjectSlug, proj.Environment
 			}
-			target, targetErr := app.Target(cmd.Context())
+			target, targetErr := app.TargetToChange(cmd.Context())
 			if targetErr != nil && !errors.Is(targetErr, errNoOrg) && !errors.Is(targetErr, errNoProject) {
 				return targetErr
 			}

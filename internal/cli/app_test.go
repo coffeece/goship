@@ -15,6 +15,7 @@ func stubAPIWithOrg(t *testing.T, h http.HandlerFunc) {
 	stubAPI(t, h)
 	t.Setenv("GOSHIP_ORG", "acme")
 	t.Setenv("GOSHIP_PROJECT", "atlas")
+	t.Setenv("GOSHIP_ENVIRONMENT", "production")
 }
 
 func TestAppsListsUnderTheCurrentOrg(t *testing.T) {

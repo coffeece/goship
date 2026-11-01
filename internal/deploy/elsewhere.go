@@ -14,11 +14,16 @@ import (
 // otherwise in all their organizations (from orgs), that holds an app called
 // name in env, or in the organization's default environment when env is
 // empty. A project slug narrows the search to projects of that name: a
-// project someone asked for is never swapped for another.
+// project someone asked for is never swapped for another. A default that
+// cannot be read is an error, not a search of production: what is found
+// here is acted on.
 func FindApp(ctx context.Context, client *portal.Client, orgs OrgLister, org, project, env, name string) ([]Target, error) {
 	var places []portal.Org
 	if org != "" {
-		in := ResolveEnvironment(ctx, Target{Org: org}, EnvironmentChoice{Explicit: env}, orgs)
+		in, err := ResolveEnvironment(ctx, Target{Org: org}, EnvironmentChoice{Explicit: env}, orgs)
+		if err != nil {
+			return nil, UnknownDefaultError(org, err)
+		}
 		places = []portal.Org{{Slug: org, DefaultEnvironment: in}}
 	} else {
 		list, err := orgs(ctx)

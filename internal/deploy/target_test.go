@@ -53,8 +53,8 @@ func TestTargetEnvironmentResolution(t *testing.T) {
 				File:     tc.file,
 				Selected: func(t Target) string { return tc.config.SelectedEnvironment(t.Org, t.Project) },
 			}
-			if got := ResolveEnvironment(context.Background(), tc.target, choice, orgs.list); got != tc.want {
-				t.Errorf("ResolveEnvironment = %q, want %q", got, tc.want)
+			if got, err := ResolveEnvironment(context.Background(), tc.target, choice, orgs.list); got != tc.want || err != nil {
+				t.Errorf("ResolveEnvironment = %q, %v; want %q", got, err, tc.want)
 			}
 			// The org list is for the default only: a chosen environment
 			// costs no request.
@@ -65,20 +65,33 @@ func TestTargetEnvironmentResolution(t *testing.T) {
 	}
 }
 
-// Nothing chosen is never an error: an org list that cannot answer, or that
-// names no default, leaves the environment every organization starts with.
+// Nothing chosen falls back to the environment every organization starts
+// with. Only an org list that cannot answer says so, for a caller that must
+// not act on a guess; an org it does not carry, or carries without a
+// default, is answered by the call that follows.
 func TestResolveEnvironmentFallsBackToProduction(t *testing.T) {
 	acme := Target{Org: "acme", Project: "atlas"}
-	for name, orgs := range map[string]*orgList{
-		"/orgs fails":        {err: errors.New("boom")},
-		"org not listed":     {orgs: []portal.Org{{Slug: "other", DefaultEnvironment: "live"}}},
-		"org has no default": {orgs: []portal.Org{{Slug: "acme"}}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if got := ResolveEnvironment(context.Background(), acme, EnvironmentChoice{}, orgs.list); got != "production" {
-				t.Errorf("got %q", got)
+	boom := errors.New("boom")
+	cases := []struct {
+		name    string
+		orgs    *orgList
+		guessed error
+	}{
+		{"/orgs fails", &orgList{err: boom}, boom},
+		{"org not listed", &orgList{orgs: []portal.Org{{Slug: "other", DefaultEnvironment: "live"}}}, nil},
+		{"org has no default", &orgList{orgs: []portal.Org{{Slug: "acme"}}}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ResolveEnvironment(context.Background(), acme, EnvironmentChoice{}, tc.orgs.list)
+			if got != "production" || !errors.Is(err, tc.guessed) || (tc.guessed == nil) != (err == nil) {
+				t.Errorf("got %q, %v; want production, %v", got, err, tc.guessed)
 			}
 		})
+	}
+	// A chosen environment needs no list, so a failing one does not matter.
+	if got, err := ResolveEnvironment(context.Background(), acme, EnvironmentChoice{Explicit: "staging"}, (&orgList{err: boom}).list); got != "staging" || err != nil {
+		t.Errorf("chosen: %q, %v", got, err)
 	}
 }
 

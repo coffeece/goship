@@ -3,6 +3,7 @@ package deploy
 import (
 	"cmp"
 	"context"
+	"fmt"
 
 	"github.com/coffeece/goship/internal/portal"
 )
@@ -60,23 +61,32 @@ func (c EnvironmentChoice) Chosen(t Target) string {
 
 // ResolveEnvironment is the environment t acts on, t's org and project being
 // resolved: what c picks, else the organization's default from orgs (GET
-// /orgs), which is only asked when nothing picked one. It never fails: no
-// selection is not an error, and an org list that cannot answer leaves
-// FallbackEnvironment.
-func ResolveEnvironment(ctx context.Context, t Target, c EnvironmentChoice, orgs OrgLister) string {
+// /orgs), which is only asked when nothing picked one. No selection is not an
+// error, and nothing it returns stops a command that only reads. When the
+// org list cannot answer it returns FallbackEnvironment together with why: a
+// guess that a command which creates or changes something must refuse with
+// UnknownDefaultError. An org the list does not carry, or carries without a
+// default, is FallbackEnvironment too; the call that follows answers for it.
+func ResolveEnvironment(ctx context.Context, t Target, c EnvironmentChoice, orgs OrgLister) (string, error) {
 	if env := c.Chosen(t); env != "" {
-		return env
+		return env, nil
 	}
 	list, err := orgs(ctx)
 	if err != nil {
-		return FallbackEnvironment
+		return FallbackEnvironment, err
 	}
 	for _, o := range list {
 		if o.Slug == t.Org {
-			return defaultEnvironment(o)
+			return defaultEnvironment(o), nil
 		}
 	}
-	return FallbackEnvironment
+	return FallbackEnvironment, nil
+}
+
+// UnknownDefaultError refuses to act in an environment nobody chose when
+// org's default could not be read (err, from ResolveEnvironment).
+func UnknownDefaultError(org string, err error) error {
+	return fmt.Errorf("could not determine the default environment of %s: %w; pass --environment", org, err)
 }
 
 func defaultEnvironment(o portal.Org) string {

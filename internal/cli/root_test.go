@@ -103,6 +103,58 @@ func TestTargetPicksTheOnlyProject(t *testing.T) {
 	}
 }
 
+// orgsDown is a portal whose GET /orgs fails; everything else is a 404.
+func orgsDown(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/orgs" {
+			http.Error(w, `{"error":"down"}`, http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A command that only reads may go on in production when the default cannot
+// be read, but says so, once.
+func TestTargetNotesTheGuessOnce(t *testing.T) {
+	app := target(t, orgsDown(t))
+	app.Global.Org, app.Global.Project = "acme", "atlas"
+	var stderr strings.Builder
+	app.Err = &stderr
+	for range 2 {
+		tg, err := app.Target(context.Background())
+		if err != nil || tg != (Target{Org: "acme", Project: "atlas", Environment: "production"}) {
+			t.Fatalf("Target = %+v, %v", tg, err)
+		}
+	}
+	got := stderr.String()
+	if !strings.HasPrefix(got, "using production: could not read the organization's default environment (") || strings.Count(got, "\n") != 1 {
+		t.Errorf("stderr = %q, want the note once", got)
+	}
+}
+
+// A command that changes something refuses the guess instead.
+func TestTargetToChangeRefusesTheGuess(t *testing.T) {
+	app := target(t, orgsDown(t))
+	app.Global.Org, app.Global.Project = "acme", "atlas"
+	var stderr strings.Builder
+	app.Err = &stderr
+	tg, err := app.TargetToChange(context.Background())
+	if err == nil || !strings.HasPrefix(err.Error(), "could not determine the default environment of acme: ") || !strings.HasSuffix(err.Error(), "; pass --environment") {
+		t.Fatalf("err = %v", err)
+	}
+	if tg.Environment != "" || stderr.Len() != 0 {
+		t.Errorf("target %+v, stderr %q: no guess, no note", tg, stderr.String())
+	}
+	app.Global.Environment = "staging"
+	if tg, err := app.TargetToChange(context.Background()); err != nil || tg.Environment != "staging" {
+		t.Errorf("chosen: %+v, %v", tg, err)
+	}
+}
+
 // Each source of the environment reaches Target, in order; the full order is
 // pinned by deploy's TestTargetEnvironmentResolution.
 func TestTargetFillsTheEnvironment(t *testing.T) {
