@@ -56,6 +56,49 @@ func TestCreateDatabaseOnAServerSendsItsID(t *testing.T) {
 	}
 }
 
+// "goship" names GoShip's PostgreSQL: the API resolves it, so the tool sends it
+// as it is, never looks it up among the organization's servers, and still
+// needs the plan GoShip bills by.
+func TestCreateDatabaseOnTheGoShipServerSendsTheWordUnresolved(t *testing.T) {
+	var posted string
+	var paths []string
+	url := serversAPI(t, func(r *http.Request, body string) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/instances") {
+			posted = body
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
+	res := call(t, cs, "goship_create_database", map[string]any{"name": "db", "plan": "db-small", "server": "goship"})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(posted), &body); err != nil || body["server_id"] != "goship" || body["plan"] != "db-small" {
+		t.Errorf("posted %s: %v", posted, err)
+	}
+	if len(paths) != 1 {
+		t.Errorf("called %v, want only the POST", paths)
+	}
+	if !strings.Contains(text(res), "Database db is being created.") {
+		t.Errorf("result = %q", text(res))
+	}
+
+	for _, args := range []map[string]any{
+		{"name": "db", "server": "goship"},
+		{"name": "db", "plan": "db-small", "server": "goship", "size_limit_mb": 500},
+	} {
+		if res := call(t, cs, "goship_create_database", args); !res.IsError {
+			t.Errorf("%v should be refused", args)
+		}
+	}
+
+	desc := properties(t, toolsByName(t, Options{})["goship_create_database"])["server"]
+	if !strings.Contains(desc, "goship") {
+		t.Errorf("the server argument does not mention goship: %q", desc)
+	}
+}
+
 // Cloud accounts and database servers belong to the organization: their
 // tools resolve no project, and every path they call is the organization's.
 func TestCloudToolsAreOrgLevel(t *testing.T) {

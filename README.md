@@ -177,7 +177,7 @@ belong to the organization too: they take no project.
 | `goship run -a api -- <cmd>` | run a command in the app's containers |
 | `goship shell -a api` | shell into a unit |
 | `goship env list\|set\|unset -a api` | environment variables |
-| `goship db create [--server <server>] [--size-limit <size>]\|size-limit\|info\|users\|user-add\|extensions\|extension-add\|extension-rm\|bind\|unbind\|rm` | managed PostgreSQL; `--server` places it on your own server (no plan needed) and `size-limit` caps its size; `extension-add` turns on PostGIS, pg_trgm and friends |
+| `goship db create [--server <server>] [--size-limit <size>]\|size-limit\|info\|users\|user-add\|extensions\|extension-add\|extension-rm\|bind\|unbind\|rm` | managed PostgreSQL; `--server` places it on your own server (no plan needed) or, as `--server goship`, on GoShip's PostgreSQL (plan needed), and `size-limit` caps its size; `extension-add` turns on PostGIS, pg_trgm and friends |
 | `goship db server list\|create\|tiers\|disk-limit\|retry\|delete` | PostgreSQL servers in your own Google Cloud project, shared by the organization's projects and unbilled by GoShip; `disk-limit` caps disk growth (`create --disk-limit`); `delete --force` forgets one GoShip can no longer reach |
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
 | `goship volume create\|info\|bind\|unbind\|rm` | persistent disks, on a cluster of your own |

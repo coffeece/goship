@@ -34,13 +34,14 @@ func newDBCmd(app *App) *cobra.Command {
 	var plan, description, server, sizeLimit string
 	create.Flags().StringVar(&plan, "plan", "", "database plan (required unless --server is set)")
 	create.Flags().StringVar(&description, "description", "", "human description")
-	create.Flags().StringVar(&server, "server", "", "place the database on one of your own database servers (name or id); default: GoShip")
+	create.Flags().StringVar(&server, "server", "", "place the database on one of your own database servers (name or id), or \"goship\" for GoShip's PostgreSQL; default: the environment's database server")
 	create.Flags().StringVar(&sizeLimit, "size-limit", "", "size limit for a database on your own server, like 500MB or 2GB (default: none)")
 	create.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		if server == "" && plan == "" {
+		onGoShip := server == "" || server == deploy.GoShipDatabaseServer
+		if onGoShip && plan == "" {
 			return errors.New("--plan is required unless the database goes on your own server (--server)")
 		}
-		if server == "" && sizeLimit != "" {
+		if onGoShip && sizeLimit != "" {
 			return errors.New("--size-limit is only for databases on your own server (--server)")
 		}
 		var limit *int
@@ -51,7 +52,9 @@ func newDBCmd(app *App) *cobra.Command {
 			}
 		}
 		var serverID, serverName string
-		if server != "" {
+		if server == deploy.GoShipDatabaseServer {
+			serverID = server
+		} else if server != "" {
 			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), t, server)
 			if err != nil {
 				return err
@@ -65,7 +68,7 @@ func newDBCmd(app *App) *cobra.Command {
 		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, t.Environment, args[0], plan, description, serverID, limit); err != nil {
 			return err
 		}
-		if serverID != "" {
+		if !onGoShip {
 			return app.Renderer().Message("Database %s requested on server %s.", args[0], serverName)
 		}
 		return app.Renderer().Message("Database %s requested on plan %s.", args[0], plan)

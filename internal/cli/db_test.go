@@ -196,6 +196,40 @@ func TestDBCreateOnServerNeedsNoPlan(t *testing.T) {
 	}
 }
 
+// "goship" is not one of the organization's servers to look up: the API reads
+// it as GoShip's PostgreSQL, so it goes out as it is and the plan goes with it.
+func TestDBCreateOnGoShipServerSendsTheWordUnresolved(t *testing.T) {
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/v1/orgs/acme/projects/clave/environments/production/services/postgresql/instances":
+			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Errorf("unexpected %s %s: the server must not be looked up", r.Method, r.URL.Path)
+		}
+	})
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "db", "create", "shop", "--plan", "db-small", "--server", "goship")
+	if err != nil || !strings.Contains(out, "Database shop requested on plan db-small.") || stderr != "" {
+		t.Fatalf("out = %q, stderr = %q, err = %v", out, stderr, err)
+	}
+	if body["server_id"] != "goship" || body["plan"] != "db-small" || body["name"] != "shop" {
+		t.Fatalf("body = %v", body)
+	}
+
+	// GoShip's PostgreSQL is billed by plan and has no per-database size
+	// limit, like the default.
+	for _, args := range [][]string{
+		{"db", "create", "shop", "--server", "goship"},
+		{"db", "create", "shop", "--plan", "db-small", "--server", "goship", "--size-limit", "2GB"},
+	} {
+		body = nil
+		if _, err := run(t, "", args...); err == nil || body != nil {
+			t.Errorf("%v: err = %v, posted %v; want it refused", args, err, body)
+		}
+	}
+}
+
 func TestDBCreateWithoutServerNeedsPlan(t *testing.T) {
 	var body map[string]any
 	stubServerCreate(t, &body)

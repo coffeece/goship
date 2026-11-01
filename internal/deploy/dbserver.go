@@ -7,6 +7,12 @@ import (
 	"github.com/coffeece/goship/internal/portal"
 )
 
+// GoShipDatabaseServer is the server a database is created on when the person
+// asks for GoShip's own PostgreSQL by that word. The API resolves it, to
+// whatever GoShip server the environment uses, so it is sent as it is and
+// never looked up among the organization's own servers.
+const GoShipDatabaseServer = "goship"
+
 // ResolveDatabaseServer turns what a person types — the server's name,
 // usually — into the server, which carries the id the API wants. Servers
 // belong to the organization. An id always wins; a name must be unique.
