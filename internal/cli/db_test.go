@@ -13,7 +13,7 @@ import (
 // The password comes back once, so the table must show it.
 func TestDBUserAddShowsThePasswordOnce(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/orgs/acme/projects/atlas/databases/shop/users" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/orgs/acme/projects/atlas/environments/production/databases/shop/users" {
 			t.Errorf("got %s %s", r.Method, r.URL.Path)
 		}
 		w.WriteHeader(http.StatusCreated)
@@ -31,13 +31,13 @@ func TestDBUserAddShowsThePasswordOnce(t *testing.T) {
 	}
 }
 
-func TestDBServerCreateResolvesTheAccountAndPostsAtItsScope(t *testing.T) {
+func TestDBServerCreateResolvesTheAccountAndPostsAtTheOrg(t *testing.T) {
 	var body map[string]any
 	var postPath string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/orgs/acme/projects/atlas/cloud-accounts":
-			w.Write([]byte(`[{"id":"acc-1","provider":"gcp","label":"Prod","status":"active","scope":"org"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"gcp","label":"Prod","status":"active"}]`)) //nolint:errcheck
 		case "POST /api/v1/orgs/acme/database-servers":
 			postPath = r.URL.Path
 			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
@@ -51,7 +51,6 @@ func TestDBServerCreateResolvesTheAccountAndPostsAtItsScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// An org-level account puts the server at the organization level.
 	if postPath != "/api/v1/orgs/acme/database-servers" || body["cloud_account_id"] != "acc-1" || body["tier"] != "db-f1-micro" || body["name"] != "pg-prod" {
 		t.Fatalf("path %s body %v", postPath, body)
 	}
@@ -64,8 +63,8 @@ func TestDBServerListAndDelete(t *testing.T) {
 	var deleted string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/orgs/acme/projects/atlas/database-servers":
-			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active","region":"southamerica-east1","tier":"db-f1-micro","host":"34.1.2.3","database_count":2,"scope":"org"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active","region":"southamerica-east1","tier":"db-f1-micro","host":"34.1.2.3","database_count":2}]`)) //nolint:errcheck
 		case "DELETE /api/v1/orgs/acme/database-servers/s1":
 			deleted = "s1"
 			w.WriteHeader(http.StatusAccepted)
@@ -93,8 +92,8 @@ func TestDBServerDeleteForceForgets(t *testing.T) {
 	var deleted string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/orgs/acme/projects/atlas/database-servers":
-			w.Write([]byte(`[{"id":"s1","name":"pg","status":"error","cloud_instance_name":"goship-abc","cloud_account":{"label":"acme-prod"},"scope":"org"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"error","cloud_instance_name":"goship-abc","cloud_account":{"label":"acme-prod"}}]`)) //nolint:errcheck
 		case "DELETE /api/v1/orgs/acme/database-servers/s1":
 			deleted = r.URL.RawQuery
 			w.WriteHeader(http.StatusAccepted)
@@ -118,13 +117,12 @@ func TestDBServerAmbiguousNameIsRefused(t *testing.T) {
 	var deleted, body string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/orgs/acme/projects/atlas/database-servers":
-			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active","scope":"org"},{"id":"s2","name":"pg","status":"active","scope":"project"}]`)) //nolint:errcheck
-		case "DELETE /api/v1/orgs/acme/database-servers/s1", "DELETE /api/v1/orgs/acme/projects/atlas/database-servers/s1",
-			"DELETE /api/v1/orgs/acme/database-servers/s2", "DELETE /api/v1/orgs/acme/projects/atlas/database-servers/s2":
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active"},{"id":"s2","name":"pg","status":"active"}]`)) //nolint:errcheck
+		case "DELETE /api/v1/orgs/acme/database-servers/s1", "DELETE /api/v1/orgs/acme/database-servers/s2":
 			deleted = r.URL.Path
 			w.WriteHeader(http.StatusAccepted)
-		case "POST /api/v1/orgs/acme/projects/atlas/services/postgresql/instances":
+		case "POST /api/v1/orgs/acme/projects/atlas/environments/production/services/postgresql/instances":
 			body = "posted"
 			w.WriteHeader(http.StatusCreated)
 		default:
@@ -138,7 +136,7 @@ func TestDBServerAmbiguousNameIsRefused(t *testing.T) {
 	if _, err := run(t, "", "db", "create", "shop", "--plan", "db-small", "--server", "pg"); err == nil || body != "" {
 		t.Fatalf("ambiguous --server: %v, posted %q", err, body)
 	}
-	if _, err := run(t, "", "db", "server", "delete", "s2", "-y"); err != nil || deleted != "/api/v1/orgs/acme/projects/atlas/database-servers/s2" {
+	if _, err := run(t, "", "db", "server", "delete", "s2", "-y"); err != nil || deleted != "/api/v1/orgs/acme/database-servers/s2" {
 		t.Fatalf("delete by id: %v, deleted %q", err, deleted)
 	}
 }
@@ -147,9 +145,9 @@ func TestDBCreateOnAServer(t *testing.T) {
 	var body map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/orgs/acme/projects/atlas/database-servers":
+		case "GET /api/v1/orgs/acme/database-servers":
 			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active"}]`)) //nolint:errcheck
-		case "POST /api/v1/orgs/acme/projects/atlas/services/postgresql/instances":
+		case "POST /api/v1/orgs/acme/projects/atlas/environments/production/services/postgresql/instances":
 			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 			w.WriteHeader(http.StatusCreated)
 		default:
@@ -175,9 +173,9 @@ func stubServerCreate(t *testing.T, body *map[string]any) {
 	t.Helper()
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/orgs/acme/projects/atlas/database-servers":
+		case "GET /api/v1/orgs/acme/database-servers":
 			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active"}]`)) //nolint:errcheck
-		case "POST /api/v1/orgs/acme/projects/atlas/services/postgresql/instances":
+		case "POST /api/v1/orgs/acme/projects/atlas/environments/production/services/postgresql/instances":
 			json.NewDecoder(r.Body).Decode(body) //nolint:errcheck
 			w.WriteHeader(http.StatusCreated)
 		default:
@@ -227,7 +225,7 @@ func TestDBCreateSendsSizeLimit(t *testing.T) {
 func TestDBSizeLimitSetsAndClears(t *testing.T) {
 	var raw string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/orgs/acme/projects/atlas/databases/shop/size-limit" {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/orgs/acme/projects/atlas/environments/production/databases/shop/size-limit" {
 			t.Errorf("got %s %s", r.Method, r.URL.Path)
 		}
 		b, _ := io.ReadAll(r.Body)
@@ -247,8 +245,8 @@ func TestDBServerDiskLimit(t *testing.T) {
 	var path, raw string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/orgs/acme/projects/atlas/database-servers":
-			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active","scope":"org"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active"}]`)) //nolint:errcheck
 		case "PUT /api/v1/orgs/acme/database-servers/s1/disk-limit":
 			path = r.URL.Path
 			b, _ := io.ReadAll(r.Body)
@@ -274,8 +272,8 @@ func TestDBServerCreateDiskLimit(t *testing.T) {
 	var body map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
-		case "GET /api/v1/orgs/acme/cloud-accounts", "GET /api/v1/orgs/acme/projects/atlas/cloud-accounts":
-			w.Write([]byte(`[{"id":"acc-1","label":"prod","provider":"gcp","scope":"org"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","label":"prod","provider":"gcp"}]`)) //nolint:errcheck
 		case "POST /api/v1/orgs/acme/database-servers":
 			body = map[string]any{}
 			json.NewDecoder(r.Body).Decode(&body)                               //nolint:errcheck
@@ -304,11 +302,11 @@ func TestDBServerCreateDiskLimit(t *testing.T) {
 func TestDBInfoOwnServerIdleAndGoShip(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/orgs/acme/projects/atlas/databases/shop":
+		case "/api/v1/orgs/acme/projects/atlas/environments/production/databases/shop":
 			w.Write([]byte(`{"name":"shop","status":"active","placement":"pg","server_id":"s1"}`)) //nolint:errcheck
-		case "/api/v1/orgs/acme/projects/atlas/databases/hosted":
+		case "/api/v1/orgs/acme/projects/atlas/environments/production/databases/hosted":
 			w.Write([]byte(`{"name":"hosted","status":"active","placement":"goship"}`)) //nolint:errcheck
-		case "/api/v1/orgs/acme/projects/atlas/databases/shop/stats", "/api/v1/orgs/acme/projects/atlas/databases/hosted/stats":
+		case "/api/v1/orgs/acme/projects/atlas/environments/production/databases/shop/stats", "/api/v1/orgs/acme/projects/atlas/environments/production/databases/hosted/stats":
 			w.Write([]byte(`{"size_mb":"12","connections":0,"max_connections":25}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -336,9 +334,9 @@ func TestDBCreateSizeLimitNeedsServer(t *testing.T) {
 func TestDBInfoOnOwnServerShowsLimits(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/orgs/acme/projects/atlas/databases/shop":
+		case "/api/v1/orgs/acme/projects/atlas/environments/production/databases/shop":
 			w.Write([]byte(`{"name":"shop","status":"active","placement":"pg","server_id":"s1"}`)) //nolint:errcheck
-		case "/api/v1/orgs/acme/projects/atlas/databases/shop/stats":
+		case "/api/v1/orgs/acme/projects/atlas/environments/production/databases/shop/stats":
 			w.Write([]byte(`{"size_mb":"12","connections":2,"max_size_mb":2048,"max_connections":25,"server_connections":9}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -354,7 +352,7 @@ const extensionsJSON = `{"enabled":[{"name":"postgis","version":"3.6.4"}],"avail
 
 func TestDBExtensionsListsEnabledPendingAndAvailable(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/orgs/acme/projects/atlas/databases/shop/extensions" {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/orgs/acme/projects/atlas/environments/production/databases/shop/extensions" {
 			t.Errorf("got %s %s", r.Method, r.URL.Path)
 		}
 		w.Write([]byte(extensionsJSON)) //nolint:errcheck
@@ -445,7 +443,7 @@ func TestDBExtensionRm(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "DELETE /api/v1/orgs/acme/projects/atlas/databases/shop/extensions/pg_trgm" || !strings.Contains(out, "Extension pg_trgm disabled on shop.") {
+	if got != "DELETE /api/v1/orgs/acme/projects/atlas/environments/production/databases/shop/extensions/pg_trgm" || !strings.Contains(out, "Extension pg_trgm disabled on shop.") {
 		t.Fatalf("got=%q out=%q", got, out)
 	}
 }

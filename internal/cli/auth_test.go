@@ -334,7 +334,7 @@ func TestSingleOrgAccountsNeedNoSelection(t *testing.T) {
 	if _, err := run(t, "", "apps"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/onlyone/projects/default/apps" {
+	if gotPath != "/api/v1/orgs/onlyone/projects/default/environments/production/apps" {
 		t.Errorf("path = %q, want the sole org and project selected automatically", gotPath)
 	}
 }
@@ -364,9 +364,9 @@ func TestAppInfoFindsAppAcrossOrgs(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/a/projects", "/api/v1/orgs/b/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/a/projects/default/apps/my-game":
+		case "/api/v1/orgs/a/projects/default/environments/production/apps/my-game":
 			w.WriteHeader(http.StatusNotFound)
-		case "/api/v1/orgs/b/projects/default/apps/my-game":
+		case "/api/v1/orgs/b/projects/default/environments/production/apps/my-game":
 			w.Write([]byte(`{"name":"my-game","plan_name":"Small"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)
@@ -392,7 +392,7 @@ func TestAppInfoAmbiguousAcrossOrgs(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/a/projects", "/api/v1/orgs/b/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/a/projects/default/apps/dup", "/api/v1/orgs/b/projects/default/apps/dup":
+		case "/api/v1/orgs/a/projects/default/environments/production/apps/dup", "/api/v1/orgs/b/projects/default/environments/production/apps/dup":
 			w.Write([]byte(`{"name":"dup"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected path %q", r.URL.Path)

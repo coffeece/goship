@@ -12,10 +12,11 @@ import (
 // Plural nouns list, and each lists under the current org like `apps` does.
 func TestPluralListersUseTheCurrentOrg(t *testing.T) {
 	for _, tc := range []struct{ cmd, path string }{
-		{"dbs", "/api/v1/orgs/acme/projects/atlas/databases"},
+		{"dbs", "/api/v1/orgs/acme/projects/atlas/environments/production/databases"},
 		{"domains", "/api/v1/orgs/acme/domains"},
-		{"volumes", "/api/v1/orgs/acme/projects/atlas/volumes"},
-		{"nodes", "/api/v1/orgs/acme/projects/atlas/nodes"},
+		{"volumes", "/api/v1/orgs/acme/projects/atlas/environments/production/volumes"},
+		{"clusters", "/api/v1/orgs/acme/clusters"},
+		{"environments", "/api/v1/orgs/acme/environments"},
 	} {
 		t.Run(tc.cmd, func(t *testing.T) {
 			var gotPath string
@@ -42,11 +43,11 @@ func TestDBsAllSpansEveryProject(t *testing.T) {
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"default"},{"slug":"labs"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/projects/default/databases":
+		case "/api/v1/orgs/games/projects/default/environments/production/databases":
 			w.Write([]byte(`[{"name":"scores"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/projects/default/databases":
+		case "/api/v1/orgs/globex/projects/default/environments/production/databases":
 			w.Write([]byte(`[{"name":"mail"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/projects/labs/databases":
+		case "/api/v1/orgs/globex/projects/labs/environments/production/databases":
 			w.Write([]byte(`[{"name":"scratch"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -86,9 +87,9 @@ func TestDBsWithNoProjectListsEverything(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/projects/default/databases":
+		case "/api/v1/orgs/games/projects/default/environments/production/databases":
 			w.Write([]byte(`[{"name":"scores"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/projects/default/databases":
+		case "/api/v1/orgs/globex/projects/default/environments/production/databases":
 			w.Write([]byte(`[{"name":"mail"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -123,7 +124,7 @@ func TestListerUsesTheOnlyProjectWhenNoneIsSelected(t *testing.T) {
 	if _, err := run(t, "", "apps"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/acme/projects/default/apps" {
+	if gotPath != "/api/v1/orgs/acme/projects/default/environments/production/apps" {
 		t.Errorf("path = %q", gotPath)
 	}
 }
@@ -131,7 +132,7 @@ func TestListerUsesTheOnlyProjectWhenNoneIsSelected(t *testing.T) {
 // Scripts written against `<noun> list` keep working after the move.
 func TestDeprecatedListStillLists(t *testing.T) {
 	for _, args := range [][]string{
-		{"db", "list"}, {"domain", "list"}, {"volume", "list"}, {"node", "list"}, {"token", "ls"},
+		{"db", "list"}, {"domain", "list"}, {"volume", "list"}, {"token", "ls"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			called := false
@@ -164,17 +165,20 @@ func TestTokensLists(t *testing.T) {
 	}
 }
 
-// --org narrows an unresolved project to that org's projects, not to every org.
+// --org narrows an unresolved project to that org's projects, not to every
+// org. The org list is read for acme's default environment only.
 func TestListerWithOrgFlagAndNoProjectListsOnlyThatOrg(t *testing.T) {
 	var touched []string
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		touched = append(touched, r.URL.Path)
 		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"slug":"acme","default_environment":"production"},{"slug":"other"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/acme/projects":
 			w.Write([]byte(`[{"slug":"atlas"},{"slug":"comet"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/acme/projects/atlas/apps":
+		case "/api/v1/orgs/acme/projects/atlas/environments/production/apps":
 			w.Write([]byte(`[{"name":"web"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/acme/projects/comet/apps":
+		case "/api/v1/orgs/acme/projects/comet/environments/production/apps":
 			w.Write([]byte(`[{"name":"api"}]`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected %s", r.URL.Path)
@@ -195,7 +199,7 @@ func TestListerWithOrgFlagAndNoProjectListsOnlyThatOrg(t *testing.T) {
 	if len(got) != 2 || got["acme/atlas"][0]["name"] != "web" || got["acme/comet"][0]["name"] != "api" {
 		t.Errorf("got %v", got)
 	}
-	if slices.Contains(touched, "/api/v1/orgs") {
+	if slices.ContainsFunc(touched, func(p string) bool { return strings.HasPrefix(p, "/api/v1/orgs/other") }) {
 		t.Errorf("other orgs were listed: %q", touched)
 	}
 }

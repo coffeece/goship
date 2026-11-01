@@ -270,3 +270,65 @@ func TestInitDoesNotPinAProjectTheUserCannotReach(t *testing.T) {
 		t.Errorf("project = %q, output:\n%s", p.ProjectSlug, out)
 	}
 }
+
+// The organization's default needs no pin; another environment does, so the
+// repo keeps deploying there. Nothing ever writes the retired node: key.
+func TestInitWritesEnvironmentOnlyWhenNotDefault(t *testing.T) {
+	for _, tc := range []struct{ name, selected, want string }{
+		{"another environment", "staging", "staging"},
+		{"the default", "live", ""},
+		{"nothing selected", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v1/orgs/acme/projects":
+					w.Write([]byte(`[{"slug":"atlas"},{"slug":"comet"}]`)) //nolint:errcheck
+				case "/api/v1/orgs":
+					if tc.selected == "" {
+						t.Error("nothing selected needs no default")
+					}
+					w.Write([]byte(`[{"slug":"acme","default_environment":"live"}]`)) //nolint:errcheck
+				default:
+					t.Errorf("unexpected %s", r.URL.Path)
+				}
+			})
+			t.Setenv("GOSHIP_TOKEN", "gsp_test")
+			t.Setenv("GOSHIP_ORG", "acme")
+			t.Setenv("GOSHIP_PROJECT", "atlas")
+			t.Setenv("GOSHIP_ENVIRONMENT", tc.selected)
+			dir := filepath.Join(t.TempDir(), "widget")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			write(t, filepath.Join(dir, "go.mod"), "")
+
+			out, err := run(t, "", "init", dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, _, err := deploy.LoadProject(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Environment != tc.want {
+				t.Errorf("environment = %q, want %q", p.Environment, tc.want)
+			}
+			data, err := os.ReadFile(filepath.Join(dir, initFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for l := range strings.SplitSeq(string(data), "\n") {
+				if strings.HasPrefix(l, "node:") {
+					t.Errorf("init wrote the retired node key: %q", l)
+				}
+				if tc.want == "" && strings.HasPrefix(l, "environment:") {
+					t.Errorf("init pinned an environment nobody needs pinned: %q", l)
+				}
+			}
+			if tc.want != "" && !strings.Contains(out, "environment: "+tc.want) {
+				t.Errorf("output should name the pinned environment:\n%s", out)
+			}
+		})
+	}
+}

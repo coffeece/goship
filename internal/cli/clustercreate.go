@@ -17,12 +17,12 @@ import (
 	"golang.org/x/term"
 )
 
-// nodePollInterval is how often followNode checks a provisioning node; a
-// package var so tests don't wait for the real thing.
-var nodePollInterval = 3 * time.Second
+// clusterPollInterval is how often followCluster checks a provisioning
+// cluster; a package var so tests don't wait for the real thing.
+var clusterPollInterval = 3 * time.Second
 
 // stdinIsTTY says whether standard input is a terminal, which is what tells
-// `node create` it may prompt for a missing --region or --size instead of
+// `cluster create` it may prompt for a missing --region or --size instead of
 // failing outright. It must run before stdin is wrapped in a bufio.Reader,
 // which hides the *os.File. A package var so tests, whose stdin is a
 // strings.Reader, can force it either way.
@@ -35,27 +35,28 @@ var stdinIsTTY = func(cmd *cobra.Command) bool {
 	return ok && term.IsTerminal(int(f.Fd()))
 }
 
-func newNodeCreateCmd(app *App) *cobra.Command {
-	var cloudRef, region, size, host, sshUser, sshKeyFile string
+func newClusterCreateCmd(app *App) *cobra.Command {
+	var cloudRef, region, size, host, sshUser, sshKeyFile, kubeconfig string
 	var port int
 	var noWait bool
 	var timeout time.Duration
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
-		Short: "Create a node: --cloud provisions one on a connected account, --host connects a machine you already have",
-		Long: "Creates a node either by provisioning a fresh machine on a connected cloud\n" +
-			"account (--cloud), or by connecting one you already run (--host). Exactly\n" +
-			"one of the two is required.\n\n" +
+		Short: "Create a cluster: --cloud provisions a machine on a connected account, --host connects one you have, --kubeconfig a Kubernetes cluster",
+		Long: "Creates a cluster in one of three ways: by provisioning a fresh machine on a\n" +
+			"connected cloud account (--cloud), by connecting a machine you already run\n" +
+			"(--host), or by connecting a Kubernetes cluster you already run\n" +
+			"(--kubeconfig). Exactly one of the three is required.\n\n" +
 			"With --cloud on a terminal, a missing --region or --size is asked for\n" +
 			"interactively from the account's live catalog; piped in or scripted, both\n" +
-			"must be passed.",
+			"must be passed.\n\n" +
+			"A cluster belongs to the organization: an environment runs on it once\n" +
+			"`goship environment create --cluster` names it.",
 		Args: cobra.ExactArgs(1),
-		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if (cloudRef == "") == (host == "") {
-				return errors.New("pass exactly one of --cloud or --host")
-			}
-			if err := rejectMixedFlags(cmd, cloudRef != ""); err != nil {
+		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			path, err := createPath(cmd)
+			if err != nil {
 				return err
 			}
 
@@ -70,23 +71,22 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 			cmd.SetIn(bufio.NewReader(cmd.InOrStdin()))
 
 			name := args[0]
-			req := portal.CreateNodeRequest{Name: name}
-			var accountLabel, headerRegion, headerSize string
+			req := portal.CreateClusterRequest{Name: name}
+			var where string
 
-			switch {
-			case cloudRef != "":
-				account, err := resolveCloudAccount(cmd.Context(), app.Portal(), t, cloudRef)
+			switch path {
+			case "cloud":
+				account, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, cloudRef)
 				if err != nil {
 					return err
 				}
 				req.CloudAccountID = account.ID
-				accountLabel = account.Label
 
 				if region == "" {
 					if !tty {
 						return errors.New("--region is required (not a terminal to prompt)")
 					}
-					regions, err := app.Portal().CloudRegions(cmd.Context(), t.Org, t.Project, account.ID)
+					regions, err := app.Portal().CloudRegions(cmd.Context(), org, account.ID)
 					if err != nil {
 						return err
 					}
@@ -97,13 +97,12 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 					region = chosen.Slug
 				}
 				req.Region = region
-				headerRegion = region
 
 				if size == "" {
 					if !tty {
 						return errors.New("--size is required (not a terminal to prompt)")
 					}
-					sizes, err := app.Portal().CloudSizes(cmd.Context(), t.Org, t.Project, account.ID, region)
+					sizes, err := app.Portal().CloudSizes(cmd.Context(), org, account.ID, region)
 					if err != nil {
 						return err
 					}
@@ -114,9 +113,9 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 					size = chosen.Slug
 				}
 				req.Size = size
-				headerSize = size
+				where = fmt.Sprintf("%s (%s, %s)", account.Label, region, size)
 
-			case host != "":
+			case "host":
 				if sshKeyFile == "" {
 					return errors.New("--ssh-key is required with --host")
 				}
@@ -129,33 +128,40 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 				req.Port = port
 				req.SSHUser = sshUser
 				req.SSHKey = string(key)
-				accountLabel = "your machine"
-				headerRegion = fmt.Sprintf("%s:%d", host, port)
-				headerSize = sshUser
+				where = fmt.Sprintf("your machine (%s:%d, %s)", host, port, sshUser)
+
+			case "kubeconfig":
+				data, err := os.ReadFile(kubeconfig)
+				if err != nil {
+					return err
+				}
+				req.Type = "kubernetes"
+				req.Kubeconfig = string(data)
+				where = "your Kubernetes cluster"
 			}
 
-			created, err := app.Portal().CreateNode(cmd.Context(), t.Org, t.Project, req)
+			created, err := app.Portal().CreateCluster(cmd.Context(), org, req)
 			if err != nil {
 				return err
 			}
 
-			// JSON is for scripts: hand back the created node, nothing more.
+			// JSON is for scripts: hand back the created cluster, nothing more.
 			if app.Global.Output == render.JSON {
 				return app.Renderer().Render(created)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Creating node %s on %s (%s, %s)\n", name, accountLabel, headerRegion, headerSize)
+			fmt.Fprintf(cmd.OutOrStdout(), "Creating cluster %s on %s\n", name, where)
 			if noWait {
 				return app.Renderer().Message(
-					"Node %s requested; not waiting for it to come up (--no-wait). `goship nodes` shows its status.",
+					"Cluster %s requested; not waiting for it to come up (--no-wait). `goship clusters` shows its status.",
 					created.Name)
 			}
 
 			ctx, stop := interruptible(cmd.Context())
 			defer stop()
-			return followNode(ctx, app.Portal(), followOpts{
+			return followCluster(ctx, app.Portal(), followOpts{
 				out: cmd.OutOrStdout(), errw: cmd.ErrOrStderr(), verbose: app.Global.Verbose,
-				target: t, id: created.ID, name: created.Name, timeout: timeout,
+				org: org, id: created.ID, name: created.Name, timeout: timeout,
 			})
 		}),
 	}
@@ -168,8 +174,9 @@ func newNodeCreateCmd(app *App) *cobra.Command {
 	f.IntVar(&port, "port", 22, "SSH port")
 	f.StringVar(&sshUser, "ssh-user", "root", "SSH user")
 	f.StringVar(&sshKeyFile, "ssh-key", "", "path to a private key with access to the host")
-	f.BoolVar(&noWait, "no-wait", false, "return once the machine is requested, without following provisioning")
-	f.DurationVar(&timeout, "timeout", 30*time.Minute, "how long to follow provisioning before giving up; 0 follows until it ends (the node keeps provisioning either way)")
+	f.StringVar(&kubeconfig, "kubeconfig", "", "path to the kubeconfig of a Kubernetes cluster you already have")
+	f.BoolVar(&noWait, "no-wait", false, "return once the cluster is requested, without following provisioning")
+	f.DurationVar(&timeout, "timeout", 30*time.Minute, "how long to follow provisioning before giving up; 0 follows until it ends (the cluster keeps provisioning either way)")
 
 	return cmd
 }
@@ -194,19 +201,40 @@ func sizeChoiceLabel(s portal.CloudSize) string {
 	return label
 }
 
-// rejectMixedFlags refuses flags that only mean something on the other path,
-// rather than silently ignoring them.
-func rejectMixedFlags(cmd *cobra.Command, cloud bool) error {
-	other, only := []string{"port", "ssh-user", "ssh-key"}, "--host"
-	if !cloud {
-		other, only = []string{"region", "size"}, "--cloud"
-	}
-	for _, name := range other {
-		if cmd.Flags().Changed(name) {
-			return fmt.Errorf("--%s only applies with %s", name, only)
+// createPaths are the ways `cluster create` makes a cluster, each with the
+// flags only it reads.
+var createPaths = []struct {
+	flag string
+	only []string
+}{
+	{"cloud", []string{"region", "size"}},
+	{"host", []string{"port", "ssh-user", "ssh-key"}},
+	{"kubeconfig", nil},
+}
+
+// createPath is the one path the flags chose. Flags that only mean something
+// on another path are refused rather than silently ignored.
+func createPath(cmd *cobra.Command) (string, error) {
+	var chosen []string
+	for _, p := range createPaths {
+		if cmd.Flags().Lookup(p.flag).Value.String() != "" {
+			chosen = append(chosen, p.flag)
 		}
 	}
-	return nil
+	if len(chosen) != 1 {
+		return "", errors.New("pass exactly one of --cloud, --host or --kubeconfig")
+	}
+	for _, p := range createPaths {
+		if p.flag == chosen[0] {
+			continue
+		}
+		for _, name := range p.only {
+			if cmd.Flags().Changed(name) {
+				return "", fmt.Errorf("--%s only applies with --%s", name, p.flag)
+			}
+		}
+	}
+	return chosen[0], nil
 }
 
 // pick shows items numbered on stderr and reads a choice from stdin.
@@ -270,17 +298,17 @@ var errFollowTimeout = errors.New("follow timed out")
 type followOpts struct {
 	out, errw io.Writer
 	verbose   bool
-	target    Target
+	org       string
 	id        string
 	name      string
 	timeout   time.Duration
 }
 
-// followNode polls a newly created node until it comes up or fails, driving a
-// progress view the same way a deploy's steps are drawn: one line per stage.
-// Ending the follow early — Ctrl-C or --timeout — leaves the node
-// provisioning, so neither marks the running stage failed.
-func followNode(ctx context.Context, client *portal.Client, o followOpts) error {
+// followCluster polls a newly created cluster until it comes up or fails,
+// driving a progress view the same way a deploy's steps are drawn: one line
+// per stage. Ending the follow early — Ctrl-C or --timeout — leaves the
+// cluster provisioning, so neither marks the running stage failed.
+func followCluster(ctx context.Context, client *portal.Client, o followOpts) error {
 	if o.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeoutCause(ctx, o.timeout, errFollowTimeout)
@@ -290,20 +318,20 @@ func followNode(ctx context.Context, client *portal.Client, o followOpts) error 
 	p := newProgress(o.out, o.verbose)
 	retrier := &pollRetrier{errw: o.errw}
 	last := ""
-	ticker := time.NewTicker(nodePollInterval)
+	ticker := time.NewTicker(clusterPollInterval)
 	defer ticker.Stop()
 
 	stopped := func() error {
 		p.Finish(portal.ErrStreamCut)
 		if errors.Is(context.Cause(ctx), errFollowTimeout) {
-			return fmt.Errorf("stopped following node %s after %s (--timeout); it keeps provisioning — run `goship node info %s`", o.name, o.timeout, o.name)
+			return fmt.Errorf("stopped following cluster %s after %s (--timeout); it keeps provisioning — run `goship cluster info %s`", o.name, o.timeout, o.name)
 		}
-		fmt.Fprintf(o.errw, "Stopped following; the node keeps provisioning — run `goship node info %s`\n", o.name)
+		fmt.Fprintf(o.errw, "Stopped following; the cluster keeps provisioning — run `goship cluster info %s`\n", o.name)
 		return nil
 	}
 
 	for {
-		n, err := client.Node(ctx, o.target.Org, o.target.Project, o.id)
+		c, err := client.Cluster(ctx, o.org, o.id)
 		switch {
 		case err != nil && ctx.Err() != nil:
 			return stopped()
@@ -313,30 +341,30 @@ func followNode(ctx context.Context, client *portal.Client, o followOpts) error 
 			return err
 		default:
 			retrier.ok()
-			if n.Stage != last {
+			if c.Stage != last {
 				if last != "" {
 					p.Done(last, "")
 				}
-				if n.Stage != "" {
-					p.Begin(n.Stage)
+				if c.Stage != "" {
+					p.Begin(c.Stage)
 				}
-				last = n.Stage
+				last = c.Stage
 			}
 
-			switch n.Status {
+			switch c.Status {
 			case "active":
 				p.Done(last, "")
 				p.Finish(nil)
-				fmt.Fprintf(o.out, "Node %s is ready. Pool %s.\n", n.Name, n.PoolName)
+				fmt.Fprintf(o.out, "Cluster %s is ready.\n", c.Name)
 				return nil
 			case "error":
-				p.Finish(errors.New(n.ErrorMessage))
+				p.Finish(errors.New(c.ErrorMessage))
 				// The reason belongs in the follow output itself, not only in
 				// the error cobra prints once the command unwinds.
-				if n.ErrorMessage != "" {
-					fmt.Fprintln(o.out, n.ErrorMessage)
+				if c.ErrorMessage != "" {
+					fmt.Fprintln(o.out, c.ErrorMessage)
 				}
-				return nodeFailure(n)
+				return clusterFailure(c)
 			}
 		}
 
@@ -348,18 +376,18 @@ func followNode(ctx context.Context, client *portal.Client, o followOpts) error 
 	}
 }
 
-func nodeFailure(n *portal.Node) error {
-	msg := "node " + n.Name + " failed"
-	if n.Stage != "" {
-		msg += " while " + stageTitle(n.Stage)
+func clusterFailure(c *portal.Cluster) error {
+	msg := "cluster " + c.Name + " failed"
+	if c.Stage != "" {
+		msg += " while " + stageTitle(c.Stage)
 	}
-	if n.ErrorMessage != "" {
-		msg += ": " + n.ErrorMessage
+	if c.ErrorMessage != "" {
+		msg += ": " + c.ErrorMessage
 	}
 	return errors.New(msg)
 }
 
-// stageTitle is the reader-facing name for one of a node's provisioning
+// stageTitle is the reader-facing name for one of a cluster's provisioning
 // stages — the same words progress.Begin/Done show while it runs.
 func stageTitle(stage string) string {
 	if t, ok := stepTitles[stage]; ok {

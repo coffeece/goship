@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -63,7 +62,7 @@ func newDBCmd(app *App) *cobra.Command {
 				plan = ""
 			}
 		}
-		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, args[0], plan, description, serverID, limit); err != nil {
+		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, t.Environment, args[0], plan, description, serverID, limit); err != nil {
 			return err
 		}
 		if serverID != "" {
@@ -81,7 +80,7 @@ func newDBCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			msg, err := app.Portal().SetDatabaseSizeLimit(cmd.Context(), t.Org, t.Project, args[0], limit)
+			msg, err := app.Portal().SetDatabaseSizeLimit(cmd.Context(), t.Org, t.Project, t.Environment, args[0], limit)
 			if err != nil {
 				return err
 			}
@@ -99,7 +98,7 @@ func newDBCmd(app *App) *cobra.Command {
 		Short: "Show a database and its usage",
 		Args:  cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			db, err := app.Portal().Database(cmd.Context(), t.Org, t.Project, args[0])
+			db, err := app.Portal().Database(cmd.Context(), t.Org, t.Project, t.Environment, args[0])
 			if err != nil {
 				return err
 			}
@@ -107,7 +106,7 @@ func newDBCmd(app *App) *cobra.Command {
 			if err := r.Render(db); err != nil {
 				return err
 			}
-			stats, err := app.Portal().DatabaseStats(cmd.Context(), t.Org, t.Project, args[0])
+			stats, err := app.Portal().DatabaseStats(cmd.Context(), t.Org, t.Project, t.Environment, args[0])
 			if err != nil {
 				return err
 			}
@@ -131,7 +130,7 @@ func newDBCmd(app *App) *cobra.Command {
 		Short: "List database users",
 		Args:  cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			list, err := app.Portal().DatabaseUsers(cmd.Context(), t.Org, t.Project, args[0])
+			list, err := app.Portal().DatabaseUsers(cmd.Context(), t.Org, t.Project, t.Environment, args[0])
 			if err != nil {
 				return err
 			}
@@ -147,7 +146,7 @@ func newDBCmd(app *App) *cobra.Command {
 	var accessMode string
 	userAdd.Flags().StringVar(&accessMode, "access", "rw", "access mode: rw or ro")
 	userAdd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		created, err := app.Portal().CreateDatabaseUser(cmd.Context(), t.Org, t.Project, args[0], args[1], accessMode)
+		created, err := app.Portal().CreateDatabaseUser(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1], accessMode)
 		if err != nil {
 			return err
 		}
@@ -167,7 +166,7 @@ func newDBCmd(app *App) *cobra.Command {
 		Short: "List database extensions: enabled, enabling and available",
 		Args:  cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			exts, err := app.Portal().DatabaseExtensions(cmd.Context(), t.Org, t.Project, args[0])
+			exts, err := app.Portal().DatabaseExtensions(cmd.Context(), t.Org, t.Project, t.Environment, args[0])
 			if err != nil {
 				return err
 			}
@@ -183,7 +182,7 @@ func newDBCmd(app *App) *cobra.Command {
 		Short: "Enable a PostgreSQL extension (postgis, pg_trgm, ...)",
 		Args:  cobra.ExactArgs(2),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			ext, err := app.Portal().EnableDatabaseExtension(cmd.Context(), t.Org, t.Project, args[0], args[1])
+			ext, err := app.Portal().EnableDatabaseExtension(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1])
 			if err != nil {
 				return err
 			}
@@ -202,7 +201,7 @@ func newDBCmd(app *App) *cobra.Command {
 		Short: "Disable a PostgreSQL extension (fails while tables still use it)",
 		Args:  cobra.ExactArgs(2),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if err := app.Portal().DisableDatabaseExtension(cmd.Context(), t.Org, t.Project, args[0], args[1]); err != nil {
+			if err := app.Portal().DisableDatabaseExtension(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("Extension %s disabled on %s.", args[1], args[0])
@@ -218,7 +217,7 @@ func newDBCmd(app *App) *cobra.Command {
 	bind.Flags().StringVarP(&bindApp, "app", "a", "", "app to bind (required)")
 	_ = bind.MarkFlagRequired("app")
 	bind.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		if err := app.Portal().BindDatabase(cmd.Context(), t.Org, t.Project, args[0], bindApp); err != nil {
+		if err := app.Portal().BindDatabase(cmd.Context(), t.Org, t.Project, t.Environment, args[0], bindApp); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Database %s bound to %s.", args[0], bindApp)
@@ -233,7 +232,7 @@ func newDBCmd(app *App) *cobra.Command {
 	unbind.Flags().StringVarP(&unbindApp, "app", "a", "", "app to unbind (required)")
 	_ = unbind.MarkFlagRequired("app")
 	unbind.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		if err := app.Portal().UnbindDatabase(cmd.Context(), t.Org, t.Project, args[0], unbindApp); err != nil {
+		if err := app.Portal().UnbindDatabase(cmd.Context(), t.Org, t.Project, t.Environment, args[0], unbindApp); err != nil {
 			return err
 		}
 		return app.Renderer().Message("Database %s unbound from %s.", args[0], unbindApp)
@@ -248,7 +247,7 @@ func newDBCmd(app *App) *cobra.Command {
 			if err := confirm(cmd, app.Global.Yes, "Delete database %q and all its data?", args[0]); err != nil {
 				return err
 			}
-			if err := app.Portal().DeleteDatabase(cmd.Context(), t.Org, t.Project, args[0]); err != nil {
+			if err := app.Portal().DeleteDatabase(cmd.Context(), t.Org, t.Project, t.Environment, args[0]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("Database %s deleted.", args[0])
@@ -267,7 +266,8 @@ func newDBServerCmd(app *App) *cobra.Command {
 			"A server is a managed PostgreSQL instance GoShip creates in a connected Google Cloud project. Databases on it are not billed by GoShip.",
 	}
 
-	list := newTargetListCmd(app, "list", "List the database servers the current project can use, or --all of them", (*portal.Client).DatabaseServers, skipForbiddenProjects)
+	list := newOrgListCmd(app, "list", "List the database servers of the current organization, or --all of them", (*portal.Client).DatabaseServers, skipForbiddenPlaces)
+	list.RunE = refuseProjectFlag(list.RunE)
 
 	create := &cobra.Command{
 		Use:   "create --account <account> --region <region> [--tier <tier>] [--name <name>]",
@@ -282,7 +282,7 @@ func newDBServerCmd(app *App) *cobra.Command {
 	create.Flags().StringVar(&diskLimit, "disk-limit", "", "most the disk may grow to, in GB, or none (default 100)")
 	_ = create.MarkFlagRequired("account")
 	_ = create.MarkFlagRequired("region")
-	create.RunE = cloudRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
+	create.RunE = cloudRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
 		var diskCap *int
 		if cmd.Flags().Changed("disk-limit") {
 			gb, err := parseDiskGB(diskLimit)
@@ -291,17 +291,14 @@ func newDBServerCmd(app *App) *cobra.Command {
 			}
 			diskCap = &gb
 		}
-		acc, scope, err := app.resolveCloudScoped(cmd.Context(), app.projectView(cmd.Context(), t), account)
+		acc, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, account)
 		if err != nil {
 			return err
-		}
-		if acc.Scope == "org" {
-			scope.Project = ""
 		}
 		if name == "" {
 			name = "pg-" + slugify(acc.Label)
 		}
-		s, err := app.Portal().CreateDatabaseServer(cmd.Context(), scope.Org, scope.Project, portal.CreateDatabaseServerRequest{
+		s, err := app.Portal().CreateDatabaseServer(cmd.Context(), org, portal.CreateDatabaseServerRequest{
 			CloudAccountID: acc.ID, Name: name, Region: region, Tier: tier, DiskLimitGB: diskCap,
 		})
 		if err != nil {
@@ -317,8 +314,8 @@ func newDBServerCmd(app *App) *cobra.Command {
 		Use:   "tiers",
 		Short: "List the machine sizes a server can have",
 		Args:  cobra.NoArgs,
-		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, _ []string) error {
-			list, err := app.Portal().DatabaseServerTiers(cmd.Context(), t.Org, t.Project)
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, _ []string) error {
+			list, err := app.Portal().DatabaseServerTiers(cmd.Context(), org)
 			if err != nil {
 				return err
 			}
@@ -330,16 +327,16 @@ func newDBServerCmd(app *App) *cobra.Command {
 		Use:   "disk-limit <server> <GB|none>",
 		Short: "Set how far a server's disk may grow (none removes the cap)",
 		Args:  cobra.ExactArgs(2),
-		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			gb, err := parseDiskGB(args[1])
 			if err != nil {
 				return err
 			}
-			s, scope, err := app.resolveDatabaseServerScoped(cmd.Context(), t, args[0])
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), Target{Org: org}, args[0])
 			if err != nil {
 				return err
 			}
-			if err := app.Portal().SetDatabaseServerDiskLimit(cmd.Context(), scope.Org, scope.Project, s.ID, gb); err != nil {
+			if err := app.Portal().SetDatabaseServerDiskLimit(cmd.Context(), org, s.ID, gb); err != nil {
 				return err
 			}
 			if gb == 0 {
@@ -353,12 +350,12 @@ func newDBServerCmd(app *App) *cobra.Command {
 		Use:   "retry <server>",
 		Short: "Retry a server that failed to come up",
 		Args:  cobra.ExactArgs(1),
-		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			s, scope, err := app.resolveDatabaseServerScoped(cmd.Context(), t, args[0])
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), Target{Org: org}, args[0])
 			if err != nil {
 				return err
 			}
-			if err := app.Portal().RetryDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
+			if err := app.Portal().RetryDatabaseServer(cmd.Context(), org, s.ID); err != nil {
 				return err
 			}
 			return app.Renderer().Message("Retrying server %s.", s.Name)
@@ -377,8 +374,8 @@ GoShip can no longer reach the instance (the cloud account was disconnected,
 the project is gone, or every delete fails). The instance, if it still exists,
 keeps running and billing in your project until you delete it there.`,
 		Args: cobra.ExactArgs(1),
-		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			s, scope, err := app.resolveDatabaseServerScoped(cmd.Context(), t, args[0])
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), Target{Org: org}, args[0])
 			if err != nil {
 				return err
 			}
@@ -386,7 +383,7 @@ keeps running and billing in your project until you delete it there.`,
 				if err := confirm(cmd, app.Global.Yes, "Delete database server %q? The Cloud SQL instance is removed from your project.", s.Name); err != nil {
 					return err
 				}
-				if err := app.Portal().DeleteDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
+				if err := app.Portal().DeleteDatabaseServer(cmd.Context(), org, s.ID); err != nil {
 					return err
 				}
 				return app.Renderer().Message("Deleting server %s; the Cloud SQL instance is being removed from your project.", s.Name)
@@ -401,7 +398,7 @@ keeps running and billing in your project until you delete it there.`,
 			if err := confirm(cmd, app.Global.Yes, "Forget database server %q? GoShip drops it without touching your cloud; Cloud SQL instance %s stays in your project if it still exists.", s.Name, instance); err != nil {
 				return err
 			}
-			if err := app.Portal().ForgetDatabaseServer(cmd.Context(), scope.Org, scope.Project, s.ID); err != nil {
+			if err := app.Portal().ForgetDatabaseServer(cmd.Context(), org, s.ID); err != nil {
 				return err
 			}
 			return app.Renderer().Message("Server %s forgotten. Cloud SQL instance %s was not touched; if it still exists, delete it in your project: gcloud sql instances delete %s --project %s", s.Name, instance, instance, project)
@@ -411,37 +408,6 @@ keeps running and billing in your project until you delete it there.`,
 
 	cmd.AddCommand(list, create, tiers, diskLimitCmd, retry, del)
 	return cmd
-}
-
-// resolveDatabaseServer matches a server by id, then by exact name. Names are
-// unique per organization, but a project sees its own servers and the
-// organization's, so a name shared by two is refused rather than guessed.
-// resolveDatabaseServerScoped also returns the target to act through: an
-// organization's server is changed on the organization routes, which the API
-// requires.
-func (a *App) resolveDatabaseServerScoped(ctx context.Context, t Target, ref string) (*portal.DatabaseServer, Target, error) {
-	view := a.projectView(ctx, t)
-	s, err := deploy.ResolveDatabaseServer(ctx, a.Portal(), view, ref)
-	if err != nil {
-		return nil, t, err
-	}
-	if s.Scope == "org" {
-		return s, Target{Org: t.Org}, nil
-	}
-	return s, view, nil
-}
-
-// projectView is the target a person sees in `db server list`: the selected
-// project, which includes what the organization shares with it. With no
-// project to resolve it stays at the organization.
-func (a *App) projectView(ctx context.Context, t Target) Target {
-	if t.Project != "" {
-		return t
-	}
-	if project, err := a.projectIn(ctx, t.Org); err == nil {
-		return Target{Org: t.Org, Project: project}
-	}
-	return t
 }
 
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
@@ -464,7 +430,7 @@ var (
 func waitForExtension(cmd *cobra.Command, app *App, t Target, db, ext string) error {
 	deadline := time.Now().Add(extensionPollDeadline)
 	for {
-		exts, err := app.Portal().DatabaseExtensions(cmd.Context(), t.Org, t.Project, db)
+		exts, err := app.Portal().DatabaseExtensions(cmd.Context(), t.Org, t.Project, t.Environment, db)
 		if err != nil {
 			return err
 		}
