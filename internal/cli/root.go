@@ -256,6 +256,32 @@ func (a *App) explainProject(ctx context.Context, t Target, err error) error {
 	return fmt.Errorf("project %q is not reachable in %s; run `goship projects` and `goship project use <slug>`", t.Project, t.Org)
 }
 
+// explainEnvironment is explainProject for the environment: a call that failed
+// with a bare 404 or 403 because the environment came from the saved
+// selection or GOSHIP_ENVIRONMENT and the organization no longer has it.
+// --environment and the working directory's goship.yaml are the user's own
+// words for this command, and the API's answer stands.
+func (a *App) explainEnvironment(ctx context.Context, t Target, err error) error {
+	if err == nil || (!portal.IsNotFound(err) && !portal.IsForbidden(err)) || t.Org == "" || t.Environment == "" {
+		return err
+	}
+	said := deploy.EnvironmentChoice{Explicit: a.Global.Environment, File: a.environmentChoice().File}
+	if said.Chosen(t) != "" || a.Config.SelectedEnvironment(t.Org, t.Project) != t.Environment {
+		return err
+	}
+	envs, perr := a.Portal().Environments(ctx, t.Org)
+	if perr != nil || slices.ContainsFunc(envs, func(e portal.Environment) bool { return e.Slug == t.Environment }) {
+		return err
+	}
+	return fmt.Errorf("environment %q is not one of %s's environments; run goship environments and goship environment use <slug>", t.Environment, t.Org)
+}
+
+// explainTarget is what a failed call on t is run through: the project and
+// the environment, whichever came from a selection that has gone stale.
+func (a *App) explainTarget(ctx context.Context, t Target, err error) error {
+	return a.explainEnvironment(ctx, t, a.explainProject(ctx, t, err))
+}
+
 // TargetForApp is Target for a named app: with no organization or project to
 // go on it looks for the app in every environment of every project the user
 // can reach, narrowed by whatever was chosen (--org, --project,
@@ -309,7 +335,7 @@ func targetRunE(app *App, fn func(cmd *cobra.Command, t Target, args []string) e
 		if err != nil {
 			return err
 		}
-		return app.explainProject(cmd.Context(), t, fn(cmd, t, args))
+		return app.explainTarget(cmd.Context(), t, fn(cmd, t, args))
 	}
 }
 
@@ -322,7 +348,7 @@ func readTargetRunE(app *App, fn func(cmd *cobra.Command, t Target, args []strin
 		if err != nil {
 			return err
 		}
-		return app.explainProject(cmd.Context(), t, fn(cmd, t, args))
+		return app.explainTarget(cmd.Context(), t, fn(cmd, t, args))
 	}
 }
 

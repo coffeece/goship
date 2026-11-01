@@ -83,7 +83,7 @@ func appInfoCmd(app *App) *cobra.Command {
 			}
 			found, err := app.Portal().App(cmd.Context(), t.Org, t.Project, t.Environment, args[0])
 			if err != nil {
-				return app.explainProject(cmd.Context(), t, err)
+				return app.explainTarget(cmd.Context(), t, err)
 			}
 			r := app.Renderer()
 			if err := r.Render(found); err != nil {

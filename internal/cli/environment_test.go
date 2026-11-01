@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -143,6 +145,66 @@ func TestEnvironmentRmConfirms(t *testing.T) {
 	out, err := run(t, "", "environment", "rm", "staging", "--yes")
 	if err != nil || deleted != "/api/v1/orgs/acme/environments/staging" || !strings.Contains(out, "staging deleted") {
 		t.Fatalf("rm --yes = %q, %v (deleted %q)", out, err, deleted)
+	}
+}
+
+// A removed environment cannot stay selected: every later command in those
+// projects would fail on a name that no longer exists.
+func TestEnvironmentRmForgetsTheSavedSelection(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"deleted"}`)) //nolint:errcheck
+	})
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+	saved := &config.Config{Environments: map[string]string{
+		"acme/atlas":   "staging",
+		"acme/comet":    "staging",
+		"acme/web":     "production",
+		"globex/atlas": "staging",
+	}}
+	if err := saved.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := run(t, "", "environment", "rm", "staging", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"acme/web": "production", "globex/atlas": "staging"}
+	if !maps.Equal(cfg.Environments, want) {
+		t.Errorf("Environments = %v, want %v", cfg.Environments, want)
+	}
+}
+
+// The environment is gone either way; a config file that cannot be written is
+// a note, not a failure.
+func TestEnvironmentRmSurvivesAConfigItCannotSave(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes read-only files")
+	}
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"deleted"}`)) //nolint:errcheck
+	})
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+	if err := (&config.Config{Environments: map[string]string{"acme/atlas": "staging"}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	path, err := config.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o400); err != nil {
+		t.Fatal(err)
+	}
+
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "environment", "rm", "staging", "--yes")
+	if err != nil || !strings.Contains(out, "Environment staging deleted.") {
+		t.Fatalf("rm = %q, %v: the delete succeeded and must say so", out, err)
+	}
+	if !strings.Contains(stderr, "could not forget the saved environment staging") {
+		t.Errorf("stderr = %q, want a note", stderr)
 	}
 }
 
