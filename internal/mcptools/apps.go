@@ -21,8 +21,7 @@ type CreateAppArgs struct {
 	ProjectArg
 	Name     string `json:"name" jsonschema:"app name: lowercase letters, digits and hyphens"`
 	Platform string `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; omit for an app built from a Dockerfile"`
-	Plan     string `json:"plan,omitempty" jsonschema:"plan slug from goship_list_plans; required unless the org has a free plan or node is set"`
-	Node     string `json:"node,omitempty" jsonschema:"name of one of the project's own nodes to run the app on (never billed), or goship for GoShip's servers; omitted, the project's default placement decides"`
+	Plan     string `json:"plan,omitempty" jsonschema:"plan slug from goship_list_plans; omitted, a free plan of the environment is picked when there is one"`
 	Private  bool   `json:"private,omitempty" jsonschema:"true puts a GoShip login page in front of the app from its first deploy"`
 }
 
@@ -39,35 +38,28 @@ type SetPlanArgs struct {
 func (r *registry) apps() {
 	tool(r, "goship_list_apps", "List the apps in a project with status, plan and address.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (AppList, error) {
-			apps, err := c.Apps(ctx, t.Org, t.Project)
+			apps, err := c.Apps(ctx, t.Org, t.Project, t.Environment)
 			return AppList{Apps: apps}, err
 		})
 	tool(r, "goship_get_app", "Show one app: platform, plan, units, addresses, custom domains and last error.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in AppArg) (*portal.App, error) {
-			return c.App(ctx, t.Org, t.Project, in.App)
+			return c.App(ctx, t.Org, t.Project, t.Environment, in.App)
 		})
 	tool(r, "goship_create_app", "Create an app without deploying it. goship_deploy creates the app itself when it is missing, so this is only for creating ahead of a deploy.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateAppArgs) (*portal.App, error) {
 			req := portal.CreateAppRequest{Name: in.Name, Platform: in.Platform, Plan: in.Plan, Private: in.Private}
-			nodeID, _, err := deploy.PlaceNewApp(ctx, c, t, in.Node)
-			if err != nil {
-				return nil, err
-			}
-			if nodeID != "" {
-				req.NodeID = &nodeID
-			}
-			if !deploy.OnNode(nodeID) && in.Plan == "" {
+			if in.Plan == "" {
 				chosen, err := deploy.ChoosePlan(ctx, c, t)
 				if err != nil {
 					return nil, err
 				}
 				req.Plan = chosen.Slug
 			}
-			return c.CreateApp(ctx, t.Org, t.Project, req)
+			return c.CreateApp(ctx, t.Org, t.Project, t.Environment, req)
 		})
 	tool(r, "goship_delete_app", "Delete an app, its releases and its routes.", destructive,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in AppArg) (Message, error) {
-			if err := c.DeleteApp(ctx, t.Org, t.Project, in.App); err != nil {
+			if err := c.DeleteApp(ctx, t.Org, t.Project, t.Environment, in.App); err != nil {
 				return Message{}, err
 			}
 			return msgf("App %s deleted.", in.App)
@@ -75,7 +67,7 @@ func (r *registry) apps() {
 	for _, action := range []string{"start", "stop", "restart"} {
 		tool(r, "goship_"+action+"_app", fmt.Sprintf("%s an app's units.", capitalize(action)), write,
 			func(ctx context.Context, c *portal.Client, t deploy.Target, in AppArg) (Message, error) {
-				if err := c.Lifecycle(ctx, t.Org, t.Project, in.App, action); err != nil {
+				if err := c.Lifecycle(ctx, t.Org, t.Project, t.Environment, in.App, action); err != nil {
 					return Message{}, err
 				}
 				return msgf("App %s: %s requested.", in.App, action)
@@ -83,14 +75,14 @@ func (r *registry) apps() {
 	}
 	tool(r, "goship_scale_app", "Set how many units of an app run.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in ScaleArgs) (Message, error) {
-			if err := c.ScaleApp(ctx, t.Org, t.Project, in.App, in.Units); err != nil {
+			if err := c.ScaleApp(ctx, t.Org, t.Project, t.Environment, in.App, in.Units); err != nil {
 				return Message{}, err
 			}
 			return msgf("App %s scaled to %d unit(s).", in.App, in.Units)
 		})
 	tool(r, "goship_set_app_plan", "Change an app's plan (CPU, memory and price). Takes effect on the next release.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetPlanArgs) (Message, error) {
-			if err := c.SetAppPlan(ctx, t.Org, t.Project, in.App, in.Plan); err != nil {
+			if err := c.SetAppPlan(ctx, t.Org, t.Project, t.Environment, in.App, in.Plan); err != nil {
 				return Message{}, err
 			}
 			return msgf("App %s moved to plan %s.", in.App, in.Plan)

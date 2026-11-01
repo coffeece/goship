@@ -25,6 +25,10 @@ type Clients interface {
 	// Project is Org for the project inside org. The error says how to select
 	// one.
 	Project(ctx context.Context, c *portal.Client, org, override string) (string, error)
+	// Environment is Project for the environment of project: override when
+	// the tool was given one, else the caller's selection, else the
+	// organization's default. The error says how to choose one.
+	Environment(ctx context.Context, c *portal.Client, org, project, override string) (string, error)
 }
 
 // Options selects what the server offers.
@@ -53,7 +57,6 @@ func Register(s *mcp.Server, c Clients, o Options) {
 	r.databases()
 	r.dbservers()
 	r.domains()
-	r.nodes()
 	r.volumes()
 	r.plans()
 	r.cloud()
@@ -90,7 +93,8 @@ func (k kind) annotations() *mcp.ToolAnnotations {
 const confirm = " Destructive and not undoable: confirm with the user before calling it."
 
 // tool registers one typed tool that acts on a project. The handler gets the
-// client and the resolved org and project; In must embed ProjectArg.
+// client and the resolved org, project and environment; In must embed
+// ProjectArg.
 func tool[In targetCarrier, Out any](r *registry, name, desc string, k kind, fn func(ctx context.Context, c *portal.Client, t deploy.Target, in In) (Out, error)) {
 	if k == destructive {
 		desc += confirm
@@ -110,7 +114,11 @@ func tool[In targetCarrier, Out any](r *registry, name, desc string, k kind, fn 
 			if err != nil {
 				return nil, zero, err
 			}
-			out, err := fn(ctx, c, deploy.Target{Org: org, Project: project}, in)
+			env, err := r.clients.Environment(ctx, c, org, project, "")
+			if err != nil {
+				return nil, zero, err
+			}
+			out, err := fn(ctx, c, deploy.Target{Org: org, Project: project, Environment: env}, in)
 			if err != nil {
 				return nil, zero, err
 			}

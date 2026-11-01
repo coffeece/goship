@@ -10,7 +10,6 @@ import (
 type PlansArgs struct {
 	ProjectArg
 	Kind string `json:"kind,omitempty" jsonschema:"app (default), database or volume"`
-	Node string `json:"node,omitempty" jsonschema:"list the sizes available on this node of your own instead of the shared cluster"`
 }
 
 type PlanList struct {
@@ -24,7 +23,7 @@ func (r *registry) plans() {
 			if kind == "" {
 				kind = "app"
 			}
-			p, err := c.AvailablePlans(ctx, t.Org, t.Project, kind, in.Node)
+			p, err := c.AvailablePlans(ctx, t.Org, t.Project, t.Environment, kind)
 			return PlanList{Plans: p}, err
 		})
 }

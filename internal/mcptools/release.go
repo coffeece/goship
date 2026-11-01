@@ -18,7 +18,6 @@ type DeployArgs struct {
 	App        string            `json:"app,omitempty" jsonschema:"app name; defaults to goship.yml's app, then the directory name"`
 	Platform   string            `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; inferred from the files present when omitted"`
 	Plan       string            `json:"plan,omitempty" jsonschema:"plan slug for a new app; a free plan is picked only when the org has one"`
-	Node       string            `json:"node,omitempty" jsonschema:"run a new app on this node of the project's own (never billed), or goship for GoShip's servers; omitted, the project's default placement decides"`
 	Dockerfile string            `json:"dockerfile,omitempty" jsonschema:"build from this container file instead of a platform"`
 	Message    string            `json:"message,omitempty" jsonschema:"release message"`
 	Env        map[string]string `json:"env,omitempty" jsonschema:"private variables applied before the build"`
@@ -85,7 +84,7 @@ func (r *registry) releases(withDeploy bool) {
 				rec := &recorder{}
 				res, err := deploy.Run(ctx, c, deploy.Options{
 					Dir: in.Path, App: in.App, Org: org, Project: project, Platform: in.Platform, Plan: in.Plan,
-					Node: in.Node, Dockerfile: in.Dockerfile, Message: in.Message, Env: in.Env,
+					Dockerfile: in.Dockerfile, Message: in.Message, Env: in.Env,
 				}, rec)
 				if errors.Is(err, deploy.ErrNoProject) {
 					return nil, errors.New(`no project selected: pass project, set project: in goship.yml, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`)
@@ -107,14 +106,14 @@ func (r *registry) releases(withDeploy bool) {
 			if limit == 0 {
 				limit = 20
 			}
-			rel, err := c.Deploys(ctx, t.Org, t.Project, in.App, limit)
+			rel, err := c.Deploys(ctx, t.Org, t.Project, t.Environment, in.App, limit)
 			return ReleaseList{Releases: rel}, err
 		})
 	tool(r, "goship_rollback", "Release a previous version of an app again.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in RollbackArgs) (*RollbackResult, error) {
 			rec := &recorder{}
 			began := time.Now()
-			if err := c.Rollback(ctx, t.Org, t.Project, in.App, in.Version, rec.Event); err != nil {
+			if err := c.Rollback(ctx, t.Org, t.Project, t.Environment, in.App, in.Version, rec.Event); err != nil {
 				return nil, rec.explain(err)
 			}
 			return &RollbackResult{App: in.App, Version: in.Version, DurationSeconds: time.Since(began).Seconds(), Steps: rec.steps()}, nil

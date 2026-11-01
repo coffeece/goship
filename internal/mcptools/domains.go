@@ -52,14 +52,14 @@ func (r *registry) domains() {
 		})
 	tool(r, "goship_add_app_domain", "Serve an app at a hostname under a verified domain.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in AppDomainArgs) (Message, error) {
-			if err := c.AddAppDomain(ctx, t.Org, t.Project, in.App, in.Domain); err != nil {
+			if err := c.AddAppDomain(ctx, t.Org, t.Project, t.Environment, in.App, in.Domain); err != nil {
 				return Message{}, err
 			}
 			return msgf("%s now serves %s.", in.App, in.Domain)
 		})
 	tool(r, "goship_remove_app_domain", "Stop serving an app at a hostname.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in AppDomainArgs) (Message, error) {
-			if err := c.RemoveAppDomain(ctx, t.Org, t.Project, in.App, in.Domain); err != nil {
+			if err := c.RemoveAppDomain(ctx, t.Org, t.Project, t.Environment, in.App, in.Domain); err != nil {
 				return Message{}, err
 			}
 			return msgf("%s no longer serves %s.", in.App, in.Domain)
