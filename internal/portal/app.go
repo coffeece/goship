@@ -15,7 +15,6 @@ type App struct {
 	// still in the JSON, and `app info` fills it.
 	Platform    string    `json:"platform"`
 	Pool        string    `json:"pool,omitempty"`
-	NodeID      *string   `json:"node_id,omitempty"`
 	PlanSlug    string    `json:"plan_slug"`
 	PlanName    string    `json:"plan_name" table:"PLAN"`
 	Description string    `json:"description,omitempty"`
@@ -33,6 +32,10 @@ type App struct {
 	IdleWarned  bool      `json:"idle_warned,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// Environment is the slug of the environment the app lives in, Cluster
+	// the cluster that environment runs it on for this project.
+	Environment string     `json:"environment"`
+	Cluster     ClusterRef `json:"cluster"`
 	// Latest probe that the login page fronts a private app; nil until one ran.
 	AccessCheck *AccessCheck `json:"access_check,omitempty"`
 }
@@ -51,44 +54,43 @@ type AppUnit struct {
 }
 
 type CreateAppRequest struct {
-	Name        string  `json:"name"`
-	Platform    string  `json:"platform"`
-	Plan        string  `json:"plan,omitempty"`
-	Description string  `json:"description,omitempty"`
-	NodeID      *string `json:"node_id,omitempty"`
-	Private     bool    `json:"private,omitempty"`
+	Name        string `json:"name"`
+	Platform    string `json:"platform"`
+	Plan        string `json:"plan,omitempty"`
+	Description string `json:"description,omitempty"`
+	Private     bool   `json:"private,omitempty"`
 }
 
-func (c *Client) Apps(ctx context.Context, org, project string) ([]App, error) {
+func (c *Client) Apps(ctx context.Context, org, project, env string) ([]App, error) {
 	var apps []App
-	return apps, c.get(ctx, projectPath(org, project, "/apps"), &apps)
+	return apps, c.get(ctx, envPath(org, project, env, "/apps"), &apps)
 }
 
-func (c *Client) App(ctx context.Context, org, project, name string) (*App, error) {
+func (c *Client) App(ctx context.Context, org, project, env, name string) (*App, error) {
 	var app App
-	return &app, c.get(ctx, appPath(org, project, name), &app)
+	return &app, c.get(ctx, appPath(org, project, env, name), &app)
 }
 
-func (c *Client) CreateApp(ctx context.Context, org, project string, req CreateAppRequest) (*App, error) {
+func (c *Client) CreateApp(ctx context.Context, org, project, env string, req CreateAppRequest) (*App, error) {
 	var app App
-	return &app, c.post(ctx, projectPath(org, project, "/apps"), req, &app)
+	return &app, c.post(ctx, envPath(org, project, env, "/apps"), req, &app)
 }
 
-func (c *Client) DeleteApp(ctx context.Context, org, project, name string) error {
-	return c.delete(ctx, appPath(org, project, name), nil)
+func (c *Client) DeleteApp(ctx context.Context, org, project, env, name string) error {
+	return c.delete(ctx, appPath(org, project, env, name), nil)
 }
 
 // Lifecycle runs one of start, stop, restart or wake.
-func (c *Client) Lifecycle(ctx context.Context, org, project, name, action string) error {
-	return c.post(ctx, appPath(org, project, name)+"/"+action, nil, nil)
+func (c *Client) Lifecycle(ctx context.Context, org, project, env, name, action string) error {
+	return c.post(ctx, appPath(org, project, env, name)+"/"+action, nil, nil)
 }
 
-func (c *Client) ScaleApp(ctx context.Context, org, project, name string, units int) error {
-	return c.put(ctx, appPath(org, project, name)+"/units", map[string]int{"units": units}, nil)
+func (c *Client) ScaleApp(ctx context.Context, org, project, env, name string, units int) error {
+	return c.put(ctx, appPath(org, project, env, name)+"/units", map[string]int{"units": units}, nil)
 }
 
-func (c *Client) SetAppPlan(ctx context.Context, org, project, name, plan string) error {
-	return c.put(ctx, appPath(org, project, name)+"/plan", map[string]string{"plan": plan}, nil)
+func (c *Client) SetAppPlan(ctx context.Context, org, project, env, name, plan string) error {
+	return c.put(ctx, appPath(org, project, env, name)+"/plan", map[string]string{"plan": plan}, nil)
 }
 
 type EnvVar struct {
@@ -97,23 +99,23 @@ type EnvVar struct {
 	Public bool   `json:"public" table:"PUBLIC"`
 }
 
-func (c *Client) Env(ctx context.Context, org, project, name string) ([]EnvVar, error) {
+func (c *Client) Env(ctx context.Context, org, project, env, name string) ([]EnvVar, error) {
 	var envs []EnvVar
-	return envs, c.get(ctx, appPath(org, project, name)+"/env", &envs)
+	return envs, c.get(ctx, appPath(org, project, env, name)+"/env", &envs)
 }
 
-func (c *Client) SetEnv(ctx context.Context, org, project, name string, envs []EnvVar, noRestart bool) error {
+func (c *Client) SetEnv(ctx context.Context, org, project, env, name string, envs []EnvVar, noRestart bool) error {
 	body := struct {
 		Envs      []EnvVar `json:"envs"`
 		NoRestart bool     `json:"no_restart"`
 	}{envs, noRestart}
-	return c.post(ctx, appPath(org, project, name)+"/env", body, nil)
+	return c.post(ctx, appPath(org, project, env, name)+"/env", body, nil)
 }
 
-func (c *Client) UnsetEnv(ctx context.Context, org, project, name string, keys []string, noRestart bool) error {
+func (c *Client) UnsetEnv(ctx context.Context, org, project, env, name string, keys []string, noRestart bool) error {
 	body := struct {
 		Envs      []string `json:"envs"`
 		NoRestart bool     `json:"no_restart"`
 	}{keys, noRestart}
-	return c.delete(ctx, appPath(org, project, name)+"/env", body)
+	return c.delete(ctx, appPath(org, project, env, name)+"/env", body)
 }

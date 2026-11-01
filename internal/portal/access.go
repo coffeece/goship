@@ -23,35 +23,35 @@ type accessPassword struct {
 	Password string `json:"password,omitempty"`
 }
 
-func (c *Client) SetAppVisibility(ctx context.Context, org, project, app, visibility string) error {
-	return c.put(ctx, appPath(org, project, app)+"/visibility", map[string]string{"visibility": visibility}, nil)
+func (c *Client) SetAppVisibility(ctx context.Context, org, project, env, app, visibility string) error {
+	return c.put(ctx, appPath(org, project, env, app)+"/visibility", map[string]string{"visibility": visibility}, nil)
 }
 
-func (c *Client) ListAppAccess(ctx context.Context, org, project, app string) ([]AccessUser, error) {
+func (c *Client) ListAppAccess(ctx context.Context, org, project, env, app string) ([]AccessUser, error) {
 	var out struct {
 		Users []AccessUser `json:"users"`
 	}
-	err := c.get(ctx, appPath(org, project, app)+"/access/users", &out)
+	err := c.get(ctx, appPath(org, project, env, app)+"/access/users", &out)
 	return out.Users, err
 }
 
-func (c *Client) AddAppAccess(ctx context.Context, org, project, app, username, password string) (*AccessUserCreated, error) {
+func (c *Client) AddAppAccess(ctx context.Context, org, project, env, app, username, password string) (*AccessUserCreated, error) {
 	var out AccessUserCreated
-	return &out, c.post(ctx, appPath(org, project, app)+"/access/users", accessPassword{username, password}, &out)
+	return &out, c.post(ctx, appPath(org, project, env, app)+"/access/users", accessPassword{username, password}, &out)
 }
 
-func (c *Client) ResetAppAccess(ctx context.Context, org, project, app, username, password string) (*AccessUserCreated, error) {
+func (c *Client) ResetAppAccess(ctx context.Context, org, project, env, app, username, password string) (*AccessUserCreated, error) {
 	var out AccessUserCreated
-	return &out, c.put(ctx, appPath(org, project, app)+"/access/users/"+esc(username), accessPassword{Password: password}, &out)
+	return &out, c.put(ctx, appPath(org, project, env, app)+"/access/users/"+esc(username), accessPassword{Password: password}, &out)
 }
 
-func (c *Client) RemoveAppAccess(ctx context.Context, org, project, app, username string) error {
-	return c.delete(ctx, appPath(org, project, app)+"/access/users/"+esc(username), nil)
+func (c *Client) RemoveAppAccess(ctx context.Context, org, project, env, app, username string) error {
+	return c.delete(ctx, appPath(org, project, env, app)+"/access/users/"+esc(username), nil)
 }
 
 // AppAccessToken returns the token masked unless reveal is set.
-func (c *Client) AppAccessToken(ctx context.Context, org, project, app string, reveal bool) (string, error) {
-	path := appPath(org, project, app) + "/access/token"
+func (c *Client) AppAccessToken(ctx context.Context, org, project, env, app string, reveal bool) (string, error) {
+	path := appPath(org, project, env, app) + "/access/token"
 	if reveal {
 		path += "?" + url.Values{"reveal": {"1"}}.Encode()
 	}
@@ -62,10 +62,10 @@ func (c *Client) AppAccessToken(ctx context.Context, org, project, app string, r
 	return out.Token, err
 }
 
-func (c *Client) RotateAppAccessToken(ctx context.Context, org, project, app string) (string, error) {
+func (c *Client) RotateAppAccessToken(ctx context.Context, org, project, env, app string) (string, error) {
 	var out struct {
 		Token string `json:"token"`
 	}
-	err := c.post(ctx, appPath(org, project, app)+"/access/token/rotate", nil, &out)
+	err := c.post(ctx, appPath(org, project, env, app)+"/access/token/rotate", nil, &out)
 	return out.Token, err
 }
