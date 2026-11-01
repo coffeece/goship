@@ -6,7 +6,7 @@
 | `goship_list_orgs` | `goship orgs` |
 | `goship_list_projects` | `goship projects` |
 | `goship_list_apps` / `goship_get_app` | `goship apps` / `goship app info <name>` |
-| `goship_create_app` | `goship app create <name> --platform go [--plan p] [--node n] [--private]` |
+| `goship_create_app` | `goship app create <name> --platform go [--plan p] [--private]` |
 | `goship_delete_app` | `goship app rm <name>` |
 | `goship_start_app` / `_stop_app` / `_restart_app` | `goship app start\|stop\|restart <name>` |
 | `goship_scale_app` | `goship app scale <name> --units N` |
@@ -15,7 +15,7 @@
 | `goship_list_app_access` / `goship_add_app_access` / `goship_reset_app_access` / `goship_remove_app_access` | `goship app access list\|add\|reset\|rm <name> [user]` |
 | `goship_get_app_access_token` (`reveal: true` for a usable token) / `goship_rotate_app_access_token` | `goship app access token <name> [--reveal\|--rotate]` |
 | `goship_get_env` / `goship_set_env` / `goship_unset_env` | `goship env list\|set\|unset -a <app> [--no-restart]` |
-| `goship_deploy` | `goship deploy [dir] [-a app] [--platform p] [--dockerfile f] [--plan p] [--node n] [--env-file .env] [-m msg]` |
+| `goship_deploy` | `goship deploy [dir] [-a app] [--platform p] [--dockerfile f] [--plan p] [--env-file .env] [-m msg]` |
 | `goship_list_releases` / `goship_rollback` | `goship releases -a <app>` / `goship rollback <version> -a <app>` |
 | `goship_logs` | `goship logs -a <app> [-l N] [--source web]` |
 | `goship_run` | `goship run -a <app> [--once] [--isolated] -- <cmd>` |
@@ -29,15 +29,30 @@
 | `goship_list_database_extensions` / `goship_enable_database_extension` / `goship_disable_database_extension` | `goship db extensions <name>` / `goship db extension-add <name> <ext>` / `goship db extension-rm <name> <ext>` |
 | `goship_list_domains` / `goship_register_domain` / `goship_verify_domain` / `goship_delete_domain` | `goship domains` / `goship domain register\|verify\|rm` |
 | `goship_add_app_domain` / `goship_remove_app_domain` | `goship domain add\|rm <domain> -a <app>` |
-| `goship_list_nodes` / `goship_get_node` / `goship_create_node` / `goship_delete_node` | `goship nodes` / `goship node info\|create\|rm` |
-| `goship_list_node_sizes` / `goship_resize_node` | `goship node sizes <node>` / `goship node resize <node> --size <slug>` (on `reconnect_required`, send the user to the dashboard link in the error) |
-| `goship_list_volumes` … `goship_delete_volume` | `goship volumes` / `goship volume create\|bind\|unbind\|rm` |
-| `goship_list_plans` | `goship plans [--kind database\|volume] [--node n]` |
+| `goship_list_environments` | `goship environments` |
+| `goship_create_environment` / `goship_delete_environment` | `goship environment create <slug> [--name n] [--cluster c] [--db-server s]` / `goship environment rm <slug>` |
+| `goship_list_clusters` / `goship_get_cluster` | `goship clusters` / `goship cluster info <cluster>` |
+| `goship_create_cluster` | `goship cluster create <name> --cloud a --region r --size s`, or `--host ip [--ssh-user u] [--port p] --ssh-key path`, or `--kubeconfig path` (the tool takes `ssh_key` and `kubeconfig` as contents: use the CLI for those) |
+| `goship_list_cluster_sizes` / `goship_resize_cluster` | `goship cluster sizes <cluster>` / `goship cluster resize <cluster> --size <slug>` (on `reconnect_required`, send the user to the dashboard link in the error) |
+| `goship_delete_cluster` | `goship cluster rm <cluster> [--destroy-server]` |
+| `goship_list_volumes` / `goship_get_volume` / `goship_create_volume` / `goship_bind_volume` / `goship_unbind_volume` / `goship_delete_volume` | `goship volumes` / `goship volume info\|create\|bind\|unbind\|rm` (volumes need an environment on a cluster of the organization's own) |
+| `goship_list_plans` | `goship plans [--kind app\|database]` |
 | `goship_list_cloud_accounts` / `_regions` / `_sizes` / `goship_delete_cloud_account` | `goship cloud list\|regions\|sizes\|disconnect` |
-| `goship_move_cloud_account` | `goship cloud move <account> --to-project <slug>\|--to-org` |
 | `goship_list_api_tokens` / `goship_create_api_token` / `goship_revoke_api_token` | `goship tokens` / `goship token create\|revoke` |
 
 Not tools, CLI only (they need a browser or a terminal): `goship login`,
-`goship logout`, `goship cloud connect <provider>`, `goship shell`.
+`goship logout`, `goship cloud connect <provider>` (`--account <id>`
+reconnects an API-key account in place, keeping its clusters), `goship shell`,
+`goship environment use <slug>` (saved per organization and project; the local
+MCP server reads it too).
+
+Scope. Tools that act on an app, a database or a volume (also plans,
+releases, logs, env and `goship_add_app_domain`) act in one environment and
+take `org`, `project` and `environment`; the CLI takes `--org`, `--project`
+and `--environment`. Environments, clusters, cloud accounts, database servers
+and registered domains belong to the organization and take `org` only.
+`goship apps\|dbs\|volumes -A` lists every environment of every project (no
+tool does that: call the list tool once per environment from
+`goship_list_environments`).
 
 Every data command takes `--output json`; `-y` answers confirmations.

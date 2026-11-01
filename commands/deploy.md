@@ -9,4 +9,7 @@ found, make only the changes GoShip needs, write `goship.yaml` and
 `.goshipignore` if missing, deploy with the `goship_deploy` tool (or
 `goship deploy` when the MCP server is not available), then verify the URL
 answers and report it. When the organization has several projects, pass
-`project` (or set `project:` in `goship.yaml`) as the skill describes.
+`project` (or set `project:` in `goship.yaml`) as the skill describes. When
+the user names an environment ("staging"), pass `environment` and do not ask
+where it should run; with none named the deploy goes to the default one, and
+the report says which.
