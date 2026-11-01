@@ -78,6 +78,17 @@ func TestClustersAllSkipsAForbiddenOrg(t *testing.T) {
 	}
 }
 
+// The moved commands are hidden but still answer help, with a line that says
+// where they went.
+func TestHelpForAMovedNodeCommandSaysWhereItWent(t *testing.T) {
+	for _, name := range []string{"node", "nodes"} {
+		out, err := run(t, "", "help", name)
+		if err != nil || !strings.Contains(out, "moved: use goship cluster") {
+			t.Errorf("help %s = %q, %v", name, out, err)
+		}
+	}
+}
+
 // Every way of spelling a node command says where it went and exits 2,
 // without running anything.
 func TestNodeCommandPointsToCluster(t *testing.T) {
