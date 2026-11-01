@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/coffeece/goship/internal/config"
@@ -257,10 +256,12 @@ func (a *App) explainProject(ctx context.Context, t Target, err error) error {
 	return fmt.Errorf("project %q is not reachable in %s; run `goship projects` and `goship project use <slug>`", t.Project, t.Org)
 }
 
-// TargetForApp is Target for a named app: with nothing selected it looks for
-// the app in every project the user can reach. A name present in more than
-// one is ambiguous and returns an error asking for --org and --project, so a
-// bare command never guesses between two apps that share a name.
+// TargetForApp is Target for a named app: with no organization or project to
+// go on it looks for the app in every environment of every project the user
+// can reach, narrowed by whatever was chosen (--org, --project,
+// --environment). A name present in more than one place is ambiguous and
+// returns an error naming each org/project/environment, so a bare command
+// never guesses between two apps that share a name.
 func (a *App) TargetForApp(ctx context.Context, name string) (Target, error) {
 	tg, err := a.Target(ctx)
 	if err == nil {
@@ -285,11 +286,7 @@ func (a *App) TargetForApp(ctx context.Context, name string) (Target, error) {
 		}
 		return Target{}, fmt.Errorf("app %q not found in any of your projects", name)
 	default:
-		names := make([]string, len(matches))
-		for i, m := range matches {
-			names[i] = m.String()
-		}
-		return Target{}, fmt.Errorf("app %q exists in more than one project (%s): pass --org and --project to choose", name, strings.Join(names, ", "))
+		return Target{}, deploy.ElsewhereError(name, tg, matches, false)
 	}
 }
 

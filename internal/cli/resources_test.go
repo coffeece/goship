@@ -43,6 +43,47 @@ func TestDatabaseCommandsUseTheServiceInstanceEndpoints(t *testing.T) {
 	}
 }
 
+// Volumes are the one noun that shows where it lives: the cluster is a column
+// of the table and stays whole in JSON.
+func TestVolumesShowTheCluster(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		volumes := `[` +
+			`{"name":"uploads","plan":"volume-small","capacity_gib":5,"cluster":{"id":"c-home","name":"vulcan","shared":false}},` +
+			`{"name":"cache","plan":"volume-small","capacity_gib":1,"cluster":{"id":"c-sh","name":"GoShip","shared":true}}]`
+		w.Write([]byte(volumes)) //nolint:errcheck
+	})
+	out, err := run(t, "", "volumes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 || !strings.Contains(lines[0], "CLUSTER") {
+		t.Fatalf("want a CLUSTER column:\n%s", out)
+	}
+	if !strings.HasPrefix(lines[1], "uploads") || !strings.HasSuffix(lines[1], "vulcan") ||
+		!strings.HasPrefix(lines[2], "cache") || !strings.HasSuffix(lines[2], "GoShip") {
+		t.Errorf("the cluster name closes each row:\n%s", out)
+	}
+	if strings.Contains(out, "c-home") || strings.Contains(out, "{") {
+		t.Errorf("only the name is shown:\n%s", out)
+	}
+
+	out, err = run(t, "", "volumes", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []struct {
+		Cluster struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Shared bool   `json:"shared"`
+		} `json:"cluster"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || len(got) != 2 || got[0].Cluster.ID != "c-home" || !got[1].Cluster.Shared {
+		t.Errorf("json = %v\n%s", err, out)
+	}
+}
+
 func TestVolumeBindSendsTheMountPoint(t *testing.T) {
 	var body map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
