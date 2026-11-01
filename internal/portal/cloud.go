@@ -73,16 +73,16 @@ func (c *Client) CloudProviders(ctx context.Context) ([]CloudProvider, error) {
 	return providers, c.get(ctx, "/cloud/providers", &providers)
 }
 
-func (c *Client) CloudAccounts(ctx context.Context, org, project string) ([]CloudAccount, error) {
+func (c *Client) CloudAccounts(ctx context.Context, org string) ([]CloudAccount, error) {
 	var accounts []CloudAccount
-	return accounts, c.get(ctx, cloudAccountsPath(org, project), &accounts)
+	return accounts, c.get(ctx, cloudAccountsPath(org), &accounts)
 }
 
 // CloudAWSSetup returns the org's AWS setup, or nil when this GoShip cannot
 // assume roles (the API answers 404) and only access keys can connect.
-func (c *Client) CloudAWSSetup(ctx context.Context, org, project string) (*AWSSetup, error) {
+func (c *Client) CloudAWSSetup(ctx context.Context, org string) (*AWSSetup, error) {
 	var setup AWSSetup
-	err := c.get(ctx, cloudAccountsPath(org, project)+"/aws/setup", &setup)
+	err := c.get(ctx, cloudAccountsPath(org)+"/aws/setup", &setup)
 	var apiErr *Error
 	if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
 		return nil, nil
@@ -93,30 +93,30 @@ func (c *Client) CloudAWSSetup(ctx context.Context, org, project string) (*AWSSe
 	return &setup, nil
 }
 
-func (c *Client) ConnectCloudAWSRole(ctx context.Context, org, project, label, roleARN string) (*CloudAccount, error) {
+func (c *Client) ConnectCloudAWSRole(ctx context.Context, org, label, roleARN string) (*CloudAccount, error) {
 	var account CloudAccount
 	body := map[string]any{"provider": "aws", "label": label, "role_arn": roleARN}
-	return &account, c.post(ctx, cloudAccountsPath(org, project), body, &account)
+	return &account, c.post(ctx, cloudAccountsPath(org), body, &account)
 }
 
-func (c *Client) ConnectCloudAWSKeys(ctx context.Context, org, project, label, accessKeyID, secretAccessKey string) (*CloudAccount, error) {
+func (c *Client) ConnectCloudAWSKeys(ctx context.Context, org, label, accessKeyID, secretAccessKey string) (*CloudAccount, error) {
 	var account CloudAccount
 	body := map[string]any{"provider": "aws", "label": label, "access_key_id": accessKeyID, "secret_access_key": secretAccessKey}
-	return &account, c.post(ctx, cloudAccountsPath(org, project), body, &account)
+	return &account, c.post(ctx, cloudAccountsPath(org), body, &account)
 }
 
-func (c *Client) ConnectCloudAPIKey(ctx context.Context, org, project, provider, label, apiKey string) (*CloudAccount, error) {
+func (c *Client) ConnectCloudAPIKey(ctx context.Context, org, provider, label, apiKey string) (*CloudAccount, error) {
 	var account CloudAccount
 	body := map[string]any{"provider": provider, "label": label, "api_key": apiKey}
-	return &account, c.post(ctx, cloudAccountsPath(org, project), body, &account)
+	return &account, c.post(ctx, cloudAccountsPath(org), body, &account)
 }
 
-func (c *Client) BeginCloudOAuth(ctx context.Context, org, project, provider string) (authorizeURL, ticket string, err error) {
+func (c *Client) BeginCloudOAuth(ctx context.Context, org, provider string) (authorizeURL, ticket string, err error) {
 	var result struct {
 		AuthorizeURL string `json:"authorize_url"`
 		Ticket       string `json:"ticket"`
 	}
-	if err := c.post(ctx, cloudAccountsPath(org, project)+"/"+esc(provider)+"/connect", nil, &result); err != nil {
+	if err := c.post(ctx, cloudAccountsPath(org)+"/"+esc(provider)+"/connect", nil, &result); err != nil {
 		return "", "", err
 	}
 	return result.AuthorizeURL, result.Ticket, nil
@@ -124,12 +124,12 @@ func (c *Client) BeginCloudOAuth(ctx context.Context, org, project, provider str
 
 // BeginCloudAWSConnect starts a one-click AWS connect: the console link the
 // customer opens, and the ticket that completes when the stack reports back.
-func (c *Client) BeginCloudAWSConnect(ctx context.Context, org, project string) (launchURL, ticket string, err error) {
+func (c *Client) BeginCloudAWSConnect(ctx context.Context, org string) (launchURL, ticket string, err error) {
 	var out struct {
 		LaunchURL string `json:"launch_url"`
 		Ticket    string `json:"ticket"`
 	}
-	if err := c.post(ctx, cloudAccountsPath(org, project)+"/aws/connect", nil, &out); err != nil {
+	if err := c.post(ctx, cloudAccountsPath(org)+"/aws/connect", nil, &out); err != nil {
 		return "", "", err
 	}
 	return out.LaunchURL, out.Ticket, nil
@@ -144,44 +144,39 @@ type GCPConnectStart struct {
 	ShellURL string `json:"shell_url"`
 }
 
-func (c *Client) BeginCloudGCPConnect(ctx context.Context, org, project string) (*GCPConnectStart, error) {
+func (c *Client) BeginCloudGCPConnect(ctx context.Context, org string) (*GCPConnectStart, error) {
 	var start GCPConnectStart
-	return &start, c.post(ctx, cloudAccountsPath(org, project)+"/gcp/connect", nil, &start)
+	return &start, c.post(ctx, cloudAccountsPath(org)+"/gcp/connect", nil, &start)
 }
 
 // ConnectCloudGCP connects a Google Cloud project whose setup already ran.
-func (c *Client) ConnectCloudGCP(ctx context.Context, org, project, label, projectNumber string) (*CloudAccount, error) {
+func (c *Client) ConnectCloudGCP(ctx context.Context, org, label, projectNumber string) (*CloudAccount, error) {
 	var account CloudAccount
 	body := map[string]any{"provider": "gcp", "label": label, "project_number": projectNumber}
-	return &account, c.post(ctx, cloudAccountsPath(org, project), body, &account)
+	return &account, c.post(ctx, cloudAccountsPath(org), body, &account)
 }
 
-func (c *Client) CloudConnectTicket(ctx context.Context, org, project, ticket string) (*ConnectTicket, error) {
+func (c *Client) CloudConnectTicket(ctx context.Context, org, ticket string) (*ConnectTicket, error) {
 	var t ConnectTicket
-	return &t, c.get(ctx, cloudAccountsPath(org, project)+"/connect/"+esc(ticket), &t)
+	return &t, c.get(ctx, cloudAccountsPath(org)+"/connect/"+esc(ticket), &t)
 }
 
-func (c *Client) DeleteCloudAccount(ctx context.Context, org, project, id string) error {
-	return c.delete(ctx, cloudAccountsPath(org, project)+"/"+esc(id), nil)
+func (c *Client) DeleteCloudAccount(ctx context.Context, org, id string) error {
+	return c.delete(ctx, cloudAccountsPath(org)+"/"+esc(id), nil)
 }
 
-func (c *Client) CloudRegions(ctx context.Context, org, project, accountID string) ([]CloudRegion, error) {
+func (c *Client) CloudRegions(ctx context.Context, org, accountID string) ([]CloudRegion, error) {
 	var regions []CloudRegion
-	return regions, c.get(ctx, cloudAccountsPath(org, project)+"/"+esc(accountID)+"/regions", &regions)
+	return regions, c.get(ctx, cloudAccountsPath(org)+"/"+esc(accountID)+"/regions", &regions)
 }
 
-func (c *Client) CloudSizes(ctx context.Context, org, project, accountID, region string) ([]CloudSize, error) {
+func (c *Client) CloudSizes(ctx context.Context, org, accountID, region string) ([]CloudSize, error) {
 	var sizes []CloudSize
 	query := url.Values{"region": {region}}.Encode()
-	path := cloudAccountsPath(org, project) + "/" + esc(accountID) + "/sizes?" + query
+	path := cloudAccountsPath(org) + "/" + esc(accountID) + "/sizes?" + query
 	return sizes, c.get(ctx, path, &sizes)
 }
 
-// cloudAccountsPath is the project's view of the cloud accounts (its own and
-// the organization's) when a project is given, else the organization's.
-func cloudAccountsPath(org, project string) string {
-	if project == "" {
-		return orgPath(org, "/cloud-accounts")
-	}
-	return projectPath(org, project, "/cloud-accounts")
-}
+// cloudAccountsPath is the organization's cloud accounts: they belong to the
+// organization, whichever project asks.
+func cloudAccountsPath(org string) string { return orgPath(org, "/cloud-accounts") }
