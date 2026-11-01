@@ -39,6 +39,10 @@ Find out, asking only for what is not already known:
 - **Plan**: `goship_list_plans` (with the same `environment`) shows what that
   environment offers and the price. A plan with `billed: false` is free to
   choose. Never pick a paid plan without the user saying which.
+- **Invited trial**: apps and databases on GoShip need no card within the
+  trial's allowance (up to 3 apps and 2 databases, 1 unit, plans up to
+  R$ 19,90/mo) and are billed only when the trial ends. When a result has
+  `billing_starts_at`, tell the user that date.
 
 How the environment is picked, in order:
 
