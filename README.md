@@ -149,6 +149,10 @@ app-micro-sandboxed     Micro   200   256      R$ 9.90/mo
 app-small-sandboxed     Small   500   512      R$ 19.90/mo
 ```
 
+During an invited trial, apps and databases on GoShip's cluster need no card
+within the trial's allowance; `goship app create`, `goship deploy` and
+`goship db create` say when billing starts.
+
 `goship plans --kind database` lists database plans. Clusters belong to the
 organization, and there are three ways to add one:
 
