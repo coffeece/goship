@@ -1,6 +1,7 @@
 package mcptools
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -228,5 +229,72 @@ func TestDeleteEnvironmentReturnsTheConflict(t *testing.T) {
 	}
 	if method != http.MethodDelete || path != "/api/v1/orgs/acme/environments/staging" {
 		t.Errorf("called %s %s", method, path)
+	}
+}
+
+// environmentArgDescription is the description of the environment property in
+// the input schema a server advertises for tool.
+func environmentArgDescription(t *testing.T, o Options, tool string) string {
+	t.Helper()
+	tools, err := session(t, fakeClients{}, o).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name != tool {
+			continue
+		}
+		raw, err := json.Marshal(tl.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema struct {
+			Properties map[string]struct {
+				Description string `json:"description"`
+			} `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatal(err)
+		}
+		p, ok := schema.Properties["environment"]
+		if !ok {
+			t.Fatalf("%s has no environment property: %s", tool, raw)
+		}
+		return p.Description
+	}
+	t.Fatalf("%s is not registered", tool)
+	return ""
+}
+
+// What an agent reads about the default environment must hold on the server
+// it talks to: the local one carries a selection of its own that the hosted
+// one has no way to.
+func TestEnvironmentDescriptionTellsTheTruthPerServer(t *testing.T) {
+	const selection = "goship environment use"
+	local := environmentArgDescription(t, Options{Deploy: true}, "goship_delete_app")
+	hosted := environmentArgDescription(t, Options{}, "goship_delete_app")
+
+	if !strings.Contains(local, selection) {
+		t.Errorf("local server: %q does not name the selection it applies", local)
+	}
+	if strings.Contains(hosted, selection) {
+		t.Errorf("hosted server: %q names a selection the server has none of", hosted)
+	}
+	if local == hosted {
+		t.Errorf("both servers say %q", local)
+	}
+	if want := "production unless changed"; !strings.Contains(hosted, want) {
+		t.Errorf("hosted server: %q lacks %q", hosted, want)
+	}
+
+	// The local text reaches every tool that takes the argument, goship_deploy
+	// and the org-scoped ones included, and only those.
+	if got := environmentArgDescription(t, Options{Deploy: true}, "goship_deploy"); got != local {
+		t.Errorf("goship_deploy says %q, want %q", got, local)
+	}
+	for _, o := range []Options{{Deploy: true}, {}} {
+		if got := environmentArgDescription(t, o, "goship_delete_environment"); got != "environment slug (goship_list_environments)" {
+			t.Errorf("deploy=%v: goship_delete_environment names the environment to delete, not a default: %q", o.Deploy, got)
+		}
 	}
 }

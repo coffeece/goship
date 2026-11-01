@@ -73,7 +73,7 @@ func (r *registry) releases(withDeploy bool) {
 		// The project is chosen here only when the caller named it or one is
 		// selected; otherwise goship.yml, or the project that already holds the
 		// app, decides inside deploy.Run.
-		orgTool(r, "goship_deploy", "Deploy a directory: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback), applies env, uploads the source and follows the build and release. The environment is the environment argument, else goship.yml's environment:, else the one selected for the project (`goship environment use`), else the organization's default. Returns the version and public URL. Can take minutes.", write,
+		orgTool(r, "goship_deploy", "Deploy a directory: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback), applies env, uploads the source and follows the build and release. The environment is the environment argument, else environment: in the deployed directory's goship.yml, else the server's selection (--environment, GOSHIP_ENVIRONMENT, the server directory's goship.yml, `goship environment use`), else the organization's default. With no project named, the project and environment already holding the app decide. Returns the version and public URL. Can take minutes.", write,
 			func(ctx context.Context, c *portal.Client, org string, in DeployArgs) (*DeployResult, error) {
 				project := in.Project
 				if project == "" {

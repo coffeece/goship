@@ -251,9 +251,12 @@ func TestEnvironmentAndClusterToolsAreRegistered(t *testing.T) {
 // tools of the organization (clusters, environments, cloud accounts,
 // database servers) take neither.
 func TestEveryProjectToolTakesAnEnvironment(t *testing.T) {
-	const want = "environment slug; defaults to the organization's default environment (production)"
 	orgLevel := regexp.MustCompile(`_(environments?|clusters?|cluster_sizes|cloud_\w+|database_servers?|database_server_\w+)$`)
 	for _, o := range []Options{{Deploy: true}, {}} {
+		want := "environment slug; defaults to the organization's default environment (production unless changed)"
+		if o.Deploy {
+			want = localEnvironmentDesc
+		}
 		for name, tl := range toolsByName(t, o) {
 			props := properties(t, tl)
 			_, hasProject := props["project"]
