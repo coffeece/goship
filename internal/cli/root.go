@@ -369,7 +369,7 @@ func NewRoot(version string) *cobra.Command {
 	f := root.PersistentFlags()
 	f.StringVar(&app.Global.Org, "org", "", "organization slug (overrides the current org)")
 	f.StringVar(&app.Global.Project, "project", "", "project slug (overrides the current project)")
-	f.StringVar(&app.Global.Environment, "environment", "", "environment slug (overrides the current environment; default: the organization's default environment)")
+	f.StringVar(&app.Global.Environment, "environment", "", "environment slug (default: goship.yml, GOSHIP_ENVIRONMENT, 'goship environment use', then the organization's default)")
 	f.StringVarP(&app.Global.Output, "output", "o", render.Table, "output format: table or json")
 	f.BoolVarP(&app.Global.Yes, "yes", "y", false, "answer yes to confirmations")
 	f.BoolVarP(&app.Global.Verbose, "verbose", "v", false, "show everything: the full deploy and rollback log, and HTTP requests on stderr")
