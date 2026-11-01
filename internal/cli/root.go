@@ -43,6 +43,8 @@ type App struct {
 	Global  Global
 	Config  *config.Config
 	Out     io.Writer
+	// Err takes notes that are not the command's output; stderr when nil.
+	Err io.Writer
 	// ProjectOrg is the org named by a config file in the working directory.
 	ProjectOrg string
 	// ProjectProject is the project named by that same file.
@@ -51,11 +53,13 @@ type App struct {
 	ProjectEnvironment string
 
 	// orgs is GET /orgs, asked at most once per command: Org and the default
-	// environment both read it.
-	orgsMu  sync.Mutex
-	orgs    []portal.Org
-	orgsErr error
-	orgsSet bool
+	// environment both read it. guessNoted says the command already said it
+	// fell back to production.
+	orgsMu     sync.Mutex
+	orgs       []portal.Org
+	orgsErr    error
+	orgsSet    bool
+	guessNoted bool
 }
 
 // Target is the organization, project and environment a project-scoped
@@ -106,7 +110,24 @@ func (a *App) orgList(ctx context.Context) ([]portal.Org, error) {
 func (a *App) forgetOrgs() {
 	a.orgsMu.Lock()
 	defer a.orgsMu.Unlock()
-	a.orgs, a.orgsErr, a.orgsSet = nil, nil, false
+	a.orgs, a.orgsErr, a.orgsSet, a.guessNoted = nil, nil, false, false
+}
+
+// noteGuess says, once per command, that the environment is production only
+// because the organization's default could not be read.
+func (a *App) noteGuess(err error) {
+	a.orgsMu.Lock()
+	noted := a.guessNoted
+	a.guessNoted = true
+	a.orgsMu.Unlock()
+	if noted {
+		return
+	}
+	w := a.Err
+	if w == nil {
+		w = os.Stderr
+	}
+	fmt.Fprintf(w, "using %s: could not read the organization's default environment (%v)\n", deploy.FallbackEnvironment, err)
 }
 
 // errNoProject is what a project-scoped command says when its organization
@@ -137,27 +158,49 @@ type noProjectError struct{ msg string }
 func (e *noProjectError) Error() string        { return e.msg }
 func (e *noProjectError) Is(target error) bool { return target == errNoProject }
 
-// Target resolves the organization, project and environment a command runs
-// against. An org with one reachable project has nothing to choose, and no
-// environment chosen is the organization's default, never an error. When org
-// or project is missing, the returned Target still carries what was chosen:
-// a project or environment that was asked for is not lost because no org
-// resolved.
+// Target resolves the organization, project and environment a command that
+// only reads runs against. An org with one reachable project has nothing to
+// choose, and no environment chosen is the organization's default, never an
+// error: when that default cannot be read it is production, said once on
+// stderr. When org or project is missing, the returned Target still carries
+// what was chosen: a project or environment that was asked for is not lost
+// because no org resolved.
 func (a *App) Target(ctx context.Context) (Target, error) {
+	t, guessed, err := a.resolveTarget(ctx)
+	if guessed != nil {
+		a.noteGuess(guessed)
+	}
+	return t, err
+}
+
+// TargetToChange is Target for a command that creates or changes something:
+// rather than act in a guessed production, it refuses and asks for
+// --environment.
+func (a *App) TargetToChange(ctx context.Context) (Target, error) {
+	t, guessed, err := a.resolveTarget(ctx)
+	if guessed != nil {
+		return Target{Org: t.Org, Project: t.Project}, deploy.UnknownDefaultError(t.Org, guessed)
+	}
+	return t, err
+}
+
+// resolveTarget is Target and TargetToChange; guessed is why the environment
+// is a fallback, when it is one.
+func (a *App) resolveTarget(ctx context.Context) (t Target, guessed, err error) {
 	org, err := a.Org(ctx)
 	if err != nil {
-		t := Target{Project: a.selectedProject("")}
+		t = Target{Project: a.selectedProject("")}
 		t.Environment = a.environmentChoice().Chosen(t)
-		return t, err
+		return t, nil, err
 	}
 	project, err := a.projectIn(ctx, org)
-	t := Target{Org: org, Project: project}
+	t = Target{Org: org, Project: project}
 	if err != nil {
 		t.Environment = a.environmentChoice().Chosen(t)
-		return t, err
+		return t, nil, err
 	}
-	t.Environment = deploy.ResolveEnvironment(ctx, t, a.environmentChoice(), a.orgList)
-	return t, nil
+	t.Environment, guessed = deploy.ResolveEnvironment(ctx, t, a.environmentChoice(), a.orgList)
+	return t, guessed, nil
 }
 
 // environmentChoice is what picks the environment, in order: --environment,
@@ -261,10 +304,11 @@ func orgRunE(app *App, fn func(cmd *cobra.Command, org string, args []string) er
 	}
 }
 
-// targetRunE adapts a command body that acts on one project.
+// targetRunE adapts a command body that acts on one project. Most of them
+// change something, so a guessed environment is refused (TargetToChange).
 func targetRunE(app *App, fn func(cmd *cobra.Command, t Target, args []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		t, err := app.Target(cmd.Context())
+		t, err := app.TargetToChange(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -299,7 +343,7 @@ func NewRoot(version string) *cobra.Command {
 			if err := app.Global.validate(); err != nil {
 				return err
 			}
-			app.Out = cmd.OutOrStdout()
+			app.Out, app.Err = cmd.OutOrStdout(), cmd.ErrOrStderr()
 			cfg, err := config.Load()
 			if err != nil {
 				return err

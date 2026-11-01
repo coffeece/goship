@@ -122,7 +122,12 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		return nil, err
 	}
 	if target.Environment == "" {
-		target.Environment = ResolveEnvironment(ctx, target, choice, orgs)
+		// A deploy creates and uploads, so a guessed environment is refused.
+		env, err := ResolveEnvironment(ctx, target, choice, orgs)
+		if err != nil {
+			return nil, UnknownDefaultError(target.Org, err)
+		}
+		target.Environment = env
 	}
 	r.Note("Deploying to %s", target)
 

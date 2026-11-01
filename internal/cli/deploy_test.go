@@ -1018,3 +1018,29 @@ func TestDeployWithAFileProjectAndNoOrgNeverUsesAnotherProject(t *testing.T) {
 		}
 	}
 }
+
+// The org list failing is no reason to deploy to production: nothing is
+// created or uploaded until an environment is known.
+func TestDeployRefusesWhenTheDefaultCannotBeRead(t *testing.T) {
+	var changed []string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			changed = append(changed, r.Method+" "+r.URL.Path)
+		}
+		if r.URL.Path == "/api/v1/orgs" {
+			http.Error(w, `{"error":"down"}`, http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+
+	_, err := run(t, "", "deploy", quakeDir(t))
+	if err == nil || !strings.Contains(err.Error(), "could not determine the default environment of acme") || !strings.Contains(err.Error(), "pass --environment") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(changed) > 0 {
+		t.Errorf("changed %q", changed)
+	}
+}
+

@@ -31,12 +31,17 @@ type fakePortal struct {
 	holders []string
 	asked   []string
 	created portal.CreateAppRequest
+	// orgsDown makes GET /orgs answer 500.
+	orgsDown bool
 }
 
 func (f *fakePortal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.asked = append(f.asked, r.Method+" "+r.URL.Path)
 	const acme = "/api/v1/orgs/acme/projects/"
 	switch {
+	case r.URL.Path == "/api/v1/orgs" && f.orgsDown:
+		http.Error(w, `{"error":"down"}`, http.StatusInternalServerError)
+		return
 	case r.URL.Path == "/api/v1/orgs":
 		w.Write([]byte(`[{"slug":"acme","default_environment":"production"}]`)) //nolint:errcheck
 		return
@@ -196,4 +201,44 @@ func countOf(list []string, s string) int {
 		}
 	}
 	return n
+}
+
+// Nothing chose an environment and the org list cannot say which is the
+// default: a deploy must not guess production and create or upload there.
+func TestRunRefusesWhenTheDefaultCannotBeRead(t *testing.T) {
+	for name, opts := range map[string]Options{
+		"org and project known": {App: "web", Org: "acme", Project: "clave"},
+		"project from the app":  {App: "web", Org: "acme"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakePortal{holders: []string{"clave/production"}, orgsDown: true}
+			srv := httptest.NewServer(fake)
+			defer srv.Close()
+			built := stubBuild(t)
+			opts.Dir = t.TempDir()
+			writeFile(t, opts.Dir+"/go.mod", "module web\n")
+
+			_, err := Run(context.Background(), portal.New(srv.URL, "t"), opts, &heard{})
+			if err == nil || !strings.Contains(err.Error(), "could not determine the default environment of acme: ") || !strings.HasSuffix(err.Error(), "; pass --environment") {
+				t.Fatalf("err = %v", err)
+			}
+			for _, a := range fake.asked {
+				if !strings.HasPrefix(a, "GET ") {
+					t.Errorf("changed something: %s", a)
+				}
+			}
+			if *built != (Target{}) {
+				t.Errorf("built in %+v", *built)
+			}
+		})
+	}
+
+	// A chosen environment needs no default.
+	fake := &fakePortal{holders: []string{"clave/staging"}, orgsDown: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	stubBuild(t)
+	if _, err := Run(context.Background(), portal.New(srv.URL, "t"), Options{Dir: t.TempDir(), App: "web", Org: "acme", Project: "clave", Environment: "staging"}, &heard{}); err != nil {
+		t.Errorf("chosen: %v", err)
+	}
 }
