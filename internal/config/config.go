@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 const DefaultAPI = "https://api.goship.sh"
@@ -21,15 +23,19 @@ const DefaultAPI = "https://api.goship.sh"
 // value is moved along rather than left on a host that may stop serving it.
 const legacyAPI = "https://goship.sh"
 
-// Config is what the config file holds, and nothing else: the environment is
-// read by Endpoint, SelectedOrg, SelectedProject and Credential, never stored here, so Save
-// cannot write a GOSHIP_TOKEN meant for one CI job to disk.
+// Config is what the config file holds, and nothing else: the process
+// environment is read by Endpoint, SelectedOrg, SelectedProject,
+// SelectedEnvironment and Credential, never stored here, so Save cannot write
+// a GOSHIP_TOKEN meant for one CI job to disk.
 type Config struct {
 	// API is the GoShip API, the only thing the CLI talks to.
 	API string `json:"api,omitempty"`
 	Org string `json:"org,omitempty"`
 	// Projects is the project `goship project use` selected, per org slug.
 	Projects map[string]string `json:"projects,omitempty"`
+	// Environments is the environment `goship environment use` selected, per
+	// "org/project".
+	Environments map[string]string `json:"environments,omitempty"`
 	// Token is the credential; TokenID identifies it to the API when it is an
 	// API token minted by `goship login`, so `goship logout` can revoke it.
 	Token   string `json:"token,omitempty"`
@@ -90,6 +96,22 @@ func (c *Config) SelectedProject(org string) string {
 	return cmp.Or(os.Getenv("GOSHIP_PROJECT"), c.Projects[org])
 }
 
+// SelectedEnvironment is GOSHIP_ENVIRONMENT, else what `goship environment
+// use` persisted for the project.
+func (c *Config) SelectedEnvironment(org, project string) string {
+	return cmp.Or(os.Getenv("GOSHIP_ENVIRONMENT"), c.Environments[environmentKey(org, project)])
+}
+
+// UseEnvironment persists env as the project's selected environment.
+func (c *Config) UseEnvironment(org, project, env string) {
+	if c.Environments == nil {
+		c.Environments = map[string]string{}
+	}
+	c.Environments[environmentKey(org, project)] = env
+}
+
+func environmentKey(org, project string) string { return org + "/" + project }
+
 // Credential is the token to send: GOSHIP_TOKEN, for CI and anywhere without
 // a browser, wins over whatever `goship login` stored.
 func (c *Config) Credential() string {
@@ -122,6 +144,9 @@ func (c *Config) ForgetOrgUnlessMember(orgs []string) string {
 	}
 	dropped := c.Org
 	delete(c.Projects, dropped)
+	maps.DeleteFunc(c.Environments, func(key, _ string) bool {
+		return strings.HasPrefix(key, environmentKey(dropped, ""))
+	})
 	c.Org = ""
 	return dropped
 }

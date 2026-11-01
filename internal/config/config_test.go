@@ -87,6 +87,7 @@ func TestSaveNeverWritesTheEnvironment(t *testing.T) {
 	t.Setenv("GOSHIP_API", "https://env.example")
 	t.Setenv("GOSHIP_ORG", "from-env")
 	t.Setenv("GOSHIP_TOKEN", "gsp_ci_secret")
+	t.Setenv("GOSHIP_ENVIRONMENT", "env-only-staging")
 
 	c, err := Load()
 	if err != nil {
@@ -99,7 +100,7 @@ func TestSaveNeverWritesTheEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, leaked := range []string{"gsp_ci_secret", "env.example", "from-env"} {
+	for _, leaked := range []string{"gsp_ci_secret", "env.example", "from-env", "env-only-staging"} {
 		if strings.Contains(string(data), leaked) {
 			t.Errorf("config file holds %q from the environment:\n%s", leaked, data)
 		}
@@ -169,6 +170,58 @@ func TestProjectsSurviveASaveAndLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := c.SelectedProject("acme"); got != "clave" || c.SelectedProject("other") != "" {
+		t.Errorf("Projects = %v", c.Projects)
+	}
+}
+
+func TestSelectedEnvironmentEnvWinsOverTheFile(t *testing.T) {
+	tempConfig(t)
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+	c := &Config{Environments: map[string]string{"acme/clave": "staging"}}
+	if got := c.SelectedEnvironment("acme", "clave"); got != "staging" {
+		t.Errorf("SelectedEnvironment = %q, want the file value", got)
+	}
+	if got := c.SelectedEnvironment("acme", "mova"); got != "" {
+		t.Errorf("SelectedEnvironment(acme, mova) = %q, want none: the choice is per project", got)
+	}
+	t.Setenv("GOSHIP_ENVIRONMENT", "from-env")
+	if got := c.SelectedEnvironment("acme", "clave"); got != "from-env" {
+		t.Errorf("SelectedEnvironment = %q, want the environment value", got)
+	}
+}
+
+func TestEnvironmentsSurviveASaveAndLoad(t *testing.T) {
+	tempConfig(t)
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+	c := &Config{}
+	c.UseEnvironment("acme", "clave", "staging")
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.SelectedEnvironment("acme", "clave"); got != "staging" || c.Environments["acme/clave"] != "staging" {
+		t.Errorf("Environments = %v", c.Environments)
+	}
+}
+
+// A dropped org takes its environment choices along, and only its own: an
+// org whose slug merely starts the same keeps them.
+func TestForgetOrgUnlessMemberDropsTheOrgsEnvironments(t *testing.T) {
+	c := &Config{
+		Org:          "acme",
+		Projects:     map[string]string{"acme": "clave", "acme-labs": "web"},
+		Environments: map[string]string{"acme/clave": "staging", "acme/mova": "dev", "acme-labs/web": "qa"},
+	}
+	if dropped := c.ForgetOrgUnlessMember([]string{"acme-labs"}); dropped != "acme" {
+		t.Fatalf("dropped %q", dropped)
+	}
+	if len(c.Environments) != 1 || c.Environments["acme-labs/web"] != "qa" {
+		t.Errorf("Environments = %v, want only acme-labs/web", c.Environments)
+	}
+	if len(c.Projects) != 1 || c.Projects["acme-labs"] != "web" {
 		t.Errorf("Projects = %v", c.Projects)
 	}
 }
