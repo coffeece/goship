@@ -1,11 +1,12 @@
 # goship
 
 CLI for [GoShip](https://goship.sh) — deploy and operate apps, databases and
-your own nodes.
+your own clusters.
 
 ```sh
 $ goship deploy
 Deploying api · go
+Deploying to acme/web/production
 
   ✓ Create        go, detected from go.mod, plan Free   0.4s
   ✓ Environment   3 variables                           0.2s
@@ -34,10 +35,11 @@ too.
 ## Getting started
 
 ```sh
-goship login                 # opens the browser; one login covers every command
-goship org use acme          # pick the organization to work in
-goship project use web       # and the project, when the organization has several
-goship deploy                # create + configure + deploy the current directory
+goship login                    # opens the browser; one login covers every command
+goship org use acme             # pick the organization to work in
+goship project use web          # and the project, when the organization has several
+goship environment use staging  # and the environment, when it is not the default
+goship deploy                   # create + configure + deploy the current directory
 ```
 
 `goship deploy` needs no configuration. The app is named after the directory,
@@ -84,35 +86,12 @@ env:
   LOG_LEVEL: info
 ```
 
-To run it on a machine you own, name the node — `goship nodes` shows them.
-Nothing on your own hardware is billed, so plans there are just sizes;
-`goship plans` lists them per placement, with the node's pool default marked:
-
-```
-$ goship plans
-
-GoShip (shared)
-SLUG                    NAME    CPU   MEMORY   PRICE
-app-micro-sandboxed     Micro   200   256      R$ 9.90/mo
-app-small-sandboxed     Small   500   512      R$ 19.90/mo
-
-do-server1 (your hardware — not billed)
-SLUG                       NAME                CPU    MEMORY   PRICE
-byon-do-server1-default    Sized to the node   1800   3600     included   default
-app-small-sandboxed        Small               500    512      included
-```
-
-`goship deploy --node do-server1` with no plan takes the pool's default; `--plan`
-picks any size the pool admits, including the one sized to the whole node.
-Without `--node`, a new app goes where the project's default placement
-points: its oldest active node when it has one, unless the owner chose otherwise
-in the dashboard's settings. `--node goship` (or `node: goship`) picks GoShip's
-servers for one app.
-
 `org` pins the organization for the whole project, so a repo always deploys to
 the same place regardless of what `goship org use` last selected; `project`
-does the same for the project inside it. They apply to every command run inside
-the directory, not only `deploy`. `--org` and `--project` still win.
+does the same for the project inside it, and `environment` for the environment
+(see below). They apply to every command run inside the directory, not only
+`deploy`. `--org`, `--project` and `--environment` still win. A `node:` key
+from an older `goship.yml` is ignored, with a warning.
 
 Flags beat the file; the file beats what is inferred. Secrets belong in a
 dotenv file instead, applied as private variables:
@@ -121,11 +100,70 @@ dotenv file instead, applied as private variables:
 goship deploy --env-file .env
 ```
 
+## Environments and clusters
+
+Every project exists in each of your organization's environments: `production`
+to start with, and any you add. An environment is where its apps run — on
+GoShip's shared cluster, or on a cluster of your own (a machine, or a Kubernetes
+cluster) — so staging can live on different hardware without becoming a second
+project.
+
+```
+$ goship environments
+SLUG         NAME         CLUSTER    DEFAULT
+production   Production   goship     true
+staging      Staging      acme-vps   false
+```
+
+```sh
+goship environment create staging --cluster acme-vps   # every project of the organization gets it
+goship deploy --environment staging                    # deploy there once
+goship environment use staging                         # or make it this project's default
+```
+
+A command that acts on a project picks its environment, in order, from
+`--environment`, `environment:` in the `goship.yml` of the working directory
+(only when that file names no `org` or `project`, or the same ones as the
+command's), `GOSHIP_ENVIRONMENT`, what `goship environment use` saved for the
+project, and finally the organization's default (production unless changed).
+`goship deploy` and `goship app create` say where they act before they create
+anything (`Deploying to acme/web/staging`, `Creating api in acme/web/staging`).
+If nothing chose an environment
+and the organization's default cannot be read, commands that create or change
+something stop and ask for `--environment`; listings and `goship app info` use
+production and say so on stderr. `goship init` writes `environment:` into
+`goship.yml` only when the one selected is not the organization's default.
+
+Plans come from the environment's cluster. On GoShip's shared cluster they
+carry a price; on a cluster of your own they are sizes, nothing there is billed
+by plan, and the cluster decides which are available and which applies when you
+name none:
+
+```
+$ goship plans
+SLUG                    NAME    CPU   MEMORY   PRICE
+app-micro-sandboxed     Micro   200   256      R$ 9.90/mo
+app-small-sandboxed     Small   500   512      R$ 19.90/mo
+```
+
+`goship plans --kind database` lists database plans. Clusters belong to the
+organization, and there are three ways to add one:
+
+```sh
+goship cluster create acme-vps --cloud my-account --region <region> --size <size>   # a new machine on a connected cloud account
+goship cluster create acme-vps --host 203.0.113.7 --ssh-key ~/.ssh/id_ed25519       # a machine you already run, over SSH
+goship cluster create acme-k8s --kubeconfig ./kubeconfig                            # a Kubernetes cluster you already run
+```
+
+`goship clusters` lists them, and `goship cluster info|sizes|resize|rm` manage
+one. Cloud accounts (`goship cloud`) and database servers (`goship db server`)
+belong to the organization too: they take no project.
+
 ## Commands
 
 | | |
 |---|---|
-| `goship apps\|dbs\|volumes\|nodes [-A]` | list in the current project; `--all`, or nothing selected, spans every project as `org/project` |
+| `goship apps\|dbs\|volumes [-A]` | list in the current project and environment; `--all`, or nothing selected, spans every environment of every project as `org/project/environment` (`-o json` is an object keyed the same way) |
 | `goship domains [-A]` | list the organization's domains |
 | `goship app create\|info\|rm\|start\|stop\|restart\|scale\|plan\|visibility\|access` | manage one app |
 | `goship app access list\|add\|reset\|rm\|token <app>` | who can open a private app |
@@ -136,12 +174,14 @@ goship deploy --env-file .env
 | `goship shell -a api` | shell into a unit |
 | `goship env list\|set\|unset -a api` | environment variables |
 | `goship db create [--server <server>] [--size-limit <size>]\|size-limit\|info\|users\|user-add\|extensions\|extension-add\|extension-rm\|bind\|unbind\|rm` | managed PostgreSQL; `--server` places it on your own server (no plan needed) and `size-limit` caps its size; `extension-add` turns on PostGIS, pg_trgm and friends |
-| `goship db server list\|create\|tiers\|disk-limit\|retry\|delete` | PostgreSQL servers in your own Google Cloud project, unbilled by GoShip; `disk-limit` caps disk growth (`create --disk-limit`); `delete --force` forgets one GoShip can no longer reach |
+| `goship db server list\|create\|tiers\|disk-limit\|retry\|delete` | PostgreSQL servers in your own Google Cloud project, shared by the organization's projects and unbilled by GoShip; `disk-limit` caps disk growth (`create --disk-limit`); `delete --force` forgets one GoShip can no longer reach |
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
-| `goship volume create\|info\|bind\|unbind\|rm` | persistent disks |
-| `goship node create\|info\|sizes\|resize\|rm` | your own machines: create on a connected cloud or attach over SSH; change the size of one GoShip created |
-| `goship cloud providers\|connect\|list\|regions\|sizes\|move\|disconnect` | the cloud accounts your nodes and database servers run on — AWS connects with `--role-arn` or `--access-keys-stdin`; `move` sends an account to a project or shares it with the organization |
-| `goship plans [--node id]` | what you can choose, per placement: priced on GoShip, sizes on your nodes |
+| `goship volume create\|info\|bind\|unbind\|rm` | persistent disks, on a cluster of your own |
+| `goship environments` / `goship environment use\|create\|rm <slug>` | list the organization's environments and the cluster each runs on / choose one for this project / add one for every project (`--cluster`, `--db-server`) / delete one nothing is left in |
+| `goship clusters [-A]` | list the clusters the organization can use, its own and GoShip's shared one; `--all` spans every organization you belong to |
+| `goship cluster create\|info\|sizes\|resize\|rm` | your own machines and Kubernetes clusters: `create` provisions a machine on a connected cloud (`--cloud --region --size`), connects one over SSH (`--host --ssh-key`) or connects a Kubernetes cluster (`--kubeconfig`); `resize` changes the size of one GoShip created |
+| `goship cloud providers\|connect\|list\|regions\|sizes\|disconnect` | the cloud accounts your clusters and database servers run on, shared by the whole organization — AWS connects with `--role-arn` or `--access-keys-stdin`; `connect <provider> --account <id>` replaces the key of an API-key account in place |
+| `goship plans [--kind app\|database]` | what you can choose in the environment: priced on GoShip's cluster, sizes on your own |
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
 | `goship projects` (or `project list`) / `goship project use\|create <slug>` | list the org's projects / choose one / create one |
@@ -149,6 +189,38 @@ goship deploy --env-file .env
 | `goship mcp` | serve all of the above to an AI agent over MCP (see below) |
 
 Run `goship <command> --help` for flags.
+
+## Upgrading to 0.14.0
+
+Apps, databases and volumes now live in an environment of a project, and your
+own machines are managed as clusters that environments run on.
+
+- `goship node …` and `goship nodes` are now `goship cluster …` and
+  `goship clusters`. The old names print a pointer to the new ones on stderr
+  and exit with status 2. `cluster create` takes `--cloud` (with `--region` and
+  `--size`), `--host` (with `--ssh-key`) or `--kubeconfig`.
+- `--node` is gone from every command, and so is `node:` in `goship.yml` (it is
+  ignored, with a warning). The environment decides where an app runs: choose
+  it with `--environment`, `environment:` in `goship.yml`, `GOSHIP_ENVIRONMENT`
+  or `goship environment use <slug>`; with none chosen it is the organization's
+  default. To run an environment on one of your clusters, create it with
+  `goship environment create <slug> --cluster <cluster>`.
+- `goship plans --node` is gone; `goship plans --kind app|database` lists the
+  plans of the environment (`db` is accepted for `database`).
+- `goship cloud move` is gone: cloud accounts belong to the organization.
+  `goship cloud connect <provider> --account <id>` reconnects an API-key
+  account in place, keeping its clusters. `goship cloud` and `goship db server`
+  take no project.
+- `-A` on `apps`, `dbs` and `volumes` lists every environment of every project,
+  and its `-o json` output is keyed by `org/project/environment` instead of
+  `org/project`.
+- MCP tools: the project tools take `environment`; the node and placement tools
+  and `goship_move_cloud_account` are gone, replaced by
+  `goship_list_environments`, `goship_create_environment`,
+  `goship_delete_environment`, `goship_list_clusters`, `goship_get_cluster`,
+  `goship_list_cluster_sizes`, `goship_create_cluster`,
+  `goship_resize_cluster` and `goship_delete_cluster`. Update an installed
+  Claude plugin to get the matching skill.
 
 ## Upgrading to 0.5.0
 
@@ -180,10 +252,10 @@ GOSHIP_TOKEN=$TOKEN goship app rm old-api --yes
 ```
 
 Commands that stream — `deploy`, `logs`, `run`, `shell`, `rollback` — reject
-`--output json` rather than pretend to support it. `node create` follows provisioning
-progress instead (polls until the node is ready, for up to `--timeout`, 30 minutes by
+`--output json` rather than pretend to support it. `cluster create` follows provisioning
+progress instead (polls until the cluster is ready, for up to `--timeout`, 30 minutes by
 default), unless `--no-wait` or `-o json` is passed. Ctrl-C stops following, not the
-node: it keeps provisioning, and `goship node info <name>` shows where it got to.
+cluster: it keeps provisioning, and `goship cluster info <name>` shows where it got to.
 
 `deploy` and `rollback` show their steps; when one fails, its whole output is
 printed. `--verbose` (`-v`) shows the complete log as it arrives instead, and
@@ -211,6 +283,18 @@ Tools are named after the commands (`goship_list_apps`, `goship_deploy`,
 destructive and ask the agent to confirm with you first; `login`,
 `cloud connect` and `shell` stay in the terminal.
 
+Every tool that acts on an app, database or volume takes `org`, `project` and
+`environment`. Left out, the local server uses what it has selected —
+`goship mcp --environment <slug>`, the `goship.yml` of its directory,
+`GOSHIP_ENVIRONMENT` or `goship environment use` — and then the organization's
+default; `goship_deploy` reads `environment:` from the directory it deploys
+before any of those. Environments, clusters, cloud accounts and database servers
+belong to the organization (`goship_list_environments`, `goship_list_clusters`,
+`goship_create_cluster`…) and take `org` only. A tool that deletes something
+should be given `environment` explicitly. `goship_create_cluster` takes SSH keys
+and kubeconfigs as contents; connect those from the terminal instead
+(`goship cluster create --host … --ssh-key <path>`, `--kubeconfig <path>`).
+
 ### Hosted MCP server (claude.ai connector)
 
 For clients that cannot run a local process, GoShip hosts the same tools at:
@@ -227,8 +311,10 @@ OAuth, so there is no token to copy.
 - **Claude Code**: `claude mcp add --transport http goship https://mcp.goship.sh/mcp`,
   then `/mcp` to sign in.
 
-With no machine to read config from, there is no selected organization or
-project: tools use the only one you have, or ask for `org` and `project`.
+With no machine to read config from, there is no selected organization,
+project or environment: tools use the only organization and project you have,
+or ask for `org` and `project`, and the environment is the one you pass as
+`environment`, else the organization's default.
 Deploying a directory reads files on your machine, so `goship_deploy` only
 works with the local `goship mcp`; everything else works the same.
 
@@ -245,11 +331,14 @@ production defaults.
 |---|---|
 | `GOSHIP_API` | GoShip API base URL |
 | `GOSHIP_ORG` | organization slug |
+| `GOSHIP_PROJECT` | project slug |
+| `GOSHIP_ENVIRONMENT` | environment slug |
 | `GOSHIP_TOKEN` | bearer token |
 | `GOSHIP_CONFIG` | config file path |
 
-Defaults live in `~/.config/goship/config.json`, written `0600` because it
-holds a token. Flags beat environment variables, which beat the file. The
+Defaults live in `~/.config/goship/config.json` (the API address, the token and
+what `org use`, `project use` and `environment use` selected), written `0600`
+because it holds a token. Flags beat environment variables, which beat the file. The
 variables apply to the process that sets them and are never written to the
 file, so a CI token stays in CI.
 

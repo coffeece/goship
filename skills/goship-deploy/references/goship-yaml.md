@@ -10,11 +10,18 @@ writes the CLI half from what it finds in the directory.
 | `app` | app name (default: directory name) |
 | `org` | organization slug, instead of `goship org use` |
 | `project` | project slug inside the organization, instead of `goship project use` |
+| `environment` | environment slug inside the project (`goship environments`); left out, what `goship environment use` saved, else the organization's default (production unless changed) |
 | `platform` | `go`, `python`, `nodejs`, `static` |
 | `dockerfile` | build from this container file instead of a platform |
 | `plan` | plan slug for a new app |
-| `node` | run on this node of the project's own (never billed) |
 | `env` | variables applied as private on every deploy |
+
+`environment` speaks only for the organization and project the file names (a
+key left out matches any). The `environment` argument or `--environment`
+still wins, and `goship init` writes the key only when the selected
+environment is not the organization's default. A `node:` key from an older
+file is ignored with a warning: delete it, since the environment decides which
+cluster an app runs on.
 
 ## Platform keys
 
@@ -54,7 +61,7 @@ A Dockerfile build reads the file from the image's `WORKDIR`:
 | python | `pyproject.toml`, `requirements.txt`, `Pipfile`, `setup.py` | pip install; Python 3.14 — prefer loose `>=` pins for native deps |
 | nodejs | `package.json` | npm install |
 | static | `index.html` | nginx serves the directory |
-| Dockerfile | `Dockerfile` / `Containerfile`, when no marker matches | image build; required on the project's own nodes |
+| Dockerfile | `Dockerfile` / `Containerfile`, when no marker matches | image build; required on the organization's own clusters |
 
 The port is always 8888 (`$PORT`).
 
@@ -65,7 +72,7 @@ Ignore file: the first of `.goshipignore`, `.dockerignore`
 
 ## Addresses
 
-Shared cluster: `https://<app>-<token>.apps.goship.sh`. Own nodes:
-`https://<app>.<node-token>.apps.goship.sh`. Read the real one from the
+Shared cluster: `https://<app>-<token>.apps.goship.sh`. Own clusters:
+`https://<app>.<cluster-token>.apps.goship.sh`. Read the real one from the
 deploy result or `goship_get_app`. A custom domain is a CNAME to it; TLS is
 automatic.
