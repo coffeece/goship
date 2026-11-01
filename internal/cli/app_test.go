@@ -139,15 +139,15 @@ func TestAppInfoFindsTheAppInAnotherEnvironment(t *testing.T) {
 			*touched = append(*touched, r.URL.Path)
 			switch r.URL.Path {
 			case "/api/v1/orgs":
-				w.Write([]byte(`[{"slug":"menlo","default_environment":"production"}]`)) //nolint:errcheck
-			case "/api/v1/orgs/menlo/projects":
+				w.Write([]byte(`[{"slug":"acme","default_environment":"production"}]`)) //nolint:errcheck
+			case "/api/v1/orgs/acme/projects":
 				w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
-			case "/api/v1/orgs/menlo/environments":
+			case "/api/v1/orgs/acme/environments":
 				w.Write([]byte(`[{"slug":"production"},{"slug":"staging"}]`)) //nolint:errcheck
 			default:
 				for _, h := range holders {
 					project, env, _ := strings.Cut(h, "/")
-					if r.URL.Path == "/api/v1/orgs/menlo/projects/"+project+"/environments/"+env+"/apps/web" {
+					if r.URL.Path == "/api/v1/orgs/acme/projects/"+project+"/environments/"+env+"/apps/web" {
 						w.Write([]byte(`{"name":"web","platform":"go","plan_name":"Small"}`)) //nolint:errcheck
 						return
 					}
@@ -168,7 +168,7 @@ func TestAppInfoFindsTheAppInAnotherEnvironment(t *testing.T) {
 			t.Fatalf("out %q err %v", out, err)
 		}
 		// info then reads it where it was found, not in the default.
-		if last := touched[len(touched)-1]; last != "/api/v1/orgs/menlo/projects/mova/environments/staging/apps/web" {
+		if last := touched[len(touched)-1]; last != "/api/v1/orgs/acme/projects/mova/environments/staging/apps/web" {
 			t.Errorf("last request = %s", last)
 		}
 	})
@@ -180,7 +180,7 @@ func TestAppInfoFindsTheAppInAnotherEnvironment(t *testing.T) {
 		if err == nil {
 			t.Fatal("two environments hold web: info must not pick one")
 		}
-		for _, want := range []string{`"web" exists in: menlo/clave/production, menlo/clave/staging`, "--org, --project and --environment"} {
+		for _, want := range []string{`"web" exists in: acme/clave/production, acme/clave/staging`, "--org, --project and --environment"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("err = %q, missing %q", err, want)
 			}
@@ -195,7 +195,7 @@ func TestAppInfoFindsTheAppInAnotherEnvironment(t *testing.T) {
 			t.Fatalf("out %q err %v", out, err)
 		}
 		for _, p := range touched {
-			if strings.Contains(p, "/environments/staging") || p == "/api/v1/orgs/menlo/environments" {
+			if strings.Contains(p, "/environments/staging") || p == "/api/v1/orgs/acme/environments" {
 				t.Errorf("looked beyond production: %s", p)
 			}
 		}

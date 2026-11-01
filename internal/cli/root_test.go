@@ -398,7 +398,7 @@ func TestTargetForAppNamesTheEnvironmentItSearchedIn(t *testing.T) {
 		want string
 	}{
 		{[]string{"--org", "acme"}, `app "web" not found in environment qa of any project of acme that you can reach`},
-		{[]string{"--project", "mova"}, `app "web" not found in environment qa of any project named "mova" that you can reach`},
+		{[]string{"--project", "labs"}, `app "web" not found in environment qa of any project named "labs" that you can reach`},
 		{nil, `app "web" not found in environment qa of any of your projects`},
 	} {
 		args := append([]string{"app", "info", "web", "--environment", "qa"}, tc.args...)
