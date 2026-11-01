@@ -23,6 +23,9 @@ type Database struct {
 	ServerID    string    `json:"server_id,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// BillingStartsAt is when billing starts for a database an invited trial
+	// holds unbilled; absent otherwise.
+	BillingStartsAt *time.Time `json:"billing_starts_at,omitempty"`
 }
 
 type DatabaseStats struct {
@@ -149,7 +152,7 @@ func (c *Client) DisableDatabaseExtension(ctx context.Context, org, project, env
 
 // CreateDatabase leaves the plan out when it is empty, which is how a database
 // on your own server is created. sizeLimitMB nil means no limit.
-func (c *Client) CreateDatabase(ctx context.Context, org, project, env, name, plan, description, serverID string, sizeLimitMB *int) error {
+func (c *Client) CreateDatabase(ctx context.Context, org, project, env, name, plan, description, serverID string, sizeLimitMB *int) (Change, error) {
 	body := map[string]any{"name": name, "description": description}
 	if plan != "" {
 		body["plan"] = plan
@@ -160,7 +163,8 @@ func (c *Client) CreateDatabase(ctx context.Context, org, project, env, name, pl
 	if sizeLimitMB != nil {
 		body["size_limit_mb"] = *sizeLimitMB
 	}
-	return c.post(ctx, instancesPath(org, project, env), body, nil)
+	var out Change
+	return out, c.post(ctx, instancesPath(org, project, env), body, &out)
 }
 
 // SetDatabaseSizeLimit sets the size limit of a database on your own server;

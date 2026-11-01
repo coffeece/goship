@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
@@ -105,6 +106,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				return err
 			}
 			p.Finish(nil)
+			p.Billing(deploy.BillingNote(res.BillingStartsAt, time.Now()))
 			if res.URL != "" {
 				p.Summary(res.URL)
 			}

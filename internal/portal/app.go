@@ -38,6 +38,9 @@ type App struct {
 	Cluster     ClusterRef `json:"cluster"`
 	// Latest probe that the login page fronts a private app; nil until one ran.
 	AccessCheck *AccessCheck `json:"access_check,omitempty"`
+	// BillingStartsAt is when billing starts for an app an invited trial holds
+	// unbilled; absent otherwise.
+	BillingStartsAt *time.Time `json:"billing_starts_at,omitempty"`
 }
 
 type AccessCheck struct {
@@ -89,8 +92,9 @@ func (c *Client) ScaleApp(ctx context.Context, org, project, env, name string, u
 	return c.put(ctx, appPath(org, project, env, name)+"/units", map[string]int{"units": units}, nil)
 }
 
-func (c *Client) SetAppPlan(ctx context.Context, org, project, env, name, plan string) error {
-	return c.put(ctx, appPath(org, project, env, name)+"/plan", map[string]string{"plan": plan}, nil)
+func (c *Client) SetAppPlan(ctx context.Context, org, project, env, name, plan string) (Change, error) {
+	var out Change
+	return out, c.put(ctx, appPath(org, project, env, name)+"/plan", map[string]string{"plan": plan}, &out)
 }
 
 type EnvVar struct {

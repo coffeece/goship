@@ -65,13 +65,14 @@ func newDBCmd(app *App) *cobra.Command {
 				plan = ""
 			}
 		}
-		if err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, t.Environment, args[0], plan, description, serverID, limit); err != nil {
+		ch, err := app.Portal().CreateDatabase(cmd.Context(), t.Org, t.Project, t.Environment, args[0], plan, description, serverID, limit)
+		if err != nil {
 			return err
 		}
 		if !onGoShip {
-			return app.Renderer().Message("Database %s requested on server %s.", args[0], serverName)
+			return reportChange(app, ch, "Database %s requested on server %s.", args[0], serverName)
 		}
-		return app.Renderer().Message("Database %s requested on plan %s.", args[0], plan)
+		return reportChange(app, ch, "Database %s requested on plan %s.", args[0], plan)
 	})
 
 	sizeLimitCmd := &cobra.Command{

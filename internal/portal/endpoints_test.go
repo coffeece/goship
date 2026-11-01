@@ -66,7 +66,8 @@ func TestEndpoints(t *testing.T) {
 			return c.ScaleApp(ctx, "acme", "atlas", "staging", "api", 3)
 		}},
 		{"plan", "PUT", "/api/v1/orgs/acme/projects/atlas/environments/staging/apps/api/plan", `{"plan":"app-small"}`, func(ctx context.Context, c *Client) error {
-			return c.SetAppPlan(ctx, "acme", "atlas", "staging", "api", "app-small")
+			_, err := c.SetAppPlan(ctx, "acme", "atlas", "staging", "api", "app-small")
+			return err
 		}},
 		{"env", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/apps/api/env", "", func(ctx context.Context, c *Client) error {
 			_, err := c.Env(ctx, "acme", "atlas", "staging", "api")
@@ -111,7 +112,8 @@ func TestEndpoints(t *testing.T) {
 			return c.DisableDatabaseExtension(ctx, "acme", "atlas", "staging", "shop", "uuid-ossp")
 		}},
 		{"create database", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
-			return c.CreateDatabase(ctx, "acme", "atlas", "staging", "shop", "starter", "", "", nil)
+			_, err := c.CreateDatabase(ctx, "acme", "atlas", "staging", "shop", "starter", "", "", nil)
+			return err
 		}},
 		{"database servers", "GET", "/api/v1/orgs/acme/database-servers", "", func(ctx context.Context, c *Client) error {
 			_, err := c.DatabaseServers(ctx, "acme")
@@ -129,11 +131,13 @@ func TestEndpoints(t *testing.T) {
 			return err
 		}},
 		{"create database on server", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/services/postgresql/instances", `{"description":"","name":"shop","plan":"db-small","server_id":"s1"}`, func(ctx context.Context, c *Client) error {
-			return c.CreateDatabase(ctx, "acme", "atlas", "staging", "shop", "db-small", "", "s1", nil)
+			_, err := c.CreateDatabase(ctx, "acme", "atlas", "staging", "shop", "db-small", "", "s1", nil)
+			return err
 		}},
 		{"create database on server without plan", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/services/postgresql/instances", `{"description":"","name":"shop","server_id":"s1","size_limit_mb":2048}`, func(ctx context.Context, c *Client) error {
 			mb := 2048
-			return c.CreateDatabase(ctx, "acme", "atlas", "staging", "shop", "", "", "s1", &mb)
+			_, err := c.CreateDatabase(ctx, "acme", "atlas", "staging", "shop", "", "", "s1", &mb)
+			return err
 		}},
 		{"set database size limit", "PUT", "/api/v1/orgs/acme/projects/atlas/environments/staging/databases/shop/size-limit", `{"size_limit_mb":500}`, func(ctx context.Context, c *Client) error {
 			mb := 500

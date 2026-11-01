@@ -7,6 +7,7 @@ package mcptools
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
@@ -244,4 +245,20 @@ type Message struct {
 
 func msgf(format string, args ...any) (Message, error) {
 	return Message{Message: fmt.Sprintf(format, args...)}, nil
+}
+
+// BilledMessage is the result of a create or a plan change. While an invited
+// trial holds the resource unbilled, the text also says when billing starts
+// and BillingStartsAt carries the date.
+type BilledMessage struct {
+	Message         string     `json:"message"`
+	BillingStartsAt *time.Time `json:"billing_starts_at,omitempty"`
+}
+
+func billedf(ch portal.Change, format string, args ...any) (BilledMessage, error) {
+	text := fmt.Sprintf(format, args...)
+	if note := deploy.BillingNote(ch.BillingStartsAt, time.Now()); note != "" {
+		text += " " + note
+	}
+	return BilledMessage{Message: text, BillingStartsAt: ch.BillingStartsAt}, nil
 }

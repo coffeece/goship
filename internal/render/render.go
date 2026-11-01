@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"reflect"
 	"strings"
 	"text/tabwriter"
@@ -40,8 +41,17 @@ func (r *Renderer) Render(v any) error {
 
 // Message reports an outcome that carries no data of its own.
 func (r *Renderer) Message(format string, args ...any) error {
+	return r.MessageWith(nil, format, args...)
+}
+
+// MessageWith is Message for an outcome with a little data: extra goes into
+// the JSON document next to the message, and the table output is the line
+// alone.
+func (r *Renderer) MessageWith(extra map[string]any, format string, args ...any) error {
 	if r.format == JSON {
-		return json.NewEncoder(r.out).Encode(map[string]string{"message": fmt.Sprintf(format, args...)})
+		doc := map[string]any{"message": fmt.Sprintf(format, args...)}
+		maps.Copy(doc, extra)
+		return json.NewEncoder(r.out).Encode(doc)
 	}
 	_, err := fmt.Fprintf(r.out, format+"\n", args...)
 	return err
