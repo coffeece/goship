@@ -45,7 +45,7 @@ func (r *registry) apps() {
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in AppArg) (*portal.App, error) {
 			return c.App(ctx, t.Org, t.Project, t.Environment, in.App)
 		})
-	tool(r, "goship_create_app", "Create an app without deploying it. goship_deploy creates the app itself when it is missing, so this is only for creating ahead of a deploy.", write,
+	tool(r, "goship_create_app", "Create an app without deploying it. goship_deploy creates the app itself when it is missing, so this is only for creating ahead of a deploy. billing_starts_at is set while an invited trial holds the app unbilled: tell the user that date.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateAppArgs) (*portal.App, error) {
 			req := portal.CreateAppRequest{Name: in.Name, Platform: in.Platform, Plan: in.Plan, Private: in.Private}
 			if in.Plan == "" {
@@ -80,12 +80,13 @@ func (r *registry) apps() {
 			}
 			return msgf("App %s scaled to %d unit(s).", in.App, in.Units)
 		})
-	tool(r, "goship_set_app_plan", "Change an app's plan (CPU, memory and price). Takes effect on the next release.", write,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetPlanArgs) (Message, error) {
-			if err := c.SetAppPlan(ctx, t.Org, t.Project, t.Environment, in.App, in.Plan); err != nil {
-				return Message{}, err
+	tool(r, "goship_set_app_plan", "Change an app's plan (CPU, memory and price). Takes effect on the next release. billing_starts_at is set while an invited trial holds the app unbilled: tell the user that date.", write,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetPlanArgs) (BilledMessage, error) {
+			ch, err := c.SetAppPlan(ctx, t.Org, t.Project, t.Environment, in.App, in.Plan)
+			if err != nil {
+				return BilledMessage{}, err
 			}
-			return msgf("App %s moved to plan %s.", in.App, in.Plan)
+			return billedf(ch, "App %s moved to plan %s.", in.App, in.Plan)
 		})
 }
 

@@ -90,18 +90,18 @@ func (r *registry) databases() {
 			}
 			return msgf("Extension %s disabled on %s.", in.Extension, in.Database)
 		})
-	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server (server goship, or no server when the environment uses it) a plan is required and billed. On one of the customer's own database servers (server) there is no plan and GoShip bills nothing: the server's disk and connections are the limits, and an optional size_limit_mb caps this database. A server still provisioning queues the database until it is ready (status pending, then ready).", write,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (Message, error) {
+	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server (server goship, or no server when the environment uses it) a plan is required and billed. On one of the customer's own database servers (server) there is no plan and GoShip bills nothing: the server's disk and connections are the limits, and an optional size_limit_mb caps this database. A server still provisioning queues the database until it is ready (status pending, then ready). billing_starts_at is set while an invited trial holds the database unbilled: tell the user that date.", write,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (BilledMessage, error) {
 			onGoShip := in.Server == "" || in.Server == deploy.GoShipDatabaseServer
 			if onGoShip && in.Plan == "" {
-				return Message{}, errors.New("plan is required unless the database goes on the customer's own server (server)")
+				return BilledMessage{}, errors.New("plan is required unless the database goes on the customer's own server (server)")
 			}
 			if onGoShip && in.SizeLimitMB != nil {
-				return Message{}, errors.New("size_limit_mb is only for databases on the customer's own server (server)")
+				return BilledMessage{}, errors.New("size_limit_mb is only for databases on the customer's own server (server)")
 			}
 			if in.SizeLimitMB != nil {
 				if err := checkSizeLimitMB(*in.SizeLimitMB); err != nil {
-					return Message{}, err
+					return BilledMessage{}, err
 				}
 			}
 			var serverID string
@@ -110,17 +110,18 @@ func (r *registry) databases() {
 			} else if in.Server != "" {
 				s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
 				if err != nil {
-					return Message{}, err
+					return BilledMessage{}, err
 				}
 				serverID = s.ID
 			}
-			if err := c.CreateDatabase(ctx, t.Org, t.Project, t.Environment, in.Name, in.Plan, in.Description, serverID, in.SizeLimitMB); err != nil {
-				return Message{}, err
+			ch, err := c.CreateDatabase(ctx, t.Org, t.Project, t.Environment, in.Name, in.Plan, in.Description, serverID, in.SizeLimitMB)
+			if err != nil {
+				return BilledMessage{}, err
 			}
 			if !onGoShip {
-				return msgf("Database %s is being created on server %s; it is queued while the server is still provisioning.", in.Name, in.Server)
+				return billedf(ch, "Database %s is being created on server %s; it is queued while the server is still provisioning.", in.Name, in.Server)
 			}
-			return msgf("Database %s is being created.", in.Name)
+			return billedf(ch, "Database %s is being created.", in.Name)
 		})
 	tool(r, "goship_set_database_size_limit", "Set or remove the size limit of a database on the customer's own server (0 removes it). A periodic check enforces it, so it applies within minutes, not instantly. Databases on GoShip's server are limited by their plan instead.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetDBSizeLimitArgs) (Message, error) {

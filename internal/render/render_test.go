@@ -81,6 +81,27 @@ func TestMessageIsStructuredInJSONMode(t *testing.T) {
 	}
 }
 
+// The extra data joins the message in JSON; a table prints the line alone.
+func TestMessageWithAddsFieldsInJSONOnly(t *testing.T) {
+	extra := map[string]any{"billing_starts_at": "2099-01-02T12:00:00Z"}
+
+	var out strings.Builder
+	if err := New(&out, JSON).MessageWith(extra, "app %s created", "api"); err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"billing_starts_at":"2099-01-02T12:00:00Z","message":"app api created"}` + "\n"; out.String() != want {
+		t.Errorf("json = %q, want %q", out.String(), want)
+	}
+
+	out.Reset()
+	if err := New(&out, Table).MessageWith(extra, "app %s created", "api"); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "app api created\n" {
+		t.Errorf("table = %q", out.String())
+	}
+}
+
 func TestSingleStructRendersAsOneRow(t *testing.T) {
 	got := render(t, Table, app{Name: "api", Status: "running"})
 	if lines := strings.Count(strings.TrimSpace(got), "\n"); lines != 1 {

@@ -56,7 +56,10 @@ func appCreateCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return app.Renderer().Render(created)
+			if err := app.Renderer().Render(created); err != nil {
+				return err
+			}
+			return printBilling(app, created.BillingStartsAt)
 		}),
 	}
 	f := cmd.Flags()
@@ -177,10 +180,11 @@ func appPlanCmd(app *App) *cobra.Command {
 		Short: "Move the app to another plan",
 		Args:  cobra.ExactArgs(2),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if err := app.Portal().SetAppPlan(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1]); err != nil {
+			ch, err := app.Portal().SetAppPlan(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1])
+			if err != nil {
 				return err
 			}
-			return app.Renderer().Message("App %s moved to plan %s.", args[0], args[1])
+			return reportChange(app, ch, "App %s moved to plan %s.", args[0], args[1])
 		}),
 	}
 }

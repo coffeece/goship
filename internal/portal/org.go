@@ -13,6 +13,9 @@ type Org struct {
 	// commands use when none is selected.
 	DefaultEnvironment string    `json:"default_environment,omitempty"`
 	CreatedAt          time.Time `json:"created_at"`
+	// Trial is the invited trial of the organization's owner; nil when the
+	// owner is not on an active one.
+	Trial *Trial `json:"trial,omitempty"`
 }
 
 func (c *Client) Orgs(ctx context.Context) ([]Org, error) {

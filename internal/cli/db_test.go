@@ -150,6 +150,7 @@ func TestDBCreateOnAServer(t *testing.T) {
 		case "POST /api/v1/orgs/acme/projects/clave/environments/production/services/postgresql/instances":
 			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"status":"created"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -178,6 +179,7 @@ func stubServerCreate(t *testing.T, body *map[string]any) {
 		case "POST /api/v1/orgs/acme/projects/clave/environments/production/services/postgresql/instances":
 			json.NewDecoder(r.Body).Decode(body) //nolint:errcheck
 			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"status":"created"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -205,6 +207,7 @@ func TestDBCreateOnGoShipServerSendsTheWordUnresolved(t *testing.T) {
 		case "POST /api/v1/orgs/acme/projects/clave/environments/production/services/postgresql/instances":
 			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"status":"created"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected %s %s: the server must not be looked up", r.Method, r.URL.Path)
 		}

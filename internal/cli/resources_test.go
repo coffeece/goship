@@ -28,6 +28,11 @@ func TestDatabaseCommandsUseTheServiceInstanceEndpoints(t *testing.T) {
 			var gotPath, gotMethod string
 			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 				gotPath, gotMethod = r.URL.Path, r.Method
+				if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/instances") {
+					w.WriteHeader(http.StatusCreated)
+					w.Write([]byte(`{"status":"created"}`)) //nolint:errcheck
+					return
+				}
 				w.Write([]byte(`[]`)) //nolint:errcheck
 			})
 

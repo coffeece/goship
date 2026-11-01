@@ -256,6 +256,21 @@ func (p *progress) failedAfter(s *step) {
 	fmt.Fprintf(p.out, "%s Failed after %s\n", mark, s.title())
 }
 
+// Billing says when billing starts for the app the release went to, above the
+// summary so the address stays the last line. An empty note says nothing.
+func (p *progress) Billing(note string) {
+	if note == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode == modeLive {
+		fmt.Fprintf(p.out, "\n  %s\n", note)
+		return
+	}
+	fmt.Fprintln(p.out, note)
+}
+
 // Summary ends a successful release on the address it is served at.
 func (p *progress) Summary(url string) {
 	p.mu.Lock()

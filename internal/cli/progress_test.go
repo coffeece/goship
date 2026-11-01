@@ -297,3 +297,33 @@ func TestLiveTailCannotWrapOrInjectEscapes(t *testing.T) {
 		t.Errorf("tail[1] = %q", f[2])
 	}
 }
+
+// Billing is a line above the summary, so the address stays the last one;
+// with nothing to say it prints nothing.
+func TestBillingLineComesBeforeTheAddress(t *testing.T) {
+	const note = "Billing starts when the trial ends on 2 Jan 2099."
+	for _, tc := range []struct {
+		name string
+		mode progressMode
+		want string
+	}{
+		{"plain", modePlain, note + "\nhttps://quake.example\n"},
+		{"verbose", modeVerbose, note + "\n\n\u2713 https://quake.example\n"},
+		{"live", modeLive, "\n  " + note + "\n\n  \u2192 https://quake.example   0.0s\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, out, _ := newTestProgress(tc.mode)
+			p.Billing(note)
+			p.Summary("https://quake.example")
+			if out.String() != tc.want {
+				t.Errorf("output = %q, want %q", out.String(), tc.want)
+			}
+
+			p, out, _ = newTestProgress(tc.mode)
+			p.Billing("")
+			if out.String() != "" {
+				t.Errorf("an empty note printed %q", out.String())
+			}
+		})
+	}
+}

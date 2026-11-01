@@ -81,6 +81,9 @@ type Result struct {
 	Version     string        `json:"version,omitempty"`
 	URL         string        `json:"url,omitempty"`
 	Duration    time.Duration `json:"-"`
+	// BillingStartsAt is when billing starts for the app, which an invited
+	// trial holds unbilled until then; absent otherwise.
+	BillingStartsAt *time.Time `json:"billing_starts_at,omitempty"`
 }
 
 // Run deploys o.Dir: says where it deploys to, creates the app when it does
@@ -200,13 +203,14 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		}
 		r.Begin("create")
 		req := portal.CreateAppRequest{Name: name, Platform: platform, Plan: plan}
-		if _, err := client.CreateApp(ctx, target.Org, target.Project, target.Environment, req); err != nil {
+		created, err := client.CreateApp(ctx, target.Org, target.Project, target.Environment, req)
+		if err != nil {
 			return nil, err
 		}
 		r.Done("create", origin)
-		res.Created, res.Plan = true, plan
+		res.Created, res.Plan, res.BillingStartsAt = true, plan, created.BillingStartsAt
 	} else {
-		res.Platform, res.Plan = existing.Platform, existing.PlanSlug
+		res.Platform, res.Plan, res.BillingStartsAt = existing.Platform, existing.PlanSlug, existing.BillingStartsAt
 	}
 
 	env := map[string]string{}
@@ -233,6 +237,7 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 	res.Version = versions.version
 	if deployed, err := client.App(ctx, target.Org, target.Project, target.Environment, name); err == nil {
 		res.URL = PublicURL(deployed)
+		res.BillingStartsAt = deployed.BillingStartsAt
 	}
 	res.Duration = time.Since(began)
 	return res, nil
