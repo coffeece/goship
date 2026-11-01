@@ -17,7 +17,7 @@ import (
 var projectFiles = []string{"goship.yaml", "goship.yml", ".goship.yaml", ".goship.yml"}
 
 func newDeployCmd(app *App) *cobra.Command {
-	var appName, platform, plan, envFile, message, dockerfile, node string
+	var appName, platform, plan, envFile, message, dockerfile string
 
 	cmd := &cobra.Command{
 		Use:   "deploy [dir]",
@@ -44,9 +44,9 @@ func newDeployCmd(app *App) *cobra.Command {
 			p := newProgress(cmd.OutOrStdout(), app.Global.Verbose)
 			defer func() { p.Finish(err) }()
 
-			// The project file may pin the org and project; they beat the
-			// persisted selection, and an unselected one is left for Run to
-			// answer from where the app already lives.
+			// The project file may pin the org, project and environment; they
+			// beat the persisted selection, and an unselected org or project
+			// is left for Run to answer from where the app already lives.
 			proj, _, err := deploy.LoadProject(dir)
 			if err != nil {
 				return err
@@ -55,9 +55,10 @@ func newDeployCmd(app *App) *cobra.Command {
 				app.Global.Org = firstNonEmpty(app.Global.Org, proj.Org)
 			}
 			// The directory's file speaks for itself, so selectedProject can
-			// tell whether its project belongs to the org that was resolved.
-			if proj.Org != "" || proj.ProjectSlug != "" {
-				app.ProjectOrg, app.ProjectProject = proj.Org, proj.ProjectSlug
+			// tell whether its project belongs to the org that was resolved,
+			// and the environment whether it belongs to that project.
+			if proj.Org != "" || proj.ProjectSlug != "" || proj.Environment != "" {
+				app.ProjectOrg, app.ProjectProject, app.ProjectEnvironment = proj.Org, proj.ProjectSlug, proj.Environment
 			}
 			target, targetErr := app.Target(cmd.Context())
 			if targetErr != nil && !errors.Is(targetErr, errNoOrg) && !errors.Is(targetErr, errNoProject) {
@@ -73,16 +74,18 @@ func newDeployCmd(app *App) *cobra.Command {
 
 			name := appName
 			res, err := deploy.Run(cmd.Context(), app.Portal(), deploy.Options{
-				Dir:        dir,
-				App:        name,
-				Org:        target.Org,
-				Project:    target.Project,
-				Platform:   platform,
-				Plan:       plan,
-				Node:       node,
-				Dockerfile: dockerfile,
-				Message:    message,
-				Env:        env,
+				Dir:                 dir,
+				App:                 name,
+				Org:                 target.Org,
+				Project:             target.Project,
+				Environment:         target.Environment,
+				SelectedEnvironment: app.selectedEnvironment,
+				Orgs:                app.orgList,
+				Platform:            platform,
+				Plan:                plan,
+				Dockerfile:          dockerfile,
+				Message:             message,
+				Env:                 env,
 			}, p)
 			switch {
 			case errors.Is(err, deploy.ErrNoOrg), errors.Is(err, deploy.ErrNoProject):
@@ -113,7 +116,6 @@ func newDeployCmd(app *App) *cobra.Command {
 	f.StringVarP(&appName, "app", "a", "", "app name (default: the directory name)")
 	f.StringVar(&platform, "platform", "", "platform for a new app (default: inferred from the files present)")
 	f.StringVar(&dockerfile, "dockerfile", "", "build from this container file instead of a platform")
-	f.StringVar(&node, "node", "", "place a new app on one of your own machines by name (never billed), or goship for GoShip's servers (default: the project's default placement)")
 	f.StringVar(&plan, "plan", "", "plan, used when creating the app")
 	f.StringVar(&envFile, "env-file", "", "dotenv file applied as private variables")
 	f.StringVarP(&message, "message", "m", "", "deploy message")

@@ -8,11 +8,10 @@ import (
 )
 
 // ResolveDatabaseServer turns what a person types — the server's name,
-// usually — into the server, which carries the id the API wants and the
-// scope its routes depend on. The listing is the project's view: its own
-// servers plus the organization's. An id always wins; a name must be unique.
+// usually — into the server, which carries the id the API wants. Servers
+// belong to the organization. An id always wins; a name must be unique.
 func ResolveDatabaseServer(ctx context.Context, client *portal.Client, t Target, ref string) (*portal.DatabaseServer, error) {
-	servers, err := client.DatabaseServers(ctx, t.Org, t.Project)
+	servers, err := client.DatabaseServers(ctx, t.Org)
 	if err != nil {
 		return nil, err
 	}
@@ -46,9 +45,4 @@ func ServerTarget(s *portal.DatabaseServer, t Target) Target {
 	return t
 }
 
-func scope(t Target) string {
-	if t.Project == "" {
-		return fmt.Sprintf("org %q", t.Org)
-	}
-	return fmt.Sprintf("project %q", t.String())
-}
+func scope(t Target) string { return fmt.Sprintf("org %q", t.Org) }

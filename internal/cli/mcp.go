@@ -39,10 +39,14 @@ func newMCPCmd(app *App) *cobra.Command {
 // other commands run.
 type localClients struct{ app *App }
 
+// Client starts every tool call, so it is where the server forgets the org
+// list a previous call read: a session outlives organizations being joined
+// or their default environment changing.
 func (l localClients) Client(context.Context) (*portal.Client, error) {
 	if l.app.Config.Credential() == "" {
 		return nil, errors.New(`not logged in: ask the user to run "goship login" in a terminal, or set GOSHIP_TOKEN for this server`)
 	}
+	l.app.forgetOrgs()
 	return l.app.Portal(), nil
 }
 

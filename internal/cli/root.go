@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/coffeece/goship/internal/config"
 	"github.com/coffeece/goship/internal/deploy"
@@ -19,11 +20,12 @@ import (
 
 // Global carries the flags every command may read.
 type Global struct {
-	Org     string
-	Project string
-	Output  string
-	Yes     bool
-	Verbose bool
+	Org         string
+	Project     string
+	Environment string
+	Output      string
+	Yes         bool
+	Verbose     bool
 }
 
 func (g *Global) validate() error {
@@ -45,10 +47,19 @@ type App struct {
 	ProjectOrg string
 	// ProjectProject is the project named by that same file.
 	ProjectProject string
+	// ProjectEnvironment is the environment named by that same file.
+	ProjectEnvironment string
+
+	// orgs is GET /orgs, asked at most once per command: Org and the default
+	// environment both read it.
+	orgsMu  sync.Mutex
+	orgs    []portal.Org
+	orgsErr error
+	orgsSet bool
 }
 
-// Target is the organization and project a project-scoped command runs
-// against.
+// Target is the organization, project and environment a project-scoped
+// command runs against.
 type Target = deploy.Target
 
 func (a *App) Renderer() *render.Renderer {
@@ -73,10 +84,29 @@ func (a *App) Org(ctx context.Context) (string, error) {
 	if org := a.selectedOrg(); org != "" {
 		return org, nil
 	}
-	if orgs, err := a.Portal().Orgs(ctx); err == nil && len(orgs) == 1 {
+	if orgs, err := a.orgList(ctx); err == nil && len(orgs) == 1 {
 		return orgs[0].Slug, nil
 	}
 	return "", errNoOrg
+}
+
+// orgList is the caller's organizations, fetched once per command.
+func (a *App) orgList(ctx context.Context) ([]portal.Org, error) {
+	a.orgsMu.Lock()
+	defer a.orgsMu.Unlock()
+	if !a.orgsSet {
+		a.orgs, a.orgsErr = a.Portal().Orgs(ctx)
+		a.orgsSet = true
+	}
+	return a.orgs, a.orgsErr
+}
+
+// forgetOrgs drops the cached org list, for a process that outlives one
+// command: the MCP server asks again on every tool call.
+func (a *App) forgetOrgs() {
+	a.orgsMu.Lock()
+	defer a.orgsMu.Unlock()
+	a.orgs, a.orgsErr, a.orgsSet = nil, nil, false
 }
 
 // errNoProject is what a project-scoped command says when its organization
@@ -107,17 +137,44 @@ type noProjectError struct{ msg string }
 func (e *noProjectError) Error() string        { return e.msg }
 func (e *noProjectError) Is(target error) bool { return target == errNoProject }
 
-// Target resolves the organization and project a command runs against. An
-// org with one reachable project has nothing to choose. When only one half
-// is missing, the returned Target still carries the other: a project that was
-// asked for is not lost because no org resolved.
+// Target resolves the organization, project and environment a command runs
+// against. An org with one reachable project has nothing to choose, and no
+// environment chosen is the organization's default, never an error. When org
+// or project is missing, the returned Target still carries what was chosen:
+// a project or environment that was asked for is not lost because no org
+// resolved.
 func (a *App) Target(ctx context.Context) (Target, error) {
 	org, err := a.Org(ctx)
 	if err != nil {
-		return Target{Project: a.selectedProject("")}, err
+		t := Target{Project: a.selectedProject("")}
+		t.Environment = a.environmentChoice().Chosen(t)
+		return t, err
 	}
 	project, err := a.projectIn(ctx, org)
-	return Target{Org: org, Project: project}, err
+	t := Target{Org: org, Project: project}
+	if err != nil {
+		t.Environment = a.environmentChoice().Chosen(t)
+		return t, err
+	}
+	t.Environment = deploy.ResolveEnvironment(ctx, t, a.environmentChoice(), a.orgList)
+	return t, nil
+}
+
+// environmentChoice is what picks the environment, in order: --environment,
+// the working directory's goship.yaml when it speaks for the target,
+// GOSHIP_ENVIRONMENT, then the environment saved for the project.
+func (a *App) environmentChoice() deploy.EnvironmentChoice {
+	return deploy.EnvironmentChoice{
+		Explicit: a.Global.Environment,
+		File:     &deploy.Project{Org: a.ProjectOrg, ProjectSlug: a.ProjectProject, Environment: a.ProjectEnvironment},
+		Selected: a.selectedEnvironment,
+	}
+}
+
+// selectedEnvironment is GOSHIP_ENVIRONMENT, else the environment `goship
+// environment use` saved for t's project.
+func (a *App) selectedEnvironment(t Target) string {
+	return a.Config.SelectedEnvironment(t.Org, t.Project)
 }
 
 // projectIn is the project to act on in org: the selected one, else the only
@@ -169,7 +226,7 @@ func (a *App) TargetForApp(ctx context.Context, name string) (Target, error) {
 	if !errors.Is(err, errNoOrg) && !errors.Is(err, errNoProject) {
 		return Target{}, err
 	}
-	matches, err := deploy.FindApp(ctx, a.Portal(), tg.Org, tg.Project, name)
+	matches, err := deploy.FindApp(ctx, a.Portal(), a.orgList, tg.Org, tg.Project, tg.Environment, name)
 	if err != nil {
 		return Target{}, err
 	}
@@ -249,7 +306,7 @@ func NewRoot(version string) *cobra.Command {
 			}
 			app.Config = cfg
 			if proj, _, err := deploy.LoadProject("."); err == nil {
-				app.ProjectOrg, app.ProjectProject = proj.Org, proj.ProjectSlug
+				app.ProjectOrg, app.ProjectProject, app.ProjectEnvironment = proj.Org, proj.ProjectSlug, proj.Environment
 			}
 			return nil
 		},
@@ -258,6 +315,7 @@ func NewRoot(version string) *cobra.Command {
 	f := root.PersistentFlags()
 	f.StringVar(&app.Global.Org, "org", "", "organization slug (overrides the current org)")
 	f.StringVar(&app.Global.Project, "project", "", "project slug (overrides the current project)")
+	f.StringVar(&app.Global.Environment, "environment", "", "environment slug (overrides the current environment; default: the organization's default environment)")
 	f.StringVarP(&app.Global.Output, "output", "o", render.Table, "output format: table or json")
 	f.BoolVarP(&app.Global.Yes, "yes", "y", false, "answer yes to confirmations")
 	f.BoolVarP(&app.Global.Verbose, "verbose", "v", false, "show everything: the full deploy and rollback log, and HTTP requests on stderr")

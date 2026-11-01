@@ -20,6 +20,7 @@ func isolateConfig(t *testing.T) {
 	t.Helper()
 	t.Setenv("GOSHIP_CONFIG", filepath.Join(t.TempDir(), "config.json"))
 	t.Setenv("GOSHIP_TOKEN", "")
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
 }
 
 // v0.1.0 shipped `app link list` as a childless command with nothing to run: it
@@ -73,14 +74,17 @@ func target(t *testing.T, srv *httptest.Server) *App {
 	t.Helper()
 	t.Setenv("GOSHIP_ORG", "")
 	t.Setenv("GOSHIP_PROJECT", "")
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
 	return &App{Config: &config.Config{API: srv.URL, Token: "t"}}
 }
 
 func TestTargetPicksTheOnlyProject(t *testing.T) {
+	orgsListed := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
-			w.Write([]byte(`[{"slug":"menlo","name":"Menlo"}]`)) //nolint:errcheck
+			orgsListed++
+			w.Write([]byte(`[{"slug":"menlo","name":"Menlo","default_environment":"live"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/menlo/projects":
 			w.Write([]byte(`[{"slug":"default","name":"Default","is_default":true,"role":"admin"}]`)) //nolint:errcheck
 		default:
@@ -90,8 +94,59 @@ func TestTargetPicksTheOnlyProject(t *testing.T) {
 	defer srv.Close()
 	app := target(t, srv)
 	tg, err := app.Target(context.Background())
-	if err != nil || tg != (Target{Org: "menlo", Project: "default"}) {
+	if err != nil || tg != (Target{Org: "menlo", Project: "default", Environment: "live"}) {
 		t.Fatalf("Target = %+v, %v", tg, err)
+	}
+	// The org and the default environment come from one GET /orgs.
+	if orgsListed != 1 {
+		t.Errorf("GET /orgs asked %d times, want once per command", orgsListed)
+	}
+}
+
+// Each source of the environment reaches Target, in order; the full order is
+// pinned by deploy's TestTargetEnvironmentResolution.
+func TestTargetFillsTheEnvironment(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/orgs" {
+			w.Write([]byte(`[{"slug":"acme","default_environment":"production"}]`)) //nolint:errcheck
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	app := target(t, srv)
+	app.Global.Org, app.Global.Project = "acme", "clave"
+	env := func() string {
+		t.Helper()
+		tg, err := app.Target(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tg.Environment
+	}
+
+	if got := env(); got != "production" {
+		t.Errorf("nothing selected: %q", got)
+	}
+	app.Config.UseEnvironment("acme", "clave", "qa")
+	if got := env(); got != "qa" {
+		t.Errorf("saved choice: %q", got)
+	}
+	t.Setenv("GOSHIP_ENVIRONMENT", "dev")
+	if got := env(); got != "dev" {
+		t.Errorf("GOSHIP_ENVIRONMENT beats the saved choice: %q", got)
+	}
+	app.ProjectOrg, app.ProjectEnvironment = "other", "staging"
+	if got := env(); got != "dev" {
+		t.Errorf("another org's goship.yaml must not count: %q", got)
+	}
+	app.ProjectOrg = "acme"
+	if got := env(); got != "staging" {
+		t.Errorf("goship.yaml beats GOSHIP_ENVIRONMENT: %q", got)
+	}
+	app.Global.Environment = "preview"
+	if got := env(); got != "preview" {
+		t.Errorf("--environment beats the file: %q", got)
 	}
 }
 
@@ -167,7 +222,7 @@ func twoProjects(t *testing.T, holders ...string) *httptest.Server {
 			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
 		default:
 			for _, p := range holders {
-				if r.URL.Path == "/api/v1/orgs/menlo/projects/"+p+"/apps/web" {
+				if r.URL.Path == "/api/v1/orgs/menlo/projects/"+p+"/environments/production/apps/web" {
 					w.Write([]byte(`{"name":"web"}`)) //nolint:errcheck
 					return
 				}
@@ -182,7 +237,7 @@ func twoProjects(t *testing.T, holders ...string) *httptest.Server {
 func TestTargetForAppFindsTheOnlyProjectHoldingIt(t *testing.T) {
 	app := target(t, twoProjects(t, "mova"))
 	tg, err := app.TargetForApp(context.Background(), "web")
-	if err != nil || tg != (Target{Org: "menlo", Project: "mova"}) {
+	if err != nil || tg != (Target{Org: "menlo", Project: "mova", Environment: "production"}) {
 		t.Fatalf("TargetForApp = %+v, %v", tg, err)
 	}
 }
@@ -199,7 +254,7 @@ func TestTargetForAppUsesTheSelectionWithoutSearching(t *testing.T) {
 	app := target(t, twoProjects(t, "clave", "mova"))
 	app.Global.Org, app.Global.Project = "menlo", "mova"
 	tg, err := app.TargetForApp(context.Background(), "web")
-	if err != nil || tg != (Target{Org: "menlo", Project: "mova"}) {
+	if err != nil || tg != (Target{Org: "menlo", Project: "mova", Environment: "production"}) {
 		t.Fatalf("TargetForApp = %+v, %v", tg, err)
 	}
 }
@@ -213,13 +268,14 @@ func TestProjectFlagSelectsTheProjectPath(t *testing.T) {
 	if _, err := run(t, "", "apps", "--project", "mova"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/acme/projects/mova/apps" {
+	if gotPath != "/api/v1/orgs/acme/projects/mova/environments/production/apps" {
 		t.Errorf("path = %q", gotPath)
 	}
 }
 
 // twoOrgs serves two orgs with projects clave and mova each; web lives in the
-// "org/project" pairs named by holders, and every request is recorded.
+// default environment of the "org/project" pairs named by holders, and every
+// request is recorded.
 func twoOrgs(t *testing.T, touched *[]string, holders ...string) {
 	t.Helper()
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -233,11 +289,11 @@ func twoOrgs(t *testing.T, touched *[]string, holders ...string) {
 			return
 		}
 		for _, h := range holders {
-			if r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/"+strings.Replace(h, "/", "/projects/", 1)+"/apps/web" {
+			if r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/"+strings.Replace(h, "/", "/projects/", 1)+"/environments/production/apps/web" {
 				w.Write([]byte(`{"name":"web","platform":"go"}`)) //nolint:errcheck
 				return
 			}
-			if r.URL.Path == "/api/v1/orgs/"+strings.Replace(h, "/", "/projects/", 1)+"/apps" {
+			if r.URL.Path == "/api/v1/orgs/"+strings.Replace(h, "/", "/projects/", 1)+"/environments/production/apps" {
 				w.Write([]byte(`[{"name":"web"}]`)) //nolint:errcheck
 				return
 			}
@@ -271,7 +327,7 @@ func TestTargetForAppKeepsTheProjectWhenNoOrgResolves(t *testing.T) {
 	touched = nil
 	twoOrgs(t, &touched, "acme/clave", "globex/mova")
 	out, err := run(t, "", "app", "info", "web", "--project", "mova")
-	if err != nil || !strings.Contains(out, "web") || !slices.Contains(touched, "GET /api/v1/orgs/globex/projects/mova/apps/web") {
+	if err != nil || !strings.Contains(out, "web") || !slices.Contains(touched, "GET /api/v1/orgs/globex/projects/mova/environments/production/apps/web") {
 		t.Fatalf("out %q err %v touched %q", out, err, touched)
 	}
 }
