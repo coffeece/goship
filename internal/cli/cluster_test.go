@@ -48,6 +48,36 @@ func TestClustersListsSharedAndOwn(t *testing.T) {
 	}
 }
 
+// An organization whose clusters the caller's role cannot see is skipped with
+// a note instead of failing the listing of the others.
+func TestClustersAllSkipsAForbiddenOrg(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"acme"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/clusters":
+			w.Write([]byte(twoClusters)) //nolint:errcheck
+		case "/api/v1/orgs/globex/clusters":
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"not for you"}`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected %s", r.URL.Path)
+		}
+	})
+	t.Setenv("GOSHIP_ORG", "")
+
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "clusters", "-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sectionHeaders(out); len(got) != 1 || got[0] != "acme" || !strings.Contains(out, "homolog") {
+		t.Errorf("sections = %q\n%s", got, out)
+	}
+	if !strings.Contains(stderr, "Skipping globex: your role there cannot see this.") {
+		t.Errorf("stderr = %q", stderr)
+	}
+}
+
 // Every way of spelling a node command says where it went and exits 2,
 // without running anything.
 func TestNodeCommandPointsToCluster(t *testing.T) {

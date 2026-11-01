@@ -14,7 +14,9 @@ import (
 // empty) in an environment. An env narrows the search to that environment; an
 // empty one searches every environment of the organization. A project slug
 // narrows it to projects of that name: a project or environment someone asked
-// for is never swapped for another.
+// for is never swapped for another. An organization whose environments or
+// projects the caller's role cannot list holds nothing they can reach, and is
+// left out rather than failing the search of the others.
 func FindApp(ctx context.Context, client *portal.Client, orgs OrgLister, org, project, env, name string) ([]Target, error) {
 	var slugs []string
 	if org != "" {
@@ -34,11 +36,16 @@ func FindApp(ctx context.Context, client *portal.Client, orgs OrgLister, org, pr
 		envs := []string{env}
 		if env == "" {
 			var err error
-			if envs, err = EnvironmentSlugs(ctx, client, o); err != nil {
+			if envs, err = EnvironmentSlugs(ctx, client, o); portal.IsForbidden(err) {
+				continue
+			} else if err != nil {
 				return nil, err
 			}
 		}
 		projects, err := client.Projects(ctx, o)
+		if portal.IsForbidden(err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

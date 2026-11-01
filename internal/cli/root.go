@@ -304,13 +304,17 @@ func (a *App) TargetForApp(ctx context.Context, name string) (Target, error) {
 	case 1:
 		return matches[0], nil
 	case 0:
-		if tg.Project != "" {
-			return Target{}, fmt.Errorf("app %q not found in any project named %q that you can reach", name, tg.Project)
+		in := ""
+		if tg.Environment != "" {
+			in = "environment " + tg.Environment + " of "
 		}
-		if tg.Org != "" {
-			return Target{}, fmt.Errorf("app %q not found in any project of %s that you can reach", name, tg.Org)
+		switch {
+		case tg.Project != "":
+			return Target{}, fmt.Errorf("app %q not found in %sany project named %q that you can reach", name, in, tg.Project)
+		case tg.Org != "":
+			return Target{}, fmt.Errorf("app %q not found in %sany project of %s that you can reach", name, in, tg.Org)
 		}
-		return Target{}, fmt.Errorf("app %q not found in any of your projects", name)
+		return Target{}, fmt.Errorf("app %q not found in %sany of your projects", name, in)
 	default:
 		return Target{}, deploy.ElsewhereError(name, tg, matches, false)
 	}

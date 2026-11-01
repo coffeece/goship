@@ -337,3 +337,38 @@ func TestFindAppSearchesEveryEnvironment(t *testing.T) {
 		t.Fatalf("FindApp in mova = %v, %v; want %v", got, err, want)
 	}
 }
+
+// An organization the caller's role cannot list is left out of the search,
+// not a failure of it.
+func TestFindAppSkipsAForbiddenOrg(t *testing.T) {
+	for _, forbidden := range []string{"/api/v1/orgs/globex/environments", "/api/v1/orgs/globex/projects"} {
+		t.Run(forbidden, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case forbidden:
+					http.Error(w, `{"error":"not for you"}`, http.StatusForbidden)
+				case "/api/v1/orgs":
+					w.Write([]byte(`[{"slug":"globex"},{"slug":"acme"}]`)) //nolint:errcheck
+				case "/api/v1/orgs/globex/environments", "/api/v1/orgs/acme/environments":
+					w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
+				case "/api/v1/orgs/globex/projects":
+					w.Write([]byte(`[{"slug":"web"}]`)) //nolint:errcheck
+				case "/api/v1/orgs/acme/projects":
+					w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+				case "/api/v1/orgs/acme/projects/clave/environments/production/apps/web":
+					w.Write([]byte(`{"name":"web"}`)) //nolint:errcheck
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			client := portal.New(srv.URL, "t")
+			orgs := func(ctx context.Context) ([]portal.Org, error) { return client.Orgs(ctx) }
+
+			got, err := FindApp(context.Background(), client, orgs, "", "", "", "web")
+			if want := []Target{{Org: "acme", Project: "clave", Environment: "production"}}; err != nil || !slices.Equal(got, want) {
+				t.Errorf("FindApp = %v, %v; want %v", got, err, want)
+			}
+		})
+	}
+}
