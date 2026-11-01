@@ -46,12 +46,12 @@ type DeleteDBServerArgs struct {
 func (r *registry) dbservers() {
 	tool(r, "goship_list_database_servers", "List the PostgreSQL servers in the customer's own cloud that the project can place databases on: its own and the organization's (scope says which). Databases on them are not billed by GoShip.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (DBServerList, error) {
-			s, err := c.DatabaseServers(ctx, t.Org, t.Project)
+			s, err := c.DatabaseServers(ctx, t.Org)
 			return DBServerList{Servers: s}, err
 		})
 	tool(r, "goship_list_database_server_tiers", "List the machine sizes a database server can have, with the cloud provider's price.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (DBServerTierList, error) {
-			tiers, err := c.DatabaseServerTiers(ctx, t.Org, t.Project)
+			tiers, err := c.DatabaseServerTiers(ctx, t.Org)
 			return DBServerTierList{Tiers: tiers}, err
 		})
 	tool(r, "goship_create_database_server", "Create a PostgreSQL server (a Cloud SQL instance) in a connected Google Cloud account. The cloud provider bills the instance; GoShip bills nothing for it or the databases on it. Provisioning takes about ten minutes in the background: goship_list_database_servers shows the stage, and databases created on it meanwhile are queued until it is ready. The disk auto-grows up to disk_limit_gb (default 100 GB). One server per cloud account.", write,
@@ -60,10 +60,6 @@ func (r *registry) dbservers() {
 			if err != nil {
 				return nil, err
 			}
-			scope := t
-			if acc.Scope == "org" {
-				scope.Project = ""
-			}
 			name, tier := in.Name, in.Tier
 			if name == "" {
 				name = "pg-" + slugify(acc.Label)
@@ -71,7 +67,7 @@ func (r *registry) dbservers() {
 			if tier == "" {
 				tier = "db-f1-micro"
 			}
-			return c.CreateDatabaseServer(ctx, scope.Org, scope.Project, portal.CreateDatabaseServerRequest{
+			return c.CreateDatabaseServer(ctx, t.Org, portal.CreateDatabaseServerRequest{
 				CloudAccountID: acc.ID, Name: name, Region: in.Region, Tier: tier, DiskLimitGB: in.DiskLimitGB,
 			})
 		})
@@ -84,8 +80,7 @@ func (r *registry) dbservers() {
 			if err != nil {
 				return Message{}, err
 			}
-			st := deploy.ServerTarget(s, t)
-			if err := c.SetDatabaseServerDiskLimit(ctx, st.Org, st.Project, s.ID, in.DiskLimitGB); err != nil {
+			if err := c.SetDatabaseServerDiskLimit(ctx, t.Org, s.ID, in.DiskLimitGB); err != nil {
 				return Message{}, err
 			}
 			if in.DiskLimitGB == 0 {
@@ -99,8 +94,7 @@ func (r *registry) dbservers() {
 			if err != nil {
 				return Message{}, err
 			}
-			st := deploy.ServerTarget(s, t)
-			if err := c.RetryDatabaseServer(ctx, st.Org, st.Project, s.ID); err != nil {
+			if err := c.RetryDatabaseServer(ctx, t.Org, s.ID); err != nil {
 				return Message{}, err
 			}
 			return msgf("Retrying server %s.", s.Name)
@@ -111,9 +105,8 @@ func (r *registry) dbservers() {
 			if err != nil {
 				return Message{}, err
 			}
-			st := deploy.ServerTarget(s, t)
 			if in.Force {
-				if err := c.ForgetDatabaseServer(ctx, st.Org, st.Project, s.ID); err != nil {
+				if err := c.ForgetDatabaseServer(ctx, t.Org, s.ID); err != nil {
 					return Message{}, err
 				}
 				instance := s.CloudInstanceName
@@ -122,7 +115,7 @@ func (r *registry) dbservers() {
 				}
 				return msgf("Server %s forgotten. The Cloud SQL instance %s, if it still exists, keeps running in the customer's project: `gcloud sql instances delete %s --project <project id>` removes it.", s.Name, instance, instance)
 			}
-			if err := c.DeleteDatabaseServer(ctx, st.Org, st.Project, s.ID); err != nil {
+			if err := c.DeleteDatabaseServer(ctx, t.Org, s.ID); err != nil {
 				return Message{}, err
 			}
 			return msgf("Deleting server %s; the Cloud SQL instance is being removed from the customer's project.", s.Name)
@@ -133,7 +126,7 @@ func (r *registry) dbservers() {
 // view of the cloud accounts: the id, then an exact label, then the provider
 // when exactly one account uses it.
 func resolveCloudAccount(ctx context.Context, c *portal.Client, t deploy.Target, ref string) (*portal.CloudAccount, error) {
-	accounts, err := c.CloudAccounts(ctx, t.Org, t.Project)
+	accounts, err := c.CloudAccounts(ctx, t.Org)
 	if err != nil {
 		return nil, err
 	}
