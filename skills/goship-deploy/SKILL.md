@@ -16,7 +16,7 @@ other). Both need a login: `goship_whoami` or `goship whoami` must succeed. If
 not, ask the user to run `goship login` in a terminal (it opens a browser) and
 wait; never ask for a password.
 
-## 1. Where it goes
+## 1. Which environment
 
 Find out, asking only for what is not already known:
 
@@ -25,15 +25,45 @@ Find out, asking only for what is not already known:
 - **Organization**: `goship_list_orgs` shows them; one org needs no choice.
 - **Project**: `goship_list_projects` shows the organization's; one project
   needs no choice. Pass `project` to the tools, or set `project:` in goship.yml.
-- **Placement**: the shared cluster (billed per unit by plan) or one of the
-  project's own nodes (`goship_list_nodes`; apps there are not billed).
-  A node that is too small can be resized: `goship_list_node_sizes` shows the
-  options, `goship_resize_node` applies one. It restarts the machine, so every
-  app on it is down for a few minutes; confirm with the user first. Apps keep
-  their plans, so to give one app more CPU or memory change its plan instead.
-- **Plan**: `goship_list_plans` shows what the project can pick and the price.
-  A plan with `billed: false` is free to choose. Never pick a paid plan
-  without the user saying which.
+- **Environment**: every project exists in each of the organization's
+  environments (production, staging, ...) and an app lives in one of them.
+  Call `goship_list_environments`: it lists them and marks the default, which
+  is where a deploy goes when nothing names one (production unless the
+  organization changed it). When the user names one ("deploy this to
+  staging"), check it is in that list and pass `environment: staging` to
+  `goship_deploy` (CLI: `--environment staging`). Do not ask where it should
+  run: the environment already decides that. If the name is not in the list,
+  show the list and ask. Say which environment the deploy is going to before
+  you run it. Pin `environment:` in goship.yml only for a repo that always
+  deploys to one.
+- **Plan**: `goship_list_plans` (with the same `environment`) shows what that
+  environment offers and the price. A plan with `billed: false` is free to
+  choose. Never pick a paid plan without the user saying which.
+
+How the environment is picked, in order:
+
+1. the `environment` argument (CLI: `--environment`);
+2. for `goship_deploy`, `environment:` in the deployed directory's goship.yml
+   (CLI: the working directory's);
+3. the environment the local `goship mcp` server has selected: its own
+   `--environment`, a goship.yml in the server's directory,
+   `GOSHIP_ENVIRONMENT`, or the one the user saved with `goship environment
+   use`;
+4. the organization's default environment.
+
+The CLI follows the same order. The other project tools skip step 2: they
+have no deployed directory. The hosted server has no selection: `environment`,
+else the organization's default. `goship_list_environments` does not show what
+the server selected, so the environment you get without the argument may not
+be the default it marks: pass `environment` explicitly whenever the user named
+one, and always before a destructive tool.
+
+An environment runs on a cluster: GoShip's shared one (apps are billed per
+unit by plan) or one of the organization's own, a machine or a Kubernetes
+cluster (apps there are not billed). Clusters are an organization admin's
+concern; never choose one for a deploy. `goship_list_clusters` is only for
+explaining where an environment runs (the cluster named in
+`goship_list_environments`).
 
 ## 2. Read the project
 
@@ -43,7 +73,7 @@ Before touching anything, determine and report:
    `go.mod` → go, `pyproject.toml` / `requirements.txt` / `Pipfile` /
    `setup.py` → python, `package.json` → nodejs, `index.html` → static. A
    `Dockerfile` / `Containerfile` is the fallback when no marker matches, and
-   is required for apps on the project's own nodes.
+   is required for apps on the organization's own clusters.
 2. **Entry point** and how it is started (a Procfile, `processes:` in
    `goship.yaml`, or the platform default).
 3. **Port**: the app must listen on `0.0.0.0:8888`, or read `$PORT`.
@@ -96,9 +126,17 @@ healthcheck:
 
 One call creates the app on first deploy, applies env and follows the build:
 
-- MCP: `goship_deploy` with `path`, and `app` / `plan` / `node` / `env` /
-  `dockerfile` when they differ from the file.
-- CLI: `goship deploy [dir] [--plan p] [--node n] [--env-file .env] [-m msg]`.
+- MCP: `goship_deploy` with `path`, and `environment` / `app` / `plan` /
+  `env` / `dockerfile` when they differ from the file.
+- CLI: `goship deploy [dir] [--environment e] [--plan p] [--env-file .env] [-m msg]`.
+
+The deploy says where it goes (`Deploying to <org>/<project>/<environment>`)
+and its result carries `org`, `project` and `environment`: report them. The
+same app name can live in several environments of a project (each is its own
+app), so a deploy to an environment that does not have it yet creates it
+there. When no project is named, an existing app of that name decides the
+project and environment it is deployed to; name the environment to put it
+somewhere else.
 
 Secrets go in `env` (MCP) or `--env-file` (CLI); both apply them as private
 variables. Never write secrets into `goship.yaml`.
@@ -113,13 +151,15 @@ to the user before creating one.
 - CLI: `goship db create <app>-db --plan db-micro` then
   `goship db bind <app>-db -a <app>`.
 
-**In the customer's own cloud, unbilled.** When the project or its
-organization has a Google Cloud account connected
-(`goship_list_cloud_accounts`, provider `gcp`; `goship cloud connect gcp`
-connects one in a terminal), the database can live on a *database server*:
-a Cloud SQL instance GoShip creates in that account, paid to Google by the
-customer, on which GoShip bills nothing. Only Google Cloud hosts database
-servers, one per cloud account.
+**In the customer's own cloud, unbilled.** When the organization has a
+Google Cloud account connected (`goship_list_cloud_accounts`, provider
+`gcp`; `goship cloud connect gcp` connects one in a terminal), the database
+can live on a *database server*: a Cloud SQL instance GoShip creates in that
+account, paid to Google by the customer, on which GoShip bills nothing. Only
+Google Cloud hosts database servers, one per cloud account. Cloud accounts
+and database servers belong to the organization, not to a project or an
+environment: any project can use them, and an environment can make a server
+the default for its new databases.
 
 1. `goship_list_database_servers`: a server with status `ready` is reused.
    Otherwise `goship_create_database_server` with `cloud_account` (id, label
@@ -138,7 +178,7 @@ CLI: `goship db server create --account gcp --region southamerica-east1`,
 then `goship db create <app>-db --server pg-gcp [--size-limit 2GB]`.
 
 The instance has a public IP and accepts TLS only, so apps on GoShip's
-cluster and on the project's own nodes reach it alike; `DATABASE_URL`
+cluster and on the organization's own clusters reach it alike; `DATABASE_URL`
 carries `sslmode=require`. A server that fails to come up carries
 `error_message`: an account connected before October 2026 must run
 `goship cloud connect gcp` again, the Google project needs an active billing
@@ -203,8 +243,32 @@ rotate).
   server finishes; list again), `goship_disable_database_extension` turns it
   off while no table uses it. `vector` (pgvector) is always on. Enable them
   before running migrations that depend on them.
-- Cloud account scope: `goship_move_cloud_account` moves an account to one
-  project or shares it with the whole organization.
+- Environments: `goship_create_environment` adds one to every project of the
+  organization (`cluster` and `db_server` put it on the organization's own
+  cluster and database server; omitted, GoShip's shared ones).
+  `goship_delete_environment` is refused while any project still holds apps,
+  databases or volumes in it.
+- Clusters, only when the user asks (creating one is billed monthly: name the
+  size and price and confirm first). `goship_create_cluster` takes one of
+  three ways in: `cloud_account` with
+  `region` and `size` provisions a machine on a connected cloud account
+  (`goship_list_cloud_accounts`, `goship_list_cloud_regions`,
+  `goship_list_cloud_sizes`); `host` with `ssh_key` connects a machine the
+  user runs; `kubeconfig` connects a Kubernetes cluster. The last two take
+  secrets as file contents: send the user to the CLI instead of pasting a
+  private key or kubeconfig into the conversation
+  (`goship cluster create <name> --host <ip> --ssh-key <path>` or
+  `--kubeconfig <path>`). Provisioning goes on in the background;
+  `goship_get_cluster` shows its stage. Then give an environment the cluster
+  with `goship_create_environment`.
+- A cluster that is too small: `goship_list_cluster_sizes` shows the options,
+  `goship_resize_cluster` applies one. It restarts the machine, so every app on
+  it is down for a few minutes; confirm with the user first. Apps keep their
+  plans, so to give one app more CPU or memory change its plan instead
+  (`goship_set_app_plan`).
+- `goship_delete_cluster` is refused while apps, volumes or environments still
+  use the cluster; `destroy_server` also destroys the machine at the cloud
+  provider.
 - Removing a database server: delete its databases first
   (`goship_delete_database` drops the data on any server), then
   `goship_delete_database_server` removes the Cloud SQL instance from the
@@ -212,5 +276,7 @@ rotate).
   instance GoShip can no longer reach; it keeps running and billing at Google
   until the customer deletes it there.
 
-Destructive tools (`goship_delete_*`, `goship_revoke_api_token`) must be
-confirmed with the user every time.
+Destructive tools (`goship_delete_*`, `goship_resize_cluster`,
+`goship_revoke_api_token`) must be confirmed with the user every time. Pass
+`environment` explicitly to the ones that act inside one (`goship_delete_app`,
+`goship_delete_database`, `goship_delete_volume`).
