@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/mcptools"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -70,6 +72,22 @@ func (l localClients) Project(ctx context.Context, _ *portal.Client, org, overri
 		return "", fmt.Errorf(`no project selected: pass project, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`)
 	}
 	return project, err
+}
+
+// Environment resolves the environment of org/project the way the commands
+// do: override (else the server's own --environment), the working
+// directory's goship.yml, GOSHIP_ENVIRONMENT, the project's saved choice,
+// else the organization's default. When that default cannot be read it
+// returns the fallback with an error saying how to choose one: the caller
+// decides whether a guess will do.
+func (l localClients) Environment(ctx context.Context, _ *portal.Client, org, project, override string) (string, error) {
+	choice := l.app.environmentChoice()
+	choice.Explicit = cmp.Or(override, choice.Explicit)
+	env, err := deploy.ResolveEnvironment(ctx, Target{Org: org, Project: project}, choice, l.app.orgList)
+	if err != nil {
+		return env, fmt.Errorf(`could not determine the default environment of %s (%w): pass environment, or ask the user to run "goship environment use <slug>"; goship_list_environments shows them`, org, err)
+	}
+	return env, nil
 }
 
 type nopWriteCloser struct{ io.Writer }

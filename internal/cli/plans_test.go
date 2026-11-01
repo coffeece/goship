@@ -10,84 +10,103 @@ import (
 	"github.com/coffeece/goship/internal/portal"
 )
 
-func plansAPI(t *testing.T) {
+// plansAPI answers available-plans for any environment, recording what was
+// asked, with the plans in the order the portal chose.
+func plansAPI(t *testing.T, plans string) *string {
 	t.Helper()
+	var asked string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
-			w.Write([]byte(`[{"id":"n1","name":"do-server1","status":"active"}]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/available-plans" && r.URL.Query().Get("node") == "n1":
-			w.Write([]byte(`[
-			  {"slug":"byon-do-server1-default","kind":"app","display_name":"Sized to the node","cpu_milli":1800,"memory_mb":3600,"is_active":true,"default":true,"billed":false},
-			  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":0,"is_active":true,"billed":false}
-			]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/available-plans":
-			w.Write([]byte(`[
-			  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_active":true,"sort_order":30,"billed":true},
-			  {"slug":"app-micro","kind":"app","display_name":"Micro","cpu_milli":200,"memory_mb":256,"price_cents":990,"is_active":true,"sort_order":20,"billed":true}
-			]`)) //nolint:errcheck
-		default:
+		if !strings.HasSuffix(r.URL.Path, "/available-plans") {
 			w.WriteHeader(http.StatusNotFound)
+			return
 		}
+		asked = r.URL.RequestURI()
+		w.Write([]byte(plans)) //nolint:errcheck
 	})
+	return &asked
 }
 
-// One listing, one section per placement: the shared catalogue with prices,
-// then each node with sizes and no prices, its pool's default marked.
-func TestPlansListsEveryPlacement(t *testing.T) {
-	plansAPI(t)
+const sharedPlans = `[
+  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":1990,"is_active":true,"sort_order":30,"billed":true},
+  {"slug":"app-micro","kind":"app","display_name":"Micro","cpu_milli":200,"memory_mb":256,"price_cents":990,"is_active":true,"sort_order":20,"billed":true}
+]`
+
+const clusterPlans = `[
+  {"slug":"byon-homolog-default","kind":"app","display_name":"Sized to the cluster","cpu_milli":1800,"memory_mb":3600,"is_active":true,"default":true,"billed":false},
+  {"slug":"app-small","kind":"app","display_name":"Small","cpu_milli":500,"memory_mb":512,"price_cents":0,"is_active":true,"billed":false}
+]`
+
+// The plans are the target environment's: its cluster decides them.
+func TestPlansUsesTargetEnvironment(t *testing.T) {
+	asked := plansAPI(t, clusterPlans)
+
+	out, err := run(t, "", "plans", "--environment", "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *asked != "/api/v1/orgs/acme/projects/clave/environments/staging/available-plans?kind=app" {
+		t.Errorf("asked %s", *asked)
+	}
+	for _, want := range []string{"byon-homolog-default", "default", "included"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "GoShip (shared)") {
+		t.Errorf("one environment is one list, not sections:\n%s", out)
+	}
+}
+
+// The portal orders the plans; the CLI shows them as they came.
+func TestPlansKeepsTheServersOrder(t *testing.T) {
+	plansAPI(t, sharedPlans)
 
 	out, err := run(t, "", "plans")
 	if err != nil {
 		t.Fatal(err)
 	}
-	shared, node := strings.Index(out, "GoShip (shared)"), strings.Index(out, "do-server1")
-	if shared < 0 || node < 0 || shared > node {
-		t.Fatalf("expected the shared section before the node section:\n%s", out)
+	if !strings.Contains(out, "R$ 19.90/mo") {
+		t.Errorf("missing the price:\n%s", out)
 	}
-	for _, want := range []string{"R$ 19.90/mo", "not billed", "byon-do-server1-default", "default", "included"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing %q:\n%s", want, out)
+	if strings.Index(out, "app-small") > strings.Index(out, "app-micro") {
+		t.Errorf("plans were reordered:\n%s", out)
+	}
+}
+
+// --kind db is what older scripts pass; the portal calls it database.
+func TestPlansMapsDbToDatabase(t *testing.T) {
+	for _, kind := range []string{"db", "database"} {
+		asked := plansAPI(t, `[]`)
+		if _, err := run(t, "", "plans", "--kind", kind); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(*asked, "/environments/production/available-plans?kind=database") {
+			t.Errorf("--kind %s asked %s", kind, *asked)
 		}
 	}
-	// The shared section is sorted by the catalogue's order, not the API's.
-	if strings.Index(out, "app-micro") > strings.Index(out, "app-small") {
-		t.Errorf("shared plans should follow sort_order:\n%s", out)
+
+	asked := plansAPI(t, `[]`)
+	if _, err := run(t, "", "plans", "--kind", "volume"); err == nil || !strings.Contains(err.Error(), `"app" or "database"`) {
+		t.Errorf("an unknown kind should be refused, got %v", err)
+	}
+	if *asked != "" {
+		t.Errorf("an unknown kind reached the API: %s", *asked)
 	}
 }
 
-func TestPlansForOneNode(t *testing.T) {
-	plansAPI(t)
-
-	out, err := run(t, "", "plans", "--node", "n1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(out, "GoShip (shared)") || strings.Contains(out, "R$") {
-		t.Errorf("--node should show only that node's pool:\n%s", out)
-	}
-	// Pool order is meaningful and must survive: the default comes first.
-	if strings.Index(out, "byon-do-server1-default") > strings.Index(out, "app-small") {
-		t.Errorf("pool order lost:\n%s", out)
-	}
-}
-
-func TestPlansJSONKeysEachPlacement(t *testing.T) {
-	plansAPI(t)
+func TestPlansJSONIsThePlans(t *testing.T) {
+	plansAPI(t, clusterPlans)
 
 	out, err := run(t, "", "plans", "--output", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got map[string][]map[string]any
+	var got []map[string]any
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("not JSON: %v\n%s", err, out)
+		t.Fatalf("not a JSON list: %v\n%s", err, out)
 	}
-	if len(got["shared"]) != 2 || len(got["do-server1"]) != 2 {
-		t.Errorf("got keys %v", got)
-	}
-	if got["do-server1"][0]["default"] != true {
-		t.Errorf("the node default should be flagged in JSON: %v", got["do-server1"][0])
+	if len(got) != 2 || got[0]["slug"] != "byon-homolog-default" || got[0]["default"] != true {
+		t.Errorf("got %v", got)
 	}
 }
 

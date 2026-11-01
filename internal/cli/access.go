@@ -17,11 +17,11 @@ func appVisibilityCmd(app *App) *cobra.Command {
 			if value != "public" && value != "private" {
 				return errors.New("visibility must be public or private")
 			}
-			if err := app.Portal().SetAppVisibility(cmd.Context(), t.Org, t.Project, name, value); err != nil {
+			if err := app.Portal().SetAppVisibility(cmd.Context(), t.Org, t.Project, t.Environment, name, value); err != nil {
 				return err
 			}
 			msg := "App %s is now %s."
-			if a, err := app.Portal().App(cmd.Context(), t.Org, t.Project, name); err == nil && a.Deploys == 0 && value == "private" {
+			if a, err := app.Portal().App(cmd.Context(), t.Org, t.Project, t.Environment, name); err == nil && a.Deploys == 0 && value == "private" {
 				msg += " It takes effect on the first deploy."
 			}
 			return app.Renderer().Message(msg, name, value)
@@ -40,7 +40,7 @@ func appAccessCmd(app *App) *cobra.Command {
 		Short: "List the users who can open the app",
 		Args:  cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			users, err := app.Portal().ListAppAccess(cmd.Context(), t.Org, t.Project, args[0])
+			users, err := app.Portal().ListAppAccess(cmd.Context(), t.Org, t.Project, t.Environment, args[0])
 			if err != nil {
 				return err
 			}
@@ -54,7 +54,7 @@ func appAccessCmd(app *App) *cobra.Command {
 		Short: "Create an access user; a password is generated unless --password is given",
 		Args:  cobra.ExactArgs(2),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			created, err := app.Portal().AddAppAccess(cmd.Context(), t.Org, t.Project, args[0], args[1], addPassword)
+			created, err := app.Portal().AddAppAccess(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1], addPassword)
 			if err != nil {
 				return err
 			}
@@ -79,7 +79,7 @@ func appAccessCmd(app *App) *cobra.Command {
 		Short: "Set a new password for an access user; one is generated unless --password is given",
 		Args:  cobra.ExactArgs(2),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			res, err := app.Portal().ResetAppAccess(cmd.Context(), t.Org, t.Project, args[0], args[1], resetPassword)
+			res, err := app.Portal().ResetAppAccess(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1], resetPassword)
 			if err != nil {
 				return err
 			}
@@ -106,7 +106,7 @@ func appAccessCmd(app *App) *cobra.Command {
 			if err := confirm(cmd, app.Global.Yes, "Remove %q from %s?", args[1], args[0]); err != nil {
 				return err
 			}
-			if err := app.Portal().RemoveAppAccess(cmd.Context(), t.Org, t.Project, args[0], args[1]); err != nil {
+			if err := app.Portal().RemoveAppAccess(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("Access user %s removed.", args[1])
@@ -125,9 +125,9 @@ func appAccessCmd(app *App) *cobra.Command {
 				if err = confirm(cmd, app.Global.Yes, "Rotate the access token for %s? Monitors using the old one stop getting in.", args[0]); err != nil {
 					return err
 				}
-				tok, err = app.Portal().RotateAppAccessToken(cmd.Context(), t.Org, t.Project, args[0])
+				tok, err = app.Portal().RotateAppAccessToken(cmd.Context(), t.Org, t.Project, t.Environment, args[0])
 			} else {
-				tok, err = app.Portal().AppAccessToken(cmd.Context(), t.Org, t.Project, args[0], reveal)
+				tok, err = app.Portal().AppAccessToken(cmd.Context(), t.Org, t.Project, t.Environment, args[0], reveal)
 			}
 			if err != nil {
 				return err

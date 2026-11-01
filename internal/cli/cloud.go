@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -69,9 +68,9 @@ var gcpConnectTimeout = 30 * time.Minute
 func newCloudCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cloud",
-		Short: "Connect the clouds your nodes run on",
-		Long: "Connect the clouds your nodes run on.\n\n" +
-			"An account belongs to the organization unless --project (or project: in goship.yaml) names a project to connect it through.",
+		Short: "Connect the cloud accounts your clusters and database servers run in",
+		Long: "Connect the cloud accounts your clusters and database servers run in.\n\n" +
+			"A cloud account belongs to the organization: every project can use it.",
 	}
 
 	providers := &cobra.Command{
@@ -87,11 +86,12 @@ func newCloudCmd(app *App) *cobra.Command {
 		},
 	}
 
-	// Only admins may see cloud accounts, so --all skips the projects where
-	// you are not rather than failing on the first.
-	list := newTargetListCmd(app, "list", "List the cloud accounts the current project can use, or --all of them", (*portal.Client).CloudAccounts, skipForbiddenProjects)
+	// Only admins may see cloud accounts, so --all skips the organizations
+	// where you are not rather than failing on the first.
+	list := newOrgListCmd(app, "list", "List the cloud accounts of the current organization, or --all of them", (*portal.Client).CloudAccounts, skipForbiddenPlaces)
+	list.RunE = refuseProjectFlag(list.RunE)
 
-	cmd.AddCommand(providers, list, newCloudConnectCmd(app), newCloudRegionsCmd(app), newCloudSizesCmd(app), newCloudMoveCmd(app), newCloudDisconnectCmd(app))
+	cmd.AddCommand(providers, list, newCloudConnectCmd(app), newCloudRegionsCmd(app), newCloudSizesCmd(app), newCloudDisconnectCmd(app))
 	return cmd
 }
 
@@ -100,21 +100,21 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 	var apiKeyStdin bool
 	var roleARN string
 	var accessKeysStdin bool
-	var gcpProject, projectNumber string
+	var gcpProject, projectNumber, accountRef string
 
 	cmd := &cobra.Command{
 		Use:   "connect <provider>",
 		Short: "Connect a cloud account",
-		Long: "Connects a cloud account so `goship node create --cloud` can provision\n" +
+		Long: "Connects a cloud account so `goship cluster create --cloud` can provision\n" +
 			"machines on it. An OAuth provider opens the browser; an API-key provider\n" +
-			"reads the key from stdin (--api-key-stdin) or prompts for it.\n" +
+			"reads the key from stdin (--api-key-stdin) or prompts for it, and --account\n" +
+			"replaces the key of an account already connected, keeping its clusters.\n" +
 			"AWS with no flags opens the console with the GoShip stack prefilled and waits for it\n" +
 			"(when this GoShip supports it); otherwise it connects through an IAM role (--role-arn,\n" +
 			"or a guided flow in a terminal) or, as a fallback, access keys read from stdin (--access-keys-stdin).\n" +
 			"\nGoogle Cloud with no flags runs GoShip's setup script with your local gcloud (after asking),\n" +
 			"or prints the command to run in Cloud Shell, and waits for it. --project-number connects a\n" +
-			"project that is already set up. --project selects the GoShip project; the Google Cloud\n" +
-			"project id is --gcp-project (it was --project before 0.5.0).",
+			"project that is already set up; the Google Cloud project id is --gcp-project.",
 		Args: cobra.ExactArgs(1),
 	}
 	cmd.Flags().StringVar(&label, "label", "", "name for the account (defaults to the provider's name; for AWS, the account id)")
@@ -123,8 +123,9 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 	cmd.Flags().BoolVar(&accessKeysStdin, "access-keys-stdin", false, "AWS: read the access key id and secret from stdin, one per line")
 	cmd.Flags().StringVar(&gcpProject, "gcp-project", "", "Google Cloud: the project id to set up (the script asks when omitted)")
 	cmd.Flags().StringVar(&projectNumber, "project-number", "", "Google Cloud: connect a project already set up, by its number")
+	cmd.Flags().StringVar(&accountRef, "account", "", "API-key providers: the account (id or label) whose key this one replaces")
 
-	cmd.RunE = cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+	cmd.RunE = cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 		p, err := findCloudProvider(cmd.Context(), app.Portal(), args[0])
 		if err != nil {
 			return err
@@ -136,6 +137,9 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 			return fmt.Errorf("%s is not available right now on this GoShip; ask the operator", p.Label)
 		}
 
+		if accountRef != "" && p.Kind != "api_key" {
+			return fmt.Errorf("--account only applies to API-key providers; connecting the same %s account again replaces it in place", p.Label)
+		}
 		accountLabel := label
 		if accountLabel == "" {
 			accountLabel = p.Label
@@ -146,15 +150,15 @@ func newCloudConnectCmd(app *App) *cobra.Command {
 			if label != "" {
 				fmt.Fprintf(cmd.ErrOrStderr(), "--label ignored: label is set from your %s team; rename it in the dashboard.\n", p.Label)
 			}
-			return connectCloudOAuth(cmd, app, t, p)
+			return connectCloudOAuth(cmd, app, org, p)
 		case "api_key":
-			return connectCloudAPIKey(cmd, app, t, p, accountLabel, apiKeyStdin)
+			return connectCloudAPIKey(cmd, app, org, p, accountLabel, accountRef, apiKeyStdin)
 		case "federated":
 			switch p.Name {
 			case "aws":
-				return connectCloudAWS(cmd, app, t, p, label, roleARN, accessKeysStdin)
+				return connectCloudAWS(cmd, app, org, p, label, roleARN, accessKeysStdin)
 			case "gcp":
-				return gcpProjectFlagHint(cmd, app, t, connectCloudGCP(cmd, app, t, p, label, gcpProject, projectNumber))
+				return connectCloudGCP(cmd, app, org, p, label, gcpProject, projectNumber)
 			}
 			return fmt.Errorf("cloud provider %s has an unsupported connection kind %q", p.Name, p.Kind)
 		default:
@@ -180,26 +184,26 @@ func findCloudProvider(ctx context.Context, client *portal.Client, name string) 
 // connectCloudOAuth drives the browser round trip: open the authorize URL,
 // then poll the ticket the API handed back until it settles or the 10-minute
 // timeout (or Ctrl-C) ends the wait first.
-func connectCloudOAuth(cmd *cobra.Command, app *App, t Target, p *portal.CloudProvider) error {
+func connectCloudOAuth(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider) error {
 	ctx, stop := interruptible(cmd.Context())
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, oauthConnectTimeout)
 	defer cancel()
 
-	authorizeURL, ticket, err := app.Portal().BeginCloudOAuth(ctx, t.Org, t.Project, p.Name)
+	authorizeURL, ticket, err := app.Portal().BeginCloudOAuth(ctx, org, p.Name)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "Opening your browser to connect %s. If nothing opens, visit:\n\n  %s\n\n"+
 		"Sign in to GoShip in that browser if asked, then open the link again.\n", p.Label, authorizeURL)
 	_ = openURL(authorizeURL)
-	return waitForTicket(ctx, cmd, app, t, p, ticket)
+	return waitForTicket(ctx, cmd, app, org, p, ticket)
 }
 
 // waitForTicket polls a connect ticket until it settles; ctx carries the
 // caller's deadline and Ctrl-C. "pending" and "connecting" both mean keep
 // waiting.
-func waitForTicket(ctx context.Context, cmd *cobra.Command, app *App, t Target, p *portal.CloudProvider, ticket string) error {
+func waitForTicket(ctx context.Context, cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, ticket string) error {
 	// The deadline or Ctrl-C can land mid-request, so the HTTP call fails
 	// with its own wrapped context error rather than the select below ever
 	// seeing ctx.Done(); both are reported the same way.
@@ -218,7 +222,7 @@ func waitForTicket(ctx context.Context, cmd *cobra.Command, app *App, t Target, 
 		case <-ctx.Done():
 			return ended()
 		case <-ticker.C:
-			t, err := app.Portal().CloudConnectTicket(ctx, t.Org, t.Project, ticket)
+			t, err := app.Portal().CloudConnectTicket(ctx, org, ticket)
 			switch {
 			case err != nil && ctx.Err() != nil:
 				return ended()
@@ -247,7 +251,20 @@ func waitForTicket(ctx context.Context, cmd *cobra.Command, app *App, t Target, 
 	}
 }
 
-func connectCloudAPIKey(cmd *cobra.Command, app *App, t Target, p *portal.CloudProvider, label string, stdinKey bool) error {
+// connectCloudAPIKey connects an API-key account, or replaces the key of the
+// account accountRef names, which keeps its id and the clusters on it.
+func connectCloudAPIKey(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, label, accountRef string, stdinKey bool) error {
+	var accountID string
+	if accountRef != "" {
+		account, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, accountRef)
+		if err != nil {
+			return err
+		}
+		if account.Provider != p.Name {
+			return fmt.Errorf("cloud account %q is a %s account, not %s", account.Label, account.Provider, p.Label)
+		}
+		accountID = account.ID
+	}
 	apiKey, err := readCloudAPIKey(cmd, p, stdinKey)
 	if err != nil {
 		return err
@@ -255,7 +272,7 @@ func connectCloudAPIKey(cmd *cobra.Command, app *App, t Target, p *portal.CloudP
 	if apiKey == "" {
 		return errors.New("api key is empty")
 	}
-	account, err := app.Portal().ConnectCloudAPIKey(cmd.Context(), t.Org, t.Project, p.Name, label, apiKey)
+	account, err := app.Portal().ConnectCloudAPIKey(cmd.Context(), org, p.Name, label, apiKey, accountID)
 	if err != nil {
 		return err
 	}
@@ -295,12 +312,12 @@ func newCloudRegionsCmd(app *App) *cobra.Command {
 		Use:   "regions <account>",
 		Short: "List the regions available to a cloud account",
 		Args:  cobra.ExactArgs(1),
-		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			account, t, err := app.resolveCloudScoped(cmd.Context(), t, args[0])
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			account, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, args[0])
 			if err != nil {
 				return err
 			}
-			regions, err := app.Portal().CloudRegions(cmd.Context(), t.Org, t.Project, account.ID)
+			regions, err := app.Portal().CloudRegions(cmd.Context(), org, account.ID)
 			if err != nil {
 				return err
 			}
@@ -332,12 +349,12 @@ func newCloudSizesCmd(app *App) *cobra.Command {
 	cmd.Flags().StringVar(&region, "region", "", "region slug (required, see `goship cloud regions`)")
 	_ = cmd.MarkFlagRequired("region")
 
-	cmd.RunE = cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		account, t, err := app.resolveCloudScoped(cmd.Context(), t, args[0])
+	cmd.RunE = cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+		account, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, args[0])
 		if err != nil {
 			return err
 		}
-		sizes, err := app.Portal().CloudSizes(cmd.Context(), t.Org, t.Project, account.ID, region)
+		sizes, err := app.Portal().CloudSizes(cmd.Context(), org, account.ID, region)
 		if err != nil {
 			return err
 		}
@@ -403,15 +420,15 @@ func newCloudDisconnectCmd(app *App) *cobra.Command {
 		Use:   "disconnect <account>",
 		Short: "Disconnect a cloud account",
 		Args:  cobra.ExactArgs(1),
-		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			account, t, err := app.resolveCloudScoped(cmd.Context(), t, args[0])
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			account, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, args[0])
 			if err != nil {
 				return err
 			}
 			if err := confirm(cmd, app.Global.Yes, "Disconnect cloud account %q?", account.Label); err != nil {
 				return err
 			}
-			if err := app.Portal().DeleteCloudAccount(cmd.Context(), t.Org, t.Project, account.ID); err != nil {
+			if err := app.Portal().DeleteCloudAccount(cmd.Context(), org, account.ID); err != nil {
 				return err
 			}
 			return app.Renderer().Message("Cloud account %s disconnected.", account.Label)
@@ -419,82 +436,11 @@ func newCloudDisconnectCmd(app *App) *cobra.Command {
 	}
 }
 
-func newCloudMoveCmd(app *App) *cobra.Command {
-	var toProject string
-	var toOrg bool
-	cmd := &cobra.Command{
-		Use:   "move <account> (--to-project <slug> | --to-org)",
-		Short: "Move a cloud account to a project, or share it with the organization",
-		Long: "Move a cloud account to a project, or share it with the organization.\n\n" +
-			"An account of the organization is inherited by every project; an account of a project is used by that project only. " +
-			"The move is refused while the target already has an account of that provider, or while a node or database server of another project still runs on it. " +
-			"Nodes and database servers already on the account keep working.",
-		Args: cobra.ExactArgs(1),
-		RunE: cloudRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if (toProject == "") == !toOrg {
-				return errors.New("pass --to-project <slug> or --to-org")
-			}
-			account, t, err := app.resolveCloudScoped(cmd.Context(), t, args[0])
-			if err != nil {
-				return err
-			}
-			if toOrg {
-				if err := confirm(cmd, app.Global.Yes, "Share cloud account %q with the organization?", account.Label); err != nil {
-					return err
-				}
-			} else if err := confirm(cmd, app.Global.Yes, "Move cloud account %q to project %q?", account.Label, toProject); err != nil {
-				return err
-			}
-			if err := app.Portal().MoveCloudAccount(cmd.Context(), t.Org, account.ID, toProject); err != nil {
-				return err
-			}
-			if toOrg {
-				return app.Renderer().Message("Cloud account %s is now shared with the organization.", account.Label)
-			}
-			return app.Renderer().Message("Cloud account %s moved to project %s.", account.Label, toProject)
-		}),
-	}
-	cmd.Flags().StringVar(&toProject, "to-project", "", "project slug the account moves to")
-	cmd.Flags().BoolVar(&toOrg, "to-org", false, "share the account with the whole organization")
-	return cmd
-}
-
-// cloudAccountMissing is resolveCloudAccount finding nothing, as opposed to
-// failing to look.
-type cloudAccountMissing struct{ msg string }
-
-func (e *cloudAccountMissing) Error() string { return e.msg }
-
-// resolveCloudScoped is resolveCloudAccount for the commands that name an
-// account after seeing it in `cloud list`, which shows the project's view.
-// Not found at the scope the flags gave (the organization's), it looks again
-// through the selected project. The Target returned is the scope to use for
-// the account from here on: an inherited organization account is the
-// organization's.
-func (a *App) resolveCloudScoped(ctx context.Context, t Target, ref string) (*portal.CloudAccount, Target, error) {
-	client := a.Portal()
-	account, err := resolveCloudAccount(ctx, client, t, ref)
-	var missing *cloudAccountMissing
-	if err == nil || !errors.As(err, &missing) || t.Project != "" {
-		return account, t, err
-	}
-	if project, perr := a.projectIn(ctx, t.Org); perr == nil {
-		through := Target{Org: t.Org, Project: project}
-		if found, ferr := resolveCloudAccount(ctx, client, through, ref); ferr == nil {
-			if found.Scope == "org" {
-				through.Project = ""
-			}
-			return found, through, nil
-		}
-	}
-	return nil, t, fmt.Errorf("%w; pass --project <slug> for an account connected to a project", err)
-}
-
 // resolveCloudAccount turns what a person types into the account the API
 // keys on. It matches, in order: the id, then an exact label, then the
 // provider name — but only when exactly one account uses that provider.
-func resolveCloudAccount(ctx context.Context, client *portal.Client, t Target, ref string) (*portal.CloudAccount, error) {
-	accounts, err := client.CloudAccounts(ctx, t.Org, t.Project)
+func resolveCloudAccount(ctx context.Context, client *portal.Client, org, ref string) (*portal.CloudAccount, error) {
+	accounts, err := client.CloudAccounts(ctx, org)
 	if err != nil {
 		return nil, err
 	}
@@ -522,24 +468,24 @@ func resolveCloudAccount(ctx context.Context, client *portal.Client, t Target, r
 		if providers, err := client.CloudProviders(ctx); err == nil {
 			for _, p := range providers {
 				if p.Name == ref {
-					return nil, &cloudAccountMissing{fmt.Sprintf("no %s account connected; run `goship cloud connect %s`", p.Label, p.Name)}
+					return nil, fmt.Errorf("no %s account connected; run `goship cloud connect %s`", p.Label, p.Name)
 				}
 			}
 		}
-		return nil, &cloudAccountMissing{fmt.Sprintf("no cloud account %q in %s; run `goship cloud connect <provider>`", ref, cloudScope(t))}
+		return nil, fmt.Errorf("no cloud account %q in org %q; run `goship cloud connect <provider>`", ref, org)
 	default:
 		labels := make([]string, len(byProvider))
 		for i, a := range byProvider {
 			labels[i] = a.Label
 		}
-		return nil, fmt.Errorf("more than one %s account in %s: %s; pass the account's id or label", ref, cloudScope(t), strings.Join(labels, ", "))
+		return nil, fmt.Errorf("more than one %s account in org %q: %s; pass the account's id or label", ref, org, strings.Join(labels, ", "))
 	}
 }
 
 // connectCloudAWS connects AWS. Flags win; in a terminal with no flag it
 // walks the person through the role path (browser + pasted ARN) or, when
 // this GoShip cannot assume roles, prompts for access keys.
-func connectCloudAWS(cmd *cobra.Command, app *App, t Target, p *portal.CloudProvider, label, roleARN string, keysStdin bool) error {
+func connectCloudAWS(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, label, roleARN string, keysStdin bool) error {
 	errw := cmd.ErrOrStderr()
 	roleARN = bareARN(roleARN)
 	if roleARN != "" && keysStdin {
@@ -547,14 +493,14 @@ func connectCloudAWS(cmd *cobra.Command, app *App, t Target, p *portal.CloudProv
 	}
 
 	connectRole := func(arn string) error {
-		account, err := app.Portal().ConnectCloudAWSRole(cmd.Context(), t.Org, t.Project, label, arn)
+		account, err := app.Portal().ConnectCloudAWSRole(cmd.Context(), org, label, arn)
 		if err != nil {
 			return err
 		}
 		return reportConnected(cmd, app, p, account)
 	}
 	connectKeys := func(id, secret string) error {
-		account, err := app.Portal().ConnectCloudAWSKeys(cmd.Context(), t.Org, t.Project, label, id, secret)
+		account, err := app.Portal().ConnectCloudAWSKeys(cmd.Context(), org, label, id, secret)
 		if err != nil {
 			return err
 		}
@@ -575,7 +521,7 @@ func connectCloudAWS(cmd *cobra.Command, app *App, t Target, p *portal.CloudProv
 	if !stdinIsTTY(cmd) {
 		return errors.New("pass --role-arn (the stack's RoleArn output) or --access-keys-stdin")
 	}
-	setup, err := app.Portal().CloudAWSSetup(cmd.Context(), t.Org, t.Project)
+	setup, err := app.Portal().CloudAWSSetup(cmd.Context(), org)
 	if err != nil {
 		return err
 	}
@@ -584,7 +530,7 @@ func connectCloudAWS(cmd *cobra.Command, app *App, t Target, p *portal.CloudProv
 		if label != "" {
 			return errors.New("--label only works with --role-arn or --access-keys-stdin")
 		}
-		return connectCloudAWSOneClick(cmd, app, t, p, setup)
+		return connectCloudAWSOneClick(cmd, app, org, p, setup)
 	}
 
 	if setup == nil {
@@ -615,13 +561,13 @@ var awsConnectTimeout = 30 * time.Minute
 
 // connectCloudAWSOneClick opens the console with the GoShip stack prefilled
 // and waits for the stack to report back — nothing to paste.
-func connectCloudAWSOneClick(cmd *cobra.Command, app *App, t Target, p *portal.CloudProvider, setup *portal.AWSSetup) error {
+func connectCloudAWSOneClick(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, setup *portal.AWSSetup) error {
 	ctx, stop := interruptible(cmd.Context())
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, awsConnectTimeout)
 	defer cancel()
 
-	launchURL, ticket, err := app.Portal().BeginCloudAWSConnect(ctx, t.Org, t.Project)
+	launchURL, ticket, err := app.Portal().BeginCloudAWSConnect(ctx, org)
 	if err != nil {
 		return err
 	}
@@ -632,7 +578,7 @@ func connectCloudAWSOneClick(cmd *cobra.Command, app *App, t Target, p *portal.C
 		"and run goship cloud connect aws --role-arn <RoleArn>.\n\n"+
 		"Waiting for AWS (about a minute)…\n", launchURL, setup.LaunchURL)
 	_ = openURL(launchURL)
-	return waitForTicket(ctx, cmd, app, t, p, ticket)
+	return waitForTicket(ctx, cmd, app, org, p, ticket)
 }
 
 // reportConnected prints the outcome the way the other connect paths do.
@@ -700,7 +646,7 @@ func readAccessKeys(cmd *cobra.Command, stdin bool) (id, secret string, err erro
 // direct path for a project already set up. Otherwise it starts a ticket
 // and gets the setup script run: here, with the person's own gcloud, or in
 // Cloud Shell, and waits for the script to report back.
-func connectCloudGCP(cmd *cobra.Command, app *App, t Target, p *portal.CloudProvider, label, gcpProject, projectNumber string) error {
+func connectCloudGCP(cmd *cobra.Command, app *App, org string, p *portal.CloudProvider, label, gcpProject, projectNumber string) error {
 	if gcpProject != "" && projectNumber != "" {
 		return errors.New("pass --gcp-project or --project-number, not both")
 	}
@@ -708,7 +654,7 @@ func connectCloudGCP(cmd *cobra.Command, app *App, t Target, p *portal.CloudProv
 		return fmt.Errorf("%q is not a Google Cloud project id", gcpProject)
 	}
 	if projectNumber != "" {
-		account, err := app.Portal().ConnectCloudGCP(cmd.Context(), t.Org, t.Project, label, projectNumber)
+		account, err := app.Portal().ConnectCloudGCP(cmd.Context(), org, label, projectNumber)
 		if err != nil {
 			return err
 		}
@@ -727,7 +673,7 @@ func connectCloudGCP(cmd *cobra.Command, app *App, t Target, p *portal.CloudProv
 	ctx, cancel := context.WithTimeout(ctx, gcpConnectTimeout)
 	defer cancel()
 
-	start, err := app.Portal().BeginCloudGCPConnect(ctx, t.Org, t.Project)
+	start, err := app.Portal().BeginCloudGCPConnect(ctx, org)
 	if err != nil {
 		return err
 	}
@@ -747,45 +693,34 @@ func connectCloudGCP(cmd *cobra.Command, app *App, t Target, p *portal.CloudProv
 			if err := runSetup(ctx, command, errw, errw); err != nil {
 				return fmt.Errorf("the setup script failed: %w", err)
 			}
-			return waitForTicket(ctx, cmd, app, t, p, start.Ticket)
+			return waitForTicket(ctx, cmd, app, org, p, start.Ticket)
 		}
 	}
 	fmt.Fprintf(errw, "Opening Cloud Shell. If nothing opens, visit:\n\n  %s\n\nRun this there:\n\n  %s\n\n"+
 		"Waiting for Google Cloud (about a minute after the command finishes)…\n", start.ShellURL, command)
 	_ = openURL(start.ShellURL)
-	return waitForTicket(ctx, cmd, app, t, p, start.Ticket)
+	return waitForTicket(ctx, cmd, app, org, p, start.Ticket)
 }
 
-// cloudRunE is orgRunE for the commands that manage cloud accounts. The
-// returned Target's Project is empty unless --project or goship.yaml chose
-// one: an account connected from the CLI belongs to the organization.
-func cloudRunE(app *App, fn func(cmd *cobra.Command, t Target, args []string) error) func(*cobra.Command, []string) error {
-	return orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
-		return fn(cmd, Target{Org: org, Project: app.explicitProject(org)}, args)
-	})
+// cloudRunE is orgRunE for the commands that manage cloud accounts and
+// database servers, which belong to the organization: a --project there is
+// refused rather than ignored.
+func cloudRunE(app *App, fn func(cmd *cobra.Command, org string, args []string) error) func(*cobra.Command, []string) error {
+	return refuseProjectFlag(orgRunE(app, fn))
 }
 
-// cloudScope names where a cloud command looks: the project when it has one,
-// else the organization.
-func cloudScope(t Target) string {
-	if t.Project == "" {
-		return fmt.Sprintf("org %q", t.Org)
-	}
-	return fmt.Sprintf("project %q", t.String())
-}
-
-// gcpProjectFlagHint explains a connect that failed with a --project that is
-// no GoShip project, which is what a pre-0.5.0 script passing its Google Cloud
-// project id gets.
-func gcpProjectFlagHint(cmd *cobra.Command, app *App, t Target, err error) error {
-	var apiErr *portal.Error
-	if !errors.As(err, &apiErr) || app.Global.Project == "" || !cmd.Flags().Changed("project") {
-		return err
-	}
-	if !portal.IsNotFound(err) {
-		if projects, perr := app.Portal().Projects(cmd.Context(), t.Org); perr != nil || slices.ContainsFunc(projects, func(p portal.Project) bool { return p.Slug == app.Global.Project }) {
-			return err
+// refuseProjectFlag wraps an organization-level command's RunE. A script
+// written before 0.5.0 passed its Google Cloud project id as --project, so a
+// connect says where that went.
+func refuseProjectFlag(run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if !cmd.Flags().Changed("project") {
+			return run(cmd, args)
 		}
+		msg := "cloud accounts and database servers belong to the organization: drop --project"
+		if cmd.Flags().Lookup("gcp-project") != nil {
+			msg += " (the Google Cloud project id is --gcp-project)"
+		}
+		return errors.New(msg)
 	}
-	return fmt.Errorf("--project selects the GoShip project; the Google Cloud project id is --gcp-project (renamed in 0.5.0): %w", err)
 }

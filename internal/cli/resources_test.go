@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -13,15 +12,15 @@ func TestDatabaseCommandsUseTheServiceInstanceEndpoints(t *testing.T) {
 		name, method, path string
 		args               []string
 	}{
-		{"create", http.MethodPost, "/api/v1/orgs/acme/projects/clave/services/postgresql/instances",
+		{"create", http.MethodPost, "/api/v1/orgs/acme/projects/clave/environments/production/services/postgresql/instances",
 			[]string{"db", "create", "main", "--plan", "starter"}},
-		{"delete", http.MethodDelete, "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/main",
+		{"delete", http.MethodDelete, "/api/v1/orgs/acme/projects/clave/environments/production/services/postgresql/instances/main",
 			[]string{"db", "rm", "main", "--yes"}},
-		{"bind", http.MethodPost, "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/main/bind",
+		{"bind", http.MethodPost, "/api/v1/orgs/acme/projects/clave/environments/production/services/postgresql/instances/main/bind",
 			[]string{"db", "bind", "main", "-a", "api"}},
-		{"unbind", http.MethodDelete, "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/main/bind/api",
+		{"unbind", http.MethodDelete, "/api/v1/orgs/acme/projects/clave/environments/production/services/postgresql/instances/main/bind/api",
 			[]string{"db", "unbind", "main", "-a", "api"}},
-		{"list", http.MethodGet, "/api/v1/orgs/acme/projects/clave/databases",
+		{"list", http.MethodGet, "/api/v1/orgs/acme/projects/clave/environments/production/databases",
 			[]string{"dbs"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,7 +67,7 @@ func TestVolumeUnbindIsAPost(t *testing.T) {
 	if _, err := run(t, "", "volume", "unbind", "uploads", "-a", "api", "--mount", "/data"); err != nil {
 		t.Fatal(err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/projects/clave/volumes/uploads/unbind" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/projects/clave/environments/production/volumes/uploads/unbind" {
 		t.Errorf("%s %s", gotMethod, gotPath)
 	}
 }
@@ -84,123 +83,11 @@ func TestDomainAddTargetsTheApp(t *testing.T) {
 	if _, err := run(t, "", "domain", "add", "shop.example.com", "-a", "api"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/acme/projects/clave/apps/api/domains" {
+	if gotPath != "/api/v1/orgs/acme/projects/clave/environments/production/apps/api/domains" {
 		t.Errorf("path = %q", gotPath)
 	}
 	if body["domain"] != "shop.example.com" {
 		t.Errorf("body = %v", body)
-	}
-}
-
-func TestNodeRmDestroySendsFlag(t *testing.T) {
-	var body map[string]any
-	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
-			return
-		}
-		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
-	})
-
-	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("y\n"), "node", "rm", "n1", "--destroy-server")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if body["destroy_server"] != true {
-		t.Errorf("destroy_server = %v, want true", body["destroy_server"])
-	}
-	if !strings.Contains(stderr, `Disconnect node "n1" and destroy its machine at the cloud provider?`) {
-		t.Errorf("confirmation should name the destroy: %q", stderr)
-	}
-	if !strings.Contains(out, "Node n1 is being removed; its machine will be destroyed — `goship nodes` shows when it is gone.") {
-		t.Errorf("result should say the destroy is underway, not done: %q", out)
-	}
-}
-
-func TestNodeRmDestroySurfacesAPIMessage(t *testing.T) {
-	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
-			return
-		}
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"destroying the machine needs the digitalocean account connected"}`)) //nolint:errcheck
-	})
-
-	_, err := run(t, "y\n", "node", "rm", "n1", "--destroy-server")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "destroying the machine needs the digitalocean account connected") {
-		t.Errorf("error message = %q, want to contain %q", err.Error(), "destroying the machine needs the digitalocean account connected")
-	}
-}
-
-func TestNodeResizeYesSkipsPrompt(t *testing.T) {
-	var body map[string]any
-	var path string
-	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
-			return
-		}
-		path = r.URL.Path
-		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
-		w.WriteHeader(http.StatusAccepted)
-		w.Write([]byte(`{"id":"n1","name":"n1","status":"resizing"}`)) //nolint:errcheck
-	})
-
-	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "--yes", "node", "resize", "n1", "--size", "e2-standard-4")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stderr != "" {
-		t.Errorf("--yes should not prompt: %q", stderr)
-	}
-	if path != "/api/v1/orgs/acme/projects/clave/nodes/n1/resize" || body["size"] != "e2-standard-4" {
-		t.Errorf("request = %s %v", path, body)
-	}
-	if !strings.Contains(out, "Node n1 is resizing to e2-standard-4. Follow it with `goship node info n1`.") {
-		t.Errorf("output = %q", out)
-	}
-}
-
-func TestNodeResizeShowsReconnectMessage(t *testing.T) {
-	const msg = "Reconnect your Google Cloud account to let GoShip resize machines."
-	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
-			return
-		}
-		w.WriteHeader(http.StatusConflict)
-		w.Write([]byte(`{"error":"` + msg + `","code":"reconnect_required"}`)) //nolint:errcheck
-	})
-	_, err := run(t, "", "--yes", "node", "resize", "n1", "--size", "x")
-	want := strings.TrimSuffix(msg, ".") + ". Reconnect it from the dashboard: "
-	if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.HasSuffix(err.Error(), "/orgs/acme/projects/clave/nodes/n1/resize") {
-		t.Errorf("error = %v, want prefix %q", err, want)
-	}
-}
-
-func TestNodeSizesMarksCurrent(t *testing.T) {
-	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/sizes") {
-			w.Write([]byte(`[{"slug":"e2-small","vcpu":2,"memory_mb":2048,"disk_gb":20,"current":true},{"slug":"e2-standard-4","vcpu":4,"memory_mb":16384,"disk_gb":20}]`)) //nolint:errcheck
-			return
-		}
-		w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
-	})
-	out, err := run(t, "", "node", "sizes", "n1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "CURRENT") || !strings.Contains(out, "e2-standard-4") {
-		t.Errorf("output = %q", out)
-	}
-	for l := range strings.SplitSeq(out, "\n") {
-		if strings.Contains(l, "e2-small") && !strings.Contains(l, "current") {
-			t.Errorf("current size is not marked: %q", l)
-		}
 	}
 }
 
@@ -211,14 +98,15 @@ func TestDestructiveCommandsAllConfirm(t *testing.T) {
 		{"app", "access", "token", "api", "--rotate"},
 		{"db", "rm", "main"},
 		{"volume", "rm", "uploads"},
-		{"node", "rm", "n1"},
-		{"node", "resize", "n1", "--size", "x"},
+		{"cluster", "rm", "n1"},
+		{"cluster", "resize", "n1", "--size", "x"},
+		{"environment", "rm", "staging"},
 		{"cloud", "disconnect", "acme-do"},
 	} {
-		t.Run(args[0], func(t *testing.T) {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-				// Resolving a node's name is a read; it may happen before the
-				// question. Anything else must not.
+				// Resolving a cluster's name is a read; it may happen before
+				// the question. Anything else must not.
 				if r.Method == http.MethodGet {
 					w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
 					return

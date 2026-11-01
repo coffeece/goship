@@ -344,12 +344,12 @@ func TestResolveCloudAccountAmbiguousAndMissing(t *testing.T) {
 	}
 	client := portal.New(cfg.Endpoint(), "")
 
-	_, err = resolveCloudAccount(context.Background(), client, Target{Org: "acme"}, "digitalocean")
+	_, err = resolveCloudAccount(context.Background(), client, "acme", "digitalocean")
 	if err == nil || !strings.Contains(err.Error(), "prod-do") || !strings.Contains(err.Error(), "staging-do") {
 		t.Fatalf("ambiguous ref should list both labels, got %v", err)
 	}
 
-	_, err = resolveCloudAccount(context.Background(), client, Target{Org: "acme"}, "hetzner")
+	_, err = resolveCloudAccount(context.Background(), client, "acme", "hetzner")
 	if err == nil || !strings.Contains(err.Error(), "goship cloud connect") {
 		t.Fatalf("missing ref should point at connect, got %v", err)
 	}
@@ -378,76 +378,6 @@ func TestCloudSizesJSONKeepsRawNumbers(t *testing.T) {
 	}
 	if strings.Contains(out, "/mo") {
 		t.Errorf("JSON carries display strings:\n%s", out)
-	}
-}
-
-// Only admins may list cloud accounts; --all must not fail on the projects
-// where you are only a member.
-func TestCloudListAllSkipsForbiddenProjects(t *testing.T) {
-	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/orgs":
-			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
-			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/games/projects/default/cloud-accounts":
-			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte(`{"error":"admins only"}`)) //nolint:errcheck
-		case "/api/v1/orgs/globex/projects/default/cloud-accounts":
-			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"globex-do","scope":"org"}]`)) //nolint:errcheck
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	})
-	os.Unsetenv("GOSHIP_ORG")
-
-	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "cloud", "list", "--all")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "globex/default") || !strings.Contains(out, "globex-do") || !strings.Contains(out, "org") {
-		t.Errorf("output should show the project that answered, with its accounts' scope:\n%s", out)
-	}
-	if !strings.Contains(stderr, "games/default") {
-		t.Errorf("stderr should say which project was skipped: %q", stderr)
-	}
-}
-
-// An account connected from the CLI is the organization's; naming a project
-// connects, lists and disconnects through that project instead.
-func TestCloudCommandsUseTheProjectPathOnlyWhenAProjectIsNamed(t *testing.T) {
-	for name, tc := range map[string]struct {
-		args []string
-		want string
-	}{
-		"connect, org":     {[]string{"cloud", "connect", "digitalocean", "--api-key-stdin"}, "POST /api/v1/orgs/acme/cloud-accounts"},
-		"connect, project": {[]string{"cloud", "connect", "digitalocean", "--api-key-stdin", "--project", "clave"}, "POST /api/v1/orgs/acme/projects/clave/cloud-accounts"},
-		"list, selected":   {[]string{"cloud", "list"}, "GET /api/v1/orgs/acme/projects/clave/cloud-accounts"},
-		"disconnect, org":  {[]string{"cloud", "disconnect", "acc-1", "--yes"}, "DELETE /api/v1/orgs/acme/cloud-accounts/acc-1"},
-		"regions, project": {[]string{"cloud", "regions", "acc-1", "--project", "clave"}, "GET /api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/regions"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			var calls []string
-			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-				calls = append(calls, r.Method+" "+r.URL.Path)
-				switch {
-				case r.URL.Path == "/api/v1/cloud/providers":
-					w.Write([]byte(`[{"name":"digitalocean","label":"DigitalOcean","kind":"api_key","status":"available"}]`)) //nolint:errcheck
-				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/cloud-accounts"):
-					w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod"}]`)) //nolint:errcheck
-				case r.Method == http.MethodGet:
-					w.Write([]byte(`[]`)) //nolint:errcheck
-				default:
-					w.Write([]byte(`{"id":"acc-1","label":"prod"}`)) //nolint:errcheck
-				}
-			})
-			if _, err := run(t, "key\n", tc.args...); err != nil {
-				t.Fatal(err)
-			}
-			if !slices.Contains(calls, tc.want) {
-				t.Errorf("calls = %q, want %q", calls, tc.want)
-			}
-		})
 	}
 }
 
@@ -656,8 +586,8 @@ func TestResolveCloudAccountNamesAKnownProvider(t *testing.T) {
 
 	_, err := run(t, "", "cloud", "regions", "digitalocean")
 	want := "no DigitalOcean account connected; run `goship cloud connect digitalocean`"
-	if err == nil || !strings.HasPrefix(err.Error(), want) || !strings.Contains(err.Error(), "--project <slug>") {
-		t.Fatalf("got %v, want %q and the hint", err, want)
+	if err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %q", err, want)
 	}
 }
 
@@ -1153,78 +1083,70 @@ func TestCloudConnectGCPRefusesWhatItCannotDo(t *testing.T) {
 	}
 }
 
-// A script written for 0.4 passed its Google Cloud project id as --project.
-// It now names a GoShip project, and the error says what changed.
-func TestCloudConnectGCPExplainsTheRenamedFlag(t *testing.T) {
-	for name, status := range map[string]int{"project not found": http.StatusNotFound, "project forbidden": http.StatusForbidden} {
-		t.Run(name, func(t *testing.T) {
-			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/api/v1/cloud/providers":
-					w.Write([]byte(`[{"name":"gcp","label":"Google Cloud","kind":"federated","status":"available"}]`)) //nolint:errcheck
-				case "/api/v1/orgs/acme/projects":
-					w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
-				default:
-					w.WriteHeader(status)
-				}
-			})
-			_, err := run(t, "", "cloud", "connect", "gcp", "--project-number", "123456789", "--project", "acme-prod")
-			if err == nil || !strings.Contains(err.Error(), "--gcp-project") || !strings.Contains(err.Error(), "renamed in 0.5.0") {
-				t.Fatalf("err = %v", err)
-			}
-		})
-	}
-}
-
-func TestCloudConnectGCPKeepsOtherErrorsWithAValidProject(t *testing.T) {
-	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+// Only admins may list cloud accounts; --all must not fail on the
+// organizations where you are only a member.
+func TestCloudListAllSkipsForbiddenOrgs(t *testing.T) {
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/cloud/providers":
-			w.Write([]byte(`[{"name":"gcp","label":"Google Cloud","kind":"federated","status":"available"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/acme/projects":
-			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/cloud-accounts":
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"admins only"}`)) //nolint:errcheck
+		case "/api/v1/orgs/globex/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"globex-do","node_count":2}]`)) //nolint:errcheck
 		default:
-			w.WriteHeader(http.StatusBadGateway)
+			w.WriteHeader(http.StatusNotFound)
 		}
 	})
-	_, err := run(t, "", "cloud", "connect", "gcp", "--project-number", "123456789", "--project", "clave")
-	if err == nil || strings.Contains(err.Error(), "--gcp-project") {
-		t.Fatalf("err = %v, want the plain API error", err)
+	os.Unsetenv("GOSHIP_ORG")
+
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "cloud", "list", "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "globex") || !strings.Contains(out, "globex-do") {
+		t.Errorf("output should show the organization that answered:\n%s", out)
+	}
+	if strings.Contains(out, "SCOPE") || !strings.Contains(out, "CLUSTERS") {
+		t.Errorf("columns: want CLUSTERS and no SCOPE:\n%s", out)
+	}
+	if !strings.Contains(stderr, "Skipping games") {
+		t.Errorf("stderr should say which organization was skipped: %q", stderr)
 	}
 }
 
-// `cloud list` shows the project's view, so the commands that take an account
-// from that list must find it there: first at the organization, then through
-// the selected project.
-func TestCloudAccountCommandsRetryThroughTheSelectedProject(t *testing.T) {
+// Cloud accounts belong to the organization: every command uses its routes,
+// whatever project is selected.
+func TestCloudCommandsAreOrganizationLevel(t *testing.T) {
 	for name, tc := range map[string]struct {
-		args  []string
-		scope string
-		want  string
+		args []string
+		want string
 	}{
-		"disconnect a project account": {[]string{"cloud", "disconnect", "acc-1", "--yes"}, "project", "DELETE /api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1"},
-		"disconnect an inherited one":  {[]string{"cloud", "disconnect", "acc-1", "--yes"}, "org", "DELETE /api/v1/orgs/acme/cloud-accounts/acc-1"},
-		"regions":                      {[]string{"cloud", "regions", "prod"}, "project", "GET /api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/regions"},
-		"sizes":                        {[]string{"cloud", "sizes", "acc-1", "--region", "nyc1"}, "project", "GET /api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/sizes"},
+		"connect":    {[]string{"cloud", "connect", "digitalocean", "--api-key-stdin"}, "POST /api/v1/orgs/acme/cloud-accounts"},
+		"list":       {[]string{"cloud", "list"}, "GET /api/v1/orgs/acme/cloud-accounts"},
+		"disconnect": {[]string{"cloud", "disconnect", "acc-1", "--yes"}, "DELETE /api/v1/orgs/acme/cloud-accounts/acc-1"},
+		"regions":    {[]string{"cloud", "regions", "prod"}, "GET /api/v1/orgs/acme/cloud-accounts/acc-1/regions"},
+		"sizes":      {[]string{"cloud", "sizes", "acc-1", "--region", "nyc1"}, "GET /api/v1/orgs/acme/cloud-accounts/acc-1/sizes"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var calls []string
 			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 				calls = append(calls, r.Method+" "+r.URL.Path)
 				switch {
-				case r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
-					w.Write([]byte(`[]`)) //nolint:errcheck
-				case r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
-					w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod","scope":"` + tc.scope + `"}]`)) //nolint:errcheck
-				case r.URL.Path == "/api/v1/orgs/acme/projects":
-					w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+				case strings.Contains(r.URL.Path, "/projects/"):
+					t.Errorf("a cloud command went through a project: %s %s", r.Method, r.URL.Path)
+				case r.URL.Path == "/api/v1/cloud/providers":
+					w.Write([]byte(`[{"name":"digitalocean","label":"DigitalOcean","kind":"api_key","status":"available"}]`)) //nolint:errcheck
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/cloud-accounts"):
+					w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod"}]`)) //nolint:errcheck
 				case r.Method == http.MethodGet:
 					w.Write([]byte(`[]`)) //nolint:errcheck
 				default:
-					w.WriteHeader(http.StatusNoContent)
+					w.Write([]byte(`{"id":"acc-1","label":"prod"}`)) //nolint:errcheck
 				}
 			})
-			if _, err := run(t, "", tc.args...); err != nil {
+			if _, err := run(t, "key\n", tc.args...); err != nil {
 				t.Fatal(err)
 			}
 			if !slices.Contains(calls, tc.want) {
@@ -1234,72 +1156,70 @@ func TestCloudAccountCommandsRetryThroughTheSelectedProject(t *testing.T) {
 	}
 }
 
-func TestCloudMoveToProjectPostsTheOrgRoute(t *testing.T) {
-	var gotPath, gotBody string
+// --project has nothing to choose for a cloud account. A script written for
+// 0.4 passed its Google Cloud project id there; it is told where that went.
+func TestCloudCommandsRefuseProject(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod-do","scope":"org"}]`)) //nolint:errcheck
-		case http.MethodPost:
-			gotPath = r.URL.Path
-			buf, _ := io.ReadAll(r.Body)
-			gotBody = string(buf)
-			w.Write([]byte(`{"status":"moved","scope":"project"}`)) //nolint:errcheck
-		default:
-			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-	})
-
-	out, err := run(t, "y\n", "cloud", "move", "prod-do", "--to-project", "web")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotPath != "/api/v1/orgs/acme/cloud-accounts/acc-1/move" {
-		t.Errorf("path = %q, want the organization's move route", gotPath)
-	}
-	if !strings.Contains(gotBody, `"project":"web"`) {
-		t.Errorf("body = %q", gotBody)
-	}
-	if !strings.Contains(out, "moved to project web") {
-		t.Errorf("output = %q", out)
-	}
-
-	out, err = run(t, "y\n", "cloud", "move", "prod-do", "--to-org")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(gotBody, `"project":""`) || !strings.Contains(out, "shared with the organization") {
-		t.Errorf("--to-org: body = %q, output = %q", gotBody, out)
-	}
-}
-
-func TestCloudMoveNeedsExactlyOneTarget(t *testing.T) {
-	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod-do"}]`)) //nolint:errcheck
+		t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 	})
 	for _, args := range [][]string{
-		{"cloud", "move", "prod-do"},
-		{"cloud", "move", "prod-do", "--to-project", "web", "--to-org"},
+		{"cloud", "list", "--project", "clave"},
+		{"cloud", "regions", "acc-1", "--project", "clave"},
+		{"db", "server", "list", "--project", "clave"},
 	} {
-		_, err := run(t, "y\n", args...)
-		if err == nil || !strings.Contains(err.Error(), "--to-project") {
-			t.Errorf("%v: err = %v, want the flag hint", args, err)
+		_, err := run(t, "", args...)
+		if err == nil || !strings.Contains(err.Error(), "belong to the organization") {
+			t.Errorf("%v: err = %v", args, err)
 		}
+	}
+	_, err := run(t, "", "cloud", "connect", "gcp", "--project-number", "123456789", "--project", "acme-prod")
+	if err == nil || !strings.Contains(err.Error(), "--gcp-project") {
+		t.Errorf("connect gcp --project: err = %v, want the --gcp-project hint", err)
 	}
 }
 
-func TestCloudMoveConfirms(t *testing.T) {
-	posted := false
+// An API-key account whose key is rotated keeps its id, and the clusters on
+// it, when --account names it.
+func TestCloudConnectAccountFlagReconnectsInPlace(t *testing.T) {
+	var body map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			posted = true
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/cloud/providers":
+			w.Write([]byte(`[{"name":"hetzner","label":"Hetzner","kind":"api_key","status":"available"},` +
+				`{"name":"gcp","label":"Google Cloud","kind":"federated","status":"available"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"hetzner","label":"hz-prod"},{"id":"acc-2","provider":"digitalocean","label":"do"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/cloud-accounts":
+			json.NewDecoder(r.Body).Decode(&body)                                    //nolint:errcheck
+			w.Write([]byte(`{"id":"acc-1","provider":"hetzner","label":"hz-prod"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod-do"}]`)) //nolint:errcheck
 	})
-	if _, err := run(t, "n\n", "cloud", "move", "prod-do", "--to-project", "web"); err == nil {
-		t.Fatal("expected the command to abort")
+
+	for _, ref := range []string{"acc-1", "hz-prod"} {
+		body = nil
+		if _, err := run(t, "hz-new\n", "cloud", "connect", "hetzner", "--api-key-stdin", "--account", ref); err != nil {
+			t.Fatal(err)
+		}
+		if body["account_id"] != "acc-1" || body["api_key"] != "hz-new" {
+			t.Errorf("--account %s: body = %v", ref, body)
+		}
 	}
-	if posted {
-		t.Error("account was moved without consent")
+
+	body = nil
+	if _, err := run(t, "hz-new\n", "cloud", "connect", "hetzner", "--api-key-stdin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := body["account_id"]; ok {
+		t.Errorf("without --account the request must not name one: %v", body)
+	}
+
+	body = nil
+	if _, err := run(t, "hz-new\n", "cloud", "connect", "hetzner", "--api-key-stdin", "--account", "do"); err == nil || body != nil {
+		t.Errorf("an account of another provider must be refused unsent: err = %v, body = %v", err, body)
+	}
+	if _, err := run(t, "", "cloud", "connect", "gcp", "--project-number", "123", "--account", "acc-1"); err == nil || !strings.Contains(err.Error(), "--account") {
+		t.Errorf("--account outside the API-key path: err = %v", err)
 	}
 }

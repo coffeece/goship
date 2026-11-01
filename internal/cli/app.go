@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
@@ -38,22 +37,14 @@ func newAppCmd(app *App) *cobra.Command {
 
 func appCreateCmd(app *App) *cobra.Command {
 	var req portal.CreateAppRequest
-	var node string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
-		Short: "Create an app",
+		Short: "Create an app in the current environment",
 		Args:  cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			req.Name = args[0]
-			if node != "" {
-				id, err := deploy.ResolvePlacement(cmd.Context(), app.Portal(), t, node)
-				if err != nil {
-					return err
-				}
-				req.NodeID = &id
-			}
-			created, err := app.Portal().CreateApp(cmd.Context(), t.Org, t.Project, req)
+			created, err := app.Portal().CreateApp(cmd.Context(), t.Org, t.Project, t.Environment, req)
 			if err != nil {
 				return err
 			}
@@ -62,9 +53,8 @@ func appCreateCmd(app *App) *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&req.Platform, "platform", "", "platform: go, python, nodejs or static (required)")
-	f.StringVar(&req.Plan, "plan", "", "plan slug; required on GoShip's servers, app-small on a node when omitted")
+	f.StringVar(&req.Plan, "plan", "", "plan slug (`goship plans`); required on GoShip's shared cluster, the cluster's default on one of your own when omitted")
 	f.StringVar(&req.Description, "description", "", "human description")
-	f.StringVar(&node, "node", "", "run on one of your own nodes, by name, or goship for GoShip's servers (default: the project's default placement)")
 	f.BoolVar(&req.Private, "private", false, "put a GoShip login page in front of the app from its first deploy")
 	_ = cmd.MarkFlagRequired("platform")
 
@@ -83,7 +73,7 @@ func appInfoCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			found, err := app.Portal().App(cmd.Context(), t.Org, t.Project, args[0])
+			found, err := app.Portal().App(cmd.Context(), t.Org, t.Project, t.Environment, args[0])
 			if err != nil {
 				return app.explainProject(cmd.Context(), t, err)
 			}
@@ -131,7 +121,7 @@ func appRemoveCmd(app *App) *cobra.Command {
 			if err := confirm(cmd, app.Global.Yes, "Delete app %q? This cannot be undone.", args[0]); err != nil {
 				return err
 			}
-			if err := app.Portal().DeleteApp(cmd.Context(), t.Org, t.Project, args[0]); err != nil {
+			if err := app.Portal().DeleteApp(cmd.Context(), t.Org, t.Project, t.Environment, args[0]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s deleted.", args[0])
@@ -145,7 +135,7 @@ func appLifecycleCmd(app *App, action, short string) *cobra.Command {
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if err := app.Portal().Lifecycle(cmd.Context(), t.Org, t.Project, args[0], action); err != nil {
+			if err := app.Portal().Lifecycle(cmd.Context(), t.Org, t.Project, t.Environment, args[0], action); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s: %s requested.", args[0], action)
@@ -161,7 +151,7 @@ func appScaleCmd(app *App) *cobra.Command {
 		Short: "Set how many units the app runs",
 		Args:  cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if err := app.Portal().ScaleApp(cmd.Context(), t.Org, t.Project, args[0], units); err != nil {
+			if err := app.Portal().ScaleApp(cmd.Context(), t.Org, t.Project, t.Environment, args[0], units); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s scaled to %d unit(s).", args[0], units)
@@ -179,7 +169,7 @@ func appPlanCmd(app *App) *cobra.Command {
 		Short: "Move the app to another plan",
 		Args:  cobra.ExactArgs(2),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if err := app.Portal().SetAppPlan(cmd.Context(), t.Org, t.Project, args[0], args[1]); err != nil {
+			if err := app.Portal().SetAppPlan(cmd.Context(), t.Org, t.Project, t.Environment, args[0], args[1]); err != nil {
 				return err
 			}
 			return app.Renderer().Message("App %s moved to plan %s.", args[0], args[1])

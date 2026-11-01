@@ -14,14 +14,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestNodeCreateCloudSendsAccountRegionSize(t *testing.T) {
+func TestClusterCreateCloudSendsAccountRegionSize(t *testing.T) {
 	var body map[string]any
 	var gotMethod, gotPath string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/clusters":
 			gotMethod, gotPath = r.Method, r.URL.Path
 			json.NewDecoder(r.Body).Decode(&body)                              //nolint:errcheck
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
@@ -30,11 +30,11 @@ func TestNodeCreateCloudSendsAccountRegionSize(t *testing.T) {
 		}
 	})
 
-	if _, err := run(t, "", "node", "create", "n1",
+	if _, err := run(t, "", "cluster", "create", "n1",
 		"--cloud", "acme-do", "--region", "nyc3", "--size", "s-4vcpu-8gb", "--no-wait"); err != nil {
 		t.Fatal(err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/projects/clave/nodes" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/orgs/acme/clusters" {
 		t.Fatalf("request = %s %s", gotMethod, gotPath)
 	}
 	if body["name"] != "n1" || body["cloud_account_id"] != "acc-1" || body["region"] != "nyc3" || body["size"] != "s-4vcpu-8gb" {
@@ -42,7 +42,7 @@ func TestNodeCreateCloudSendsAccountRegionSize(t *testing.T) {
 	}
 }
 
-func TestNodeCreateSSHSendsHostAndKey(t *testing.T) {
+func TestClusterCreateSSHSendsHostAndKey(t *testing.T) {
 	keyFile := filepath.Join(t.TempDir(), "id_ed25519")
 	if err := os.WriteFile(keyFile, []byte("fake-key-material"), 0o600); err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestNodeCreateSSHSendsHostAndKey(t *testing.T) {
 		w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
 	})
 
-	if _, err := run(t, "", "node", "create", "n1", "--host", "203.0.113.5", "--ssh-key", keyFile, "--no-wait"); err != nil {
+	if _, err := run(t, "", "cluster", "create", "n1", "--host", "203.0.113.5", "--ssh-key", keyFile, "--no-wait"); err != nil {
 		t.Fatal(err)
 	}
 	if body["type"] != "vps" || body["host"] != "203.0.113.5" || body["ssh_key"] != "fake-key-material" {
@@ -66,18 +66,59 @@ func TestNodeCreateSSHSendsHostAndKey(t *testing.T) {
 	}
 }
 
-func TestNodeCreateRejectsBothCloudAndHost(t *testing.T) {
+func TestClusterCreateNeedsExactlyOnePath(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 	})
 
-	_, err := run(t, "", "node", "create", "n1", "--cloud", "acme-do", "--host", "203.0.113.5")
-	if err == nil || !strings.Contains(err.Error(), "--cloud") || !strings.Contains(err.Error(), "--host") {
-		t.Fatalf("got %v", err)
+	for _, args := range [][]string{
+		{},
+		{"--cloud", "acme-do", "--host", "203.0.113.5"},
+		{"--host", "203.0.113.5", "--kubeconfig", "kc"},
+		{"--cloud", "acme-do", "--kubeconfig", "kc"},
+	} {
+		_, err := run(t, "", append([]string{"cluster", "create", "n1"}, args...)...)
+		if err == nil || err.Error() != "pass exactly one of --cloud, --host or --kubeconfig" {
+			t.Errorf("%v: got %v", args, err)
+		}
 	}
 }
 
-func TestNodeCreateMissingSizeWithoutTTYErrors(t *testing.T) {
+// A Kubernetes cluster you already run connects with its kubeconfig.
+func TestClusterCreateKubeconfigSendsTheFile(t *testing.T) {
+	kubeconfig := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(kubeconfig, []byte("apiVersion: v1\nkind: Config\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var body map[string]any
+	var gotPath string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			return
+		}
+		gotPath = r.URL.Path
+		json.NewDecoder(r.Body).Decode(&body)                              //nolint:errcheck
+		w.Write([]byte(`{"id":"k1","name":"k1","status":"provisioning"}`)) //nolint:errcheck
+	})
+
+	out, err := run(t, "", "cluster", "create", "k1", "--kubeconfig", kubeconfig, "--no-wait")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/orgs/acme/clusters" || body["type"] != "kubernetes" || body["kubeconfig"] != "apiVersion: v1\nkind: Config\n" {
+		t.Errorf("request = %s %v", gotPath, body)
+	}
+	if _, ok := body["ssh_key"]; ok {
+		t.Errorf("a kubeconfig cluster sends no SSH fields: %v", body)
+	}
+	if !strings.Contains(out, "Creating cluster k1 on your Kubernetes cluster") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestClusterCreateMissingSizeWithoutTTYErrors(t *testing.T) {
 	orig := stdinIsTTY
 	stdinIsTTY = func(*cobra.Command) bool { return false }
 	t.Cleanup(func() { stdinIsTTY = orig })
@@ -86,7 +127,7 @@ func TestNodeCreateMissingSizeWithoutTTYErrors(t *testing.T) {
 		w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
 	})
 
-	_, err := run(t, "", "node", "create", "n1", "--cloud", "acme-do", "--region", "nyc3")
+	_, err := run(t, "", "cluster", "create", "n1", "--cloud", "acme-do", "--region", "nyc3")
 	if err == nil || !strings.Contains(err.Error(), "--size") {
 		t.Fatalf("got %v", err)
 	}
@@ -107,7 +148,7 @@ func runWithStderr(t *testing.T, ctx context.Context, in io.Reader, args ...stri
 	return out.String(), errOut.String(), err
 }
 
-func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
+func TestClusterCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 	orig := stdinIsTTY
 	stdinIsTTY = func(*cobra.Command) bool { return true }
 	t.Cleanup(func() { stdinIsTTY = orig })
@@ -115,14 +156,14 @@ func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 	var body map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/regions":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/regions":
 			w.Write([]byte(`[{"slug":"nyc1","label":"New York 1","country":"US"},{"slug":"nyc3","label":"New York 3","country":"US"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/sizes":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/sizes":
 			w.Write([]byte(`[{"slug":"s-1vcpu-1gb","vcpu":1,"memory_mb":1024,"disk_gb":25,"price_monthly":48,"currency":"USD","band":{"slug":"b1","price_cents":9900,"currency":"BRL"}},` +
 				`{"slug":"s-2vcpu-4gb","vcpu":2,"memory_mb":4096,"disk_gb":80}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/clusters":
 			json.NewDecoder(r.Body).Decode(&body)                              //nolint:errcheck
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
 		default:
@@ -130,7 +171,7 @@ func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 		}
 	})
 
-	_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("2\n1\n"), "node", "create", "n1", "--cloud", "acme-do", "--no-wait")
+	_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("2\n1\n"), "cluster", "create", "n1", "--cloud", "acme-do", "--no-wait")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +194,7 @@ func TestNodeCreatePromptsForRegionAndSizeOnTTY(t *testing.T) {
 
 // Regression: stdin used to be wrapped in a bufio.Reader before the TTY check,
 // which then never saw an *os.File and refused to prompt on a real terminal.
-func TestNodeCreateChecksTTYBeforeWrappingStdin(t *testing.T) {
+func TestClusterCreateChecksTTYBeforeWrappingStdin(t *testing.T) {
 	in := strings.NewReader("1\n1\n")
 	orig := stdinIsTTY
 	calls := 0
@@ -168,20 +209,20 @@ func TestNodeCreateChecksTTYBeforeWrappingStdin(t *testing.T) {
 
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/regions":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/regions":
 			w.Write([]byte(`[{"slug":"nyc3","label":"New York 3","country":"US"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc-1/sizes":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts/acc-1/sizes":
 			w.Write([]byte(`[{"slug":"s-1vcpu-1gb","vcpu":1,"memory_mb":1024,"disk_gb":25}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/clusters":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	})
 
-	if _, _, err := runWithStderr(t, context.Background(), in, "node", "create", "n1", "--cloud", "acme-do", "--no-wait"); err != nil {
+	if _, _, err := runWithStderr(t, context.Background(), in, "cluster", "create", "n1", "--cloud", "acme-do", "--no-wait"); err != nil {
 		t.Fatal(err)
 	}
 	if calls == 0 {
@@ -189,7 +230,7 @@ func TestNodeCreateChecksTTYBeforeWrappingStdin(t *testing.T) {
 	}
 }
 
-func TestNodeCreateRejectsFlagsOfTheOtherPath(t *testing.T) {
+func TestClusterCreateRejectsFlagsOfTheOtherPath(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 	})
@@ -203,52 +244,54 @@ func TestNodeCreateRejectsFlagsOfTheOtherPath(t *testing.T) {
 		{[]string{"--cloud", "acme-do", "--port", "2222"}, "--port only applies with --host"},
 		{[]string{"--cloud", "acme-do", "--ssh-user", "ubuntu"}, "--ssh-user only applies with --host"},
 		{[]string{"--cloud", "acme-do", "--ssh-key", "k"}, "--ssh-key only applies with --host"},
+		{[]string{"--kubeconfig", "kc", "--region", "nyc3"}, "--region only applies with --cloud"},
+		{[]string{"--kubeconfig", "kc", "--port", "2222"}, "--port only applies with --host"},
 	} {
-		_, err := run(t, "", append([]string{"node", "create", "n1"}, tc.args...)...)
+		_, err := run(t, "", append([]string{"cluster", "create", "n1"}, tc.args...)...)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: got %v, want %q", tc.args, err, tc.want)
 		}
 	}
 }
 
-func TestNodeCreateNoWaitPointsAtNodes(t *testing.T) {
+func TestClusterCreateNoWaitPointsAtClusters(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/clusters":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	})
 
-	out, err := run(t, "", "node", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s", "--no-wait")
+	out, err := run(t, "", "cluster", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s", "--no-wait")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "`goship nodes`") {
+	if !strings.Contains(out, "`goship clusters`") {
 		t.Errorf("output = %q", out)
 	}
 }
 
-// followAPI answers the create-and-follow calls of `node create --cloud`,
-// handing each poll of the node to poll.
+// followAPI answers the create-and-follow calls of `cluster create --cloud`,
+// handing each poll of the cluster to poll.
 func followAPI(t *testing.T, poll http.HandlerFunc) {
 	t.Helper()
-	origInterval := nodePollInterval
-	nodePollInterval = time.Millisecond
-	t.Cleanup(func() { nodePollInterval = origInterval })
+	origInterval := clusterPollInterval
+	clusterPollInterval = time.Millisecond
+	t.Cleanup(func() { clusterPollInterval = origInterval })
 
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/orgs/acme/projects":
 			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/clusters":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"creating_machine"}`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes/n1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/clusters/n1":
 			poll(w, r)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -256,9 +299,9 @@ func followAPI(t *testing.T, poll http.HandlerFunc) {
 	})
 }
 
-var followArgs = []string{"node", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s-1vcpu-1gb"}
+var followArgs = []string{"cluster", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s-1vcpu-1gb"}
 
-func TestNodeCreateFollowRidesOutTransientErrors(t *testing.T) {
+func TestClusterCreateFollowRidesOutTransientErrors(t *testing.T) {
 	polls := 0
 	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		polls++
@@ -266,7 +309,7 @@ func TestNodeCreateFollowRidesOutTransientErrors(t *testing.T) {
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		w.Write([]byte(`{"id":"n1","name":"n1","status":"active","pool_name":"pool-n1"}`)) //nolint:errcheck
+		w.Write([]byte(`{"id":"n1","name":"n1","status":"active"}`)) //nolint:errcheck
 	})
 
 	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), followArgs...)
@@ -281,7 +324,7 @@ func TestNodeCreateFollowRidesOutTransientErrors(t *testing.T) {
 	}
 }
 
-func TestNodeCreateFollowGivesUpAfterRepeatedErrors(t *testing.T) {
+func TestClusterCreateFollowGivesUpAfterRepeatedErrors(t *testing.T) {
 	polls := 0
 	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		polls++
@@ -297,16 +340,16 @@ func TestNodeCreateFollowGivesUpAfterRepeatedErrors(t *testing.T) {
 	}
 }
 
-func TestNodeCreateFollowStopsAtOnceOnClientError(t *testing.T) {
+func TestClusterCreateFollowStopsAtOnceOnClientError(t *testing.T) {
 	polls := 0
 	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		polls++
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":"node not found"}`)) //nolint:errcheck
+		w.Write([]byte(`{"error":"cluster not found"}`)) //nolint:errcheck
 	})
 
 	_, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), followArgs...)
-	if err == nil || !strings.Contains(err.Error(), "node not found") {
+	if err == nil || !strings.Contains(err.Error(), "cluster not found") {
 		t.Fatalf("got %v", err)
 	}
 	if polls != 1 {
@@ -314,19 +357,19 @@ func TestNodeCreateFollowStopsAtOnceOnClientError(t *testing.T) {
 	}
 }
 
-func TestNodeCreateFollowTimesOut(t *testing.T) {
+func TestClusterCreateFollowTimesOut(t *testing.T) {
 	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"installing_k3s"}`)) //nolint:errcheck
 	})
 
 	_, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), append(followArgs, "--timeout", "20ms")...)
-	if err == nil || !strings.Contains(err.Error(), "--timeout") || !strings.Contains(err.Error(), "goship node info n1") {
+	if err == nil || !strings.Contains(err.Error(), "--timeout") || !strings.Contains(err.Error(), "goship cluster info n1") {
 		t.Fatalf("got %v", err)
 	}
 }
 
-// Ctrl-C ends the follow, not the node: nothing failed, so it exits 0.
-func TestNodeCreateInterruptedFollowIsNotAFailure(t *testing.T) {
+// Ctrl-C ends the follow, not the cluster: nothing failed, so it exits 0.
+func TestClusterCreateInterruptedFollowIsNotAFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -338,7 +381,7 @@ func TestNodeCreateInterruptedFollowIsNotAFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("got %v, want a clean exit", err)
 	}
-	if !strings.Contains(stderr, "Stopped following; the node keeps provisioning — run `goship node info n1`") {
+	if !strings.Contains(stderr, "Stopped following; the cluster keeps provisioning — run `goship cluster info n1`") {
 		t.Errorf("stderr = %q", stderr)
 	}
 	if strings.Contains(out, "✗") {
@@ -346,45 +389,45 @@ func TestNodeCreateInterruptedFollowIsNotAFailure(t *testing.T) {
 	}
 }
 
-func TestNodeCreateFollowFailureWithoutStageOrReason(t *testing.T) {
+func TestClusterCreateFollowFailureWithoutStageOrReason(t *testing.T) {
 	followAPI(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"id":"n1","name":"n1","status":"error","stage":""}`)) //nolint:errcheck
 	})
 
 	out, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), followArgs...)
-	if err == nil || err.Error() != "node n1 failed" {
-		t.Fatalf("got %v, want exactly %q", err, "node n1 failed")
+	if err == nil || err.Error() != "cluster n1 failed" {
+		t.Fatalf("got %v, want exactly %q", err, "cluster n1 failed")
 	}
 	if strings.Contains(out, "\n\n") {
 		t.Errorf("an empty reason should not print a blank line: %q", out)
 	}
 }
 
-func TestNodeCreateFollowsUntilActive(t *testing.T) {
-	origInterval := nodePollInterval
-	nodePollInterval = time.Millisecond
-	t.Cleanup(func() { nodePollInterval = origInterval })
+func TestClusterCreateFollowsUntilActive(t *testing.T) {
+	origInterval := clusterPollInterval
+	clusterPollInterval = time.Millisecond
+	t.Cleanup(func() { clusterPollInterval = origInterval })
 
 	polls := 0
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/clusters":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"creating_machine"}`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes/n1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/clusters/n1":
 			polls++
 			if polls == 1 {
 				w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"installing_k3s"}`)) //nolint:errcheck
 				return
 			}
-			w.Write([]byte(`{"id":"n1","name":"n1","status":"active","stage":"","pool_name":"pool-n1"}`)) //nolint:errcheck
+			w.Write([]byte(`{"id":"n1","name":"n1","status":"active","stage":""}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	})
 
-	out, err := run(t, "", "node", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s-1vcpu-1gb")
+	out, err := run(t, "", "cluster", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s-1vcpu-1gb")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,29 +438,29 @@ func TestNodeCreateFollowsUntilActive(t *testing.T) {
 		t.Errorf("output should show a completed step: %q", out)
 	}
 	if !strings.Contains(out, "ready") {
-		t.Errorf("output should say the node is ready: %q", out)
+		t.Errorf("output should say the cluster is ready: %q", out)
 	}
 }
 
-func TestNodeCreateFollowStopsOnError(t *testing.T) {
-	origInterval := nodePollInterval
-	nodePollInterval = time.Millisecond
-	t.Cleanup(func() { nodePollInterval = origInterval })
+func TestClusterCreateFollowStopsOnError(t *testing.T) {
+	origInterval := clusterPollInterval
+	clusterPollInterval = time.Millisecond
+	t.Cleanup(func() { clusterPollInterval = origInterval })
 
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/clusters":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning","stage":"waiting_ssh"}`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes/n1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/clusters/n1":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"error","stage":"waiting_ssh","error_message":"ssh never answered"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 	})
 
-	out, err := run(t, "", "node", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s-1vcpu-1gb")
+	out, err := run(t, "", "cluster", "create", "n1", "--cloud", "acme-do", "--region", "nyc3", "--size", "s-1vcpu-1gb")
 	if err == nil || !strings.Contains(err.Error(), "ssh never answered") {
 		t.Fatalf("got %v", err)
 	}
@@ -429,15 +472,15 @@ func TestNodeCreateFollowStopsOnError(t *testing.T) {
 	}
 }
 
-func TestNodeCreateJSONSkipsFollow(t *testing.T) {
+func TestClusterCreateJSONSkipsFollow(t *testing.T) {
 	gets := 0
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/cloud-accounts":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"acme-do"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/clusters":
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/clave/nodes/n1":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/clusters/n1":
 			gets++
 			w.Write([]byte(`{"id":"n1","name":"n1","status":"active"}`)) //nolint:errcheck
 		default:
@@ -445,15 +488,15 @@ func TestNodeCreateJSONSkipsFollow(t *testing.T) {
 		}
 	})
 
-	out, err := run(t, "", "node", "create", "n1",
+	out, err := run(t, "", "cluster", "create", "n1",
 		"--cloud", "acme-do", "--region", "nyc3", "--size", "s-1vcpu-1gb", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if gets != 0 {
-		t.Errorf("json output should not poll the node, got %d GETs", gets)
+		t.Errorf("json output should not poll the cluster, got %d GETs", gets)
 	}
 	if !strings.Contains(out, `"id"`) {
-		t.Errorf("output should be the created node's JSON: %q", out)
+		t.Errorf("output should be the created cluster's JSON: %q", out)
 	}
 }
