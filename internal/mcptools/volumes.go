@@ -19,7 +19,7 @@ type VolumeArg struct {
 type CreateVolumeArgs struct {
 	ProjectArg
 	Name        string `json:"name"`
-	Plan        string `json:"plan" jsonschema:"volume plan slug (goship_list_plans with kind=volume)"`
+	Plan        string `json:"plan" jsonschema:"byon-local (the cluster's own disk) or do-block-storage"`
 	CapacityGiB int    `json:"capacity_gib" jsonschema:"size in GiB"`
 }
 
@@ -31,7 +31,7 @@ type VolumeBindArgs struct {
 }
 
 func (r *registry) volumes() {
-	tool(r, "goship_list_volumes", "List persistent disks on the project's nodes and what they are mounted in.", read,
+	tool(r, "goship_list_volumes", "List the persistent disks in the environment, the cluster each is on and what they are mounted in.", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (VolumeList, error) {
 			v, err := c.Volumes(ctx, t.Org, t.Project, t.Environment)
 			return VolumeList{Volumes: v}, err
@@ -40,7 +40,7 @@ func (r *registry) volumes() {
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in VolumeArg) (*portal.Volume, error) {
 			return c.Volume(ctx, t.Org, t.Project, t.Environment, in.Volume)
 		})
-	tool(r, "goship_create_volume", "Create a persistent disk on one of the project's nodes.", write,
+	tool(r, "goship_create_volume", "Create a persistent disk on the cluster the environment runs on, which must be one of the organization's own: GoShip's shared cluster has no volumes.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateVolumeArgs) (*portal.Volume, error) {
 			return c.CreateVolume(ctx, t.Org, t.Project, t.Environment, in.Name, in.Plan, in.CapacityGiB)
 		})

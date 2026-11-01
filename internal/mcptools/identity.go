@@ -15,7 +15,7 @@ type OrgList struct {
 }
 
 func (r *registry) identity() {
-	orgless(r, "goship_whoami", "Show the authenticated GoShip user and the organizations they belong to.", read,
+	orgless(r, "goship_whoami", "Show the authenticated GoShip user, the organizations they belong to and the environments of each.", read,
 		func(ctx context.Context, c *portal.Client, _ struct{}) (*portal.Me, error) {
 			return c.WhoAmI(ctx)
 		})

@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -24,6 +26,11 @@ type fakeClients struct {
 	token   string
 	org     string
 	project string
+	// saved are the environments `goship environment use` chose, by
+	// "org/project"; any other project is in production.
+	saved map[string]string
+	// envErr is why the organization's default environment cannot be read.
+	envErr error
 }
 
 func (f fakeClients) Client(context.Context) (*portal.Client, error) {
@@ -51,6 +58,22 @@ func (f fakeClients) Project(_ context.Context, _ *portal.Client, _, override st
 		return "", errors.New(`no project selected: pass project, or run "goship project use <slug>"; goship_list_projects shows them`)
 	}
 	return f.project, nil
+}
+
+func (f fakeClients) Environment(_ context.Context, _ *portal.Client, org, project, override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	if env := f.selected(deploy.Target{Org: org, Project: project}); env != "" {
+		return env, nil
+	}
+	return deploy.FallbackEnvironment, f.envErr
+}
+
+func (f fakeClients) selected(t deploy.Target) string { return f.saved[t.Org+"/"+t.Project] }
+
+func (f fakeClients) DeploySelection(c *portal.Client) (func(deploy.Target) string, deploy.OrgLister) {
+	return f.selected, c.Orgs
 }
 
 // session connects a client to a server over in-memory transports.
@@ -119,7 +142,7 @@ func TestEveryToolIsPrefixedAndAnnotated(t *testing.T) {
 		if readish != tl.Annotations.ReadOnlyHint {
 			t.Errorf("%s: ReadOnlyHint = %v", tl.Name, tl.Annotations.ReadOnlyHint)
 		}
-		destructiveish := strings.HasPrefix(tl.Name, "goship_delete_") || tl.Name == "goship_revoke_api_token" || tl.Name == "goship_resize_node"
+		destructiveish := strings.HasPrefix(tl.Name, "goship_delete_") || tl.Name == "goship_revoke_api_token" || tl.Name == "goship_resize_cluster"
 		if destructiveish {
 			if tl.Annotations.DestructiveHint != nil && !*tl.Annotations.DestructiveHint {
 				t.Errorf("%s is marked non-destructive", tl.Name)
@@ -132,6 +155,116 @@ func TestEveryToolIsPrefixedAndAnnotated(t *testing.T) {
 		}
 		if strings.Contains(strings.ToLower(tl.Description), "tsuru") {
 			t.Errorf("%s names the engine", tl.Name)
+		}
+		if node.MatchString(tl.Name) || node.MatchString(tl.Description) || node.MatchString(string(schema(t, tl))) {
+			t.Errorf("%s still speaks of nodes: %s", tl.Name, tl.Description)
+		}
+	}
+}
+
+// node is the word clusters replaced; nodejs is a platform.
+var node = regexp.MustCompile(`(?i)\bnodes?\b|_nodes?\b`)
+
+func schema(t *testing.T, tl *mcp.Tool) []byte {
+	t.Helper()
+	raw, err := json.Marshal(tl.InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// properties are the arguments a tool takes, with their descriptions.
+func properties(t *testing.T, tl *mcp.Tool) map[string]string {
+	t.Helper()
+	var s struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(schema(t, tl), &s); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for k, v := range s.Properties {
+		out[k] = v.Description
+	}
+	return out
+}
+
+func toolsByName(t *testing.T, o Options) map[string]*mcp.Tool {
+	t.Helper()
+	cs := session(t, fakeClients{}, o)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]*mcp.Tool{}
+	for _, tl := range res.Tools {
+		out[tl.Name] = tl
+	}
+	return out
+}
+
+func TestEnvironmentAndClusterToolsAreRegistered(t *testing.T) {
+	all := toolsByName(t, Options{Deploy: true})
+	for name, k := range map[string]kind{
+		"goship_list_environments":  read,
+		"goship_create_environment": write,
+		"goship_delete_environment": destructive,
+		"goship_list_clusters":      read,
+		"goship_get_cluster":        read,
+		"goship_list_cluster_sizes": read,
+		"goship_create_cluster":     write,
+		"goship_resize_cluster":     destructive,
+		"goship_delete_cluster":     destructive,
+	} {
+		tl, ok := all[name]
+		if !ok {
+			t.Errorf("%s is not registered", name)
+			continue
+		}
+		a := tl.Annotations
+		switch k {
+		case read:
+			if !a.ReadOnlyHint {
+				t.Errorf("%s must be read-only", name)
+			}
+		case write:
+			if a.ReadOnlyHint || a.DestructiveHint == nil || *a.DestructiveHint {
+				t.Errorf("%s must be a non-destructive write", name)
+			}
+		case destructive:
+			if a.ReadOnlyHint || (a.DestructiveHint != nil && !*a.DestructiveHint) || !strings.Contains(tl.Description, "confirm with the user") {
+				t.Errorf("%s must be destructive and ask for confirmation", name)
+			}
+		}
+	}
+	for _, gone := range []string{"goship_move_cloud_account", "goship_list_nodes", "goship_resize_node"} {
+		if _, ok := all[gone]; ok {
+			t.Errorf("%s is still registered", gone)
+		}
+	}
+}
+
+// Every tool that takes a project takes an environment beside it, and the
+// tools of the organization (clusters, environments, cloud accounts,
+// database servers) take neither.
+func TestEveryProjectToolTakesAnEnvironment(t *testing.T) {
+	const want = "environment slug; defaults to the organization's default environment (production)"
+	orgLevel := regexp.MustCompile(`_(environments?|clusters?|cluster_sizes|cloud_\w+|database_servers?|database_server_\w+)$`)
+	for _, o := range []Options{{Deploy: true}, {}} {
+		for name, tl := range toolsByName(t, o) {
+			props := properties(t, tl)
+			_, hasProject := props["project"]
+			switch {
+			case orgLevel.MatchString(name):
+				if hasProject {
+					t.Errorf("%s belongs to the organization but takes a project", name)
+				}
+			case hasProject && props["environment"] != want:
+				t.Errorf("%s takes a project but its environment is %q", name, props["environment"])
+			}
 		}
 	}
 }
@@ -201,7 +334,7 @@ func TestListAppsReturnsStructuredApps(t *testing.T) {
 	if res.IsError {
 		t.Fatal(text(res))
 	}
-	if gotPath != "/api/v1/orgs/other/projects/mova/apps" || gotAuth != "Bearer tok" {
+	if gotPath != "/api/v1/orgs/other/projects/mova/environments/production/apps" || gotAuth != "Bearer tok" {
 		t.Errorf("called %s with %q", gotPath, gotAuth)
 	}
 	var out AppList
@@ -231,7 +364,7 @@ func TestDeleteAppCallsDelete(t *testing.T) {
 	})
 	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{})
 	res := call(t, cs, "goship_delete_app", map[string]any{"app": "api"})
-	if res.IsError || method != http.MethodDelete || path != "/api/v1/orgs/acme/projects/clave/apps/api" {
+	if res.IsError || method != http.MethodDelete || path != "/api/v1/orgs/acme/projects/clave/environments/production/apps/api" {
 		t.Errorf("%s %s: %q", method, path, text(res))
 	}
 }
@@ -271,8 +404,8 @@ func TestDeployWithNoMarkerListsWhatItLooksFor(t *testing.T) {
 			w.Write([]byte(`[{"slug":"acme"}]`)) //nolint:errcheck
 		case strings.HasSuffix(r.URL.Path, "/projects"):
 			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
-		case strings.HasSuffix(r.URL.Path, "/projects/clave/apps"):
-			w.Write([]byte(`[]`)) //nolint:errcheck
+		case strings.HasSuffix(r.URL.Path, "/environments"):
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected %s", r.URL.Path)
 		}
@@ -331,22 +464,26 @@ func TestListProjectsNeedsNoProject(t *testing.T) {
 	}
 }
 
-// deployPaths drives goship_deploy in an org with two projects and records
-// the app-scoped paths it touches; the deploy itself is refused so the call
-// ends there.
+// deployPaths drives goship_deploy in an org with two projects, each in
+// production and staging, and records the app paths it touches; holder is
+// the "project/environment" that already has the app. The deploy itself is
+// refused, so the call ends there.
 func deployPaths(t *testing.T, fc fakeClients, dir string, args map[string]any, holder string) ([]string, *mcp.CallToolResult) {
 	t.Helper()
 	var paths []string
+	project, env, _ := strings.Cut(holder, "/")
 	fc.url = api(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/orgs":
-			w.Write([]byte(`[{"slug":"acme"}]`)) //nolint:errcheck
+			w.Write([]byte(`[{"slug":"acme","default_environment":"production"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/acme/projects":
 			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
-		case strings.Contains(r.URL.Path, "/apps/web"):
+		case r.URL.Path == "/api/v1/orgs/acme/environments":
+			w.Write([]byte(`[{"slug":"production"},{"slug":"staging"}]`)) //nolint:errcheck
+		case strings.Contains(r.URL.Path, "/apps"):
 			paths = append(paths, r.Method+" "+r.URL.Path)
 			switch {
-			case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/"+holder+"/apps/web":
+			case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/acme/projects/"+project+"/environments/"+env+"/apps/web":
 				w.Write([]byte(`{"name":"web","platform":"go"}`)) //nolint:errcheck
 			case r.Method == http.MethodPost:
 				w.WriteHeader(http.StatusForbidden)
@@ -368,9 +505,9 @@ func deployPaths(t *testing.T, fc fakeClients, dir string, args map[string]any, 
 func TestDeployFindsTheProjectHoldingTheApp(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir+"/go.mod", "module web\n")
-	paths, _ := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "mova")
-	if !slices.Contains(paths, "POST /api/v1/orgs/acme/projects/mova/apps/web/deploys") {
-		t.Errorf("paths = %q, want the deploy to go to mova", paths)
+	paths, _ := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "mova/staging")
+	if !slices.Contains(paths, "POST /api/v1/orgs/acme/projects/mova/environments/staging/apps/web/deploys") {
+		t.Errorf("paths = %q, want the deploy to go to mova/staging", paths)
 	}
 }
 
@@ -379,8 +516,8 @@ func TestDeployReadsTheProjectFromGoshipYml(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir+"/go.mod", "module web\n")
 	writeFile(t, dir+"/goship.yml", "project: clave\n")
-	paths, _ := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "clave")
-	if !slices.Contains(paths, "POST /api/v1/orgs/acme/projects/clave/apps/web/deploys") {
+	paths, _ := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "clave/production")
+	if !slices.Contains(paths, "POST /api/v1/orgs/acme/projects/clave/environments/production/apps/web/deploys") {
 		t.Errorf("paths = %q, want the deploy to go to clave", paths)
 	}
 }
@@ -389,7 +526,7 @@ func TestDeployReadsTheProjectFromGoshipYml(t *testing.T) {
 func TestDeployAsksForAProjectWhenNothingDecides(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir+"/go.mod", "module web\n")
-	_, res := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "none")
+	_, res := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "none/none")
 	if !res.IsError || !strings.Contains(text(res), "goship_list_projects") {
 		t.Errorf("got isError=%v %q", res.IsError, text(res))
 	}
@@ -424,7 +561,7 @@ func TestDeployUsesTheOrgGoshipYmlPins(t *testing.T) {
 	})
 	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "clave"}, Options{Deploy: true})
 	call(t, cs, "goship_deploy", map[string]any{"path": dir, "app": "web", "plan": "app-free"})
-	if !slices.Contains(paths, "POST /api/v1/orgs/other/projects/mova/apps") {
+	if !slices.Contains(paths, "POST /api/v1/orgs/other/projects/mova/environments/production/apps") {
 		t.Errorf("paths = %q, want the app created in other/mova", paths)
 	}
 	for _, p := range paths {
@@ -435,7 +572,7 @@ func TestDeployUsesTheOrgGoshipYmlPins(t *testing.T) {
 }
 
 func TestPrivateAppTools(t *testing.T) {
-	base := "/api/v1/orgs/acme/projects/clave/apps/api"
+	base := "/api/v1/orgs/acme/projects/clave/environments/production/apps/api"
 	cases := []struct {
 		tool, method, path, query, body string
 		args                            map[string]any

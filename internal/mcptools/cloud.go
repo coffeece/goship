@@ -3,7 +3,6 @@ package mcptools
 import (
 	"context"
 
-	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 )
 
@@ -30,12 +29,12 @@ type CloudSizeList struct {
 }
 
 func (r *registry) cloud() {
-	tool(r, "goship_list_cloud_accounts", "List the cloud accounts (AWS, Google Cloud, DigitalOcean…) the project can use, its own and the organization's (scope says which). Nodes are created in them, and a Google Cloud account can also host a database server. Connecting one needs a browser: tell the user to run `goship cloud connect <provider>`.", read,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (CloudAccountList, error) {
-			a, err := c.CloudAccounts(ctx, t.Org)
+	orgTool(r, "goship_list_cloud_accounts", "List the cloud accounts (AWS, Google Cloud, DigitalOcean…) connected to the organization. Clusters are created in them (goship_create_cluster), and a Google Cloud account can also host a database server. Connecting one needs a browser: tell the user to run `goship cloud connect <provider>`.", read,
+		func(ctx context.Context, c *portal.Client, org string, _ OrgArg) (CloudAccountList, error) {
+			a, err := c.CloudAccounts(ctx, org)
 			return CloudAccountList{Accounts: a}, err
 		})
-	orgTool(r, "goship_list_cloud_regions", "List the regions a connected cloud account can create nodes in.", read,
+	orgTool(r, "goship_list_cloud_regions", "List the regions a connected cloud account can create clusters in.", read,
 		func(ctx context.Context, c *portal.Client, org string, in CloudAccountArg) (CloudRegionList, error) {
 			rg, err := c.CloudRegions(ctx, org, in.AccountID)
 			return CloudRegionList{Regions: rg}, err
@@ -45,7 +44,7 @@ func (r *registry) cloud() {
 			s, err := c.CloudSizes(ctx, org, in.AccountID, in.Region)
 			return CloudSizeList{Sizes: s}, err
 		})
-	orgTool(r, "goship_delete_cloud_account", "Disconnect a cloud account. Nodes created from it keep running but can no longer be managed through it.", destructive,
+	orgTool(r, "goship_delete_cloud_account", "Disconnect a cloud account from the organization. Clusters created in it keep running but can no longer be managed through it.", destructive,
 		func(ctx context.Context, c *portal.Client, org string, in CloudAccountArg) (Message, error) {
 			if err := c.DeleteCloudAccount(ctx, org, in.AccountID); err != nil {
 				return Message{}, err
