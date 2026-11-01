@@ -96,7 +96,7 @@ func (r *registry) clusters() {
 			}
 			return msgf("Cluster %s is resizing to %s. goship_get_cluster shows its stage.", in.Cluster, in.Size)
 		})
-	orgTool(r, "goship_delete_cluster", "Disconnect a cluster and every app on it; with destroy_server the machine at the cloud provider is destroyed too.", destructive,
+	orgTool(r, "goship_delete_cluster", "Disconnect a cluster; refused while apps, volumes or environments still use it. With destroy_server the machine at the cloud provider is destroyed too.", destructive,
 		func(ctx context.Context, c *portal.Client, org string, in DeleteClusterArgs) (Message, error) {
 			id, err := deploy.ResolveCluster(ctx, c, org, in.Cluster)
 			if err != nil {
