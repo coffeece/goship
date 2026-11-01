@@ -262,6 +262,8 @@ func TestDeployStopsWhenTheAppLivesInAnotherOrg(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"acme"},{"id":"2","slug":"other"}]`)) //nolint:errcheck
 		case strings.HasSuffix(r.URL.Path, "/projects"):
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case strings.HasSuffix(r.URL.Path, "/environments"):
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/other/projects/default/environments/production/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
@@ -335,6 +337,8 @@ func TestDeployFindsTheAppWhenThePinnedOrgIsForbidden(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"mine"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/mine/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/mine/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/mine/projects/default/environments/production/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
@@ -398,6 +402,8 @@ func TestDeployPicksTheOrgThatOwnsTheApp(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/alpha/projects", "/api/v1/orgs/beta/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/alpha/environments", "/api/v1/orgs/beta/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/beta/projects/default/environments/production/apps/widget":
 			deployedOrg = "beta"
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
@@ -418,8 +424,12 @@ func TestDeployPicksTheOrgThatOwnsTheApp(t *testing.T) {
 	if deployedOrg != "beta" {
 		t.Errorf("never looked the app up in beta")
 	}
-	if !strings.Contains(out, "Using beta/default") {
+	if !strings.Contains(out, "Using beta/default/production") {
 		t.Errorf("the choice must be visible, got %q", out)
+	}
+	// The environment is part of what is kept.
+	if !strings.Contains(out, "`goship environment use production`") {
+		t.Errorf("the hint should keep the environment too, got %q", out)
 	}
 }
 
@@ -431,6 +441,8 @@ func TestDeployAsksWhenTheNameIsAmbiguous(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/alpha/projects", "/api/v1/orgs/beta/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/alpha/environments", "/api/v1/orgs/beta/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/alpha/projects/default/environments/production/apps/widget", "/api/v1/orgs/beta/projects/default/environments/production/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
@@ -449,7 +461,7 @@ func TestDeployAsksWhenTheNameIsAmbiguous(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the command to stop")
 	}
-	for _, want := range []string{"alpha/default", "beta/default", "--org"} {
+	for _, want := range []string{"alpha/default/production", "beta/default/production", "--org"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got:\n%v", want, err)
 		}
@@ -954,6 +966,8 @@ func TestDeployIgnoresTheFileProjectForAnotherOrg(t *testing.T) {
 			w.Write([]byte(`[{"slug":"mova"},{"slug":"nova"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/menlo/projects":
 			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/menlo/environments", "/api/v1/orgs/other/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -8,6 +9,16 @@ import (
 	"strings"
 	"testing"
 )
+
+// sectionHeaders are the titles of the sections a table listing printed: the
+// first line of each blank-line-separated block.
+func sectionHeaders(out string) []string {
+	var heads []string
+	for block := range strings.SplitSeq(strings.TrimSpace(out), "\n\n") {
+		heads = append(heads, strings.SplitN(block, "\n", 2)[0])
+	}
+	return heads
+}
 
 // Plural nouns list, and each lists under the current org like `apps` does.
 func TestPluralListersUseTheCurrentOrg(t *testing.T) {
@@ -34,6 +45,117 @@ func TestPluralListersUseTheCurrentOrg(t *testing.T) {
 	}
 }
 
+// --all walks organization, project, environment, and each stop is a section
+// headed org/project/environment. An environment whose listing answers 403 is
+// skipped with a note, and an empty one still prints its header, as an empty
+// project always has.
+func TestAppsAllSpansEnvironments(t *testing.T) {
+	var touched []string
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		touched = append(touched, r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"acme","default_environment":"production"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/environments":
+			w.Write([]byte(`[{"slug":"production"},{"slug":"staging"},{"slug":"restricted"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/clave/environments/production/apps":
+			w.Write([]byte(`[{"name":"web"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/clave/environments/staging/apps":
+			w.Write([]byte(`[{"name":"web-preview"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/mova/environments/production/apps":
+			w.Write([]byte(`[{"name":"api"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/mova/environments/staging/apps":
+			w.Write([]byte(`[]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/clave/environments/restricted/apps",
+			"/api/v1/orgs/acme/projects/mova/environments/restricted/apps":
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"error":"not for you"}`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	t.Setenv("GOSHIP_ORG", "")
+	t.Setenv("GOSHIP_PROJECT", "")
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+
+	out, stderr, err := runWithStderr(t, context.Background(), strings.NewReader(""), "apps", "--all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"acme/clave/production", "acme/clave/staging", "acme/mova/production", "acme/mova/staging"}
+	if got := sectionHeaders(out); !slices.Equal(got, want) {
+		t.Errorf("sections = %q, want %q\n%s", got, want, out)
+	}
+	for _, want := range []string{"web-preview", "api", "No results."} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	for _, skipped := range []string{"acme/clave/restricted", "acme/mova/restricted"} {
+		if strings.Contains(out, skipped) {
+			t.Errorf("%s is forbidden and must not be a section:\n%s", skipped, out)
+		}
+		if !strings.Contains(stderr, "Skipping "+skipped+": your role there cannot see this.") {
+			t.Errorf("stderr should say %s was skipped: %q", skipped, stderr)
+		}
+	}
+	// The environments are asked once for the organization, not per project.
+	if n := slices.Index(touched, "/api/v1/orgs/acme/environments"); n < 0 || slices.Contains(touched[n+1:], "/api/v1/orgs/acme/environments") {
+		t.Errorf("environments asked more than once: %q", touched)
+	}
+
+	out, _, err = runWithStderr(t, context.Background(), strings.NewReader(""), "apps", "--all", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string][]map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out)
+	}
+	if len(got) != 4 || got["acme/clave/production"][0]["name"] != "web" || got["acme/clave/staging"][0]["name"] != "web-preview" ||
+		got["acme/mova/production"][0]["name"] != "api" || len(got["acme/mova/staging"]) != 0 {
+		t.Errorf("got %v", got)
+	}
+}
+
+// An environment that was chosen narrows every project of an --all listing to
+// it, and nothing needs the list of environments.
+func TestAppsAllHonoursAChosenEnvironment(t *testing.T) {
+	var touched []string
+	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		touched = append(touched, r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/orgs":
+			w.Write([]byte(`[{"id":"1","slug":"acme"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/clave/environments/staging/apps",
+			"/api/v1/orgs/acme/projects/mova/environments/staging/apps":
+			w.Write([]byte(`[{"name":"web"}]`)) //nolint:errcheck
+		default:
+			t.Errorf("unexpected %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	t.Setenv("GOSHIP_ORG", "")
+	t.Setenv("GOSHIP_PROJECT", "")
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+
+	out, err := run(t, "", "apps", "-A", "--environment", "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := sectionHeaders(out), []string{"acme/clave/staging", "acme/mova/staging"}; !slices.Equal(got, want) {
+		t.Errorf("sections = %q, want %q", got, want)
+	}
+	if slices.Contains(touched, "/api/v1/orgs/acme/environments") {
+		t.Errorf("a chosen environment needs no list of environments: %q", touched)
+	}
+}
+
 func TestDBsAllSpansEveryProject(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -43,6 +165,8 @@ func TestDBsAllSpansEveryProject(t *testing.T) {
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"default"},{"slug":"labs"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/environments", "/api/v1/orgs/globex/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects/default/environments/production/databases":
 			w.Write([]byte(`[{"name":"scores"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/globex/projects/default/environments/production/databases":
@@ -62,8 +186,8 @@ func TestDBsAllSpansEveryProject(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, out)
 	}
-	if len(got) != 3 || got["games/default"][0]["name"] != "scores" ||
-		got["globex/default"][0]["name"] != "mail" || got["globex/labs"][0]["name"] != "scratch" {
+	if len(got) != 3 || got["games/default/production"][0]["name"] != "scores" ||
+		got["globex/default/production"][0]["name"] != "mail" || got["globex/labs/production"][0]["name"] != "scratch" {
 		t.Errorf("got %v", got)
 	}
 
@@ -71,10 +195,11 @@ func TestDBsAllSpansEveryProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"games/default", "globex/default", "globex/labs", "scratch"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing section %q:\n%s", want, out)
-		}
+	if got, want := sectionHeaders(out), []string{"games/default/production", "globex/default/production", "globex/labs/production"}; !slices.Equal(got, want) {
+		t.Errorf("sections = %q, want %q", got, want)
+	}
+	if !strings.Contains(out, "scratch") {
+		t.Errorf("missing scratch:\n%s", out)
 	}
 }
 
@@ -87,6 +212,8 @@ func TestDBsWithNoProjectListsEverything(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/environments", "/api/v1/orgs/globex/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects/default/environments/production/databases":
 			w.Write([]byte(`[{"name":"scores"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/globex/projects/default/environments/production/databases":
@@ -101,7 +228,7 @@ func TestDBsWithNoProjectListsEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dbs with no org must not error: %v", err)
 	}
-	for _, want := range []string{"games", "scores", "globex", "mail"} {
+	for _, want := range []string{"games/default/production", "scores", "globex/default/production", "mail"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
@@ -166,7 +293,7 @@ func TestTokensLists(t *testing.T) {
 }
 
 // --org narrows an unresolved project to that org's projects, not to every
-// org. The org list is read for acme's default environment only.
+// org.
 func TestListerWithOrgFlagAndNoProjectListsOnlyThatOrg(t *testing.T) {
 	var touched []string
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +303,8 @@ func TestListerWithOrgFlagAndNoProjectListsOnlyThatOrg(t *testing.T) {
 			w.Write([]byte(`[{"slug":"acme","default_environment":"production"},{"slug":"other"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/acme/projects":
 			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/acme/projects/clave/environments/production/apps":
 			w.Write([]byte(`[{"name":"web"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/acme/projects/mova/environments/production/apps":
@@ -196,7 +325,7 @@ func TestListerWithOrgFlagAndNoProjectListsOnlyThatOrg(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, out)
 	}
-	if len(got) != 2 || got["acme/clave"][0]["name"] != "web" || got["acme/mova"][0]["name"] != "api" {
+	if len(got) != 2 || got["acme/clave/production"][0]["name"] != "web" || got["acme/mova/production"][0]["name"] != "api" {
 		t.Errorf("got %v", got)
 	}
 	if slices.ContainsFunc(touched, func(p string) bool { return strings.HasPrefix(p, "/api/v1/orgs/other") }) {

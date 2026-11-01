@@ -364,6 +364,8 @@ func TestAppInfoFindsAppAcrossOrgs(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/a/projects", "/api/v1/orgs/b/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/a/environments", "/api/v1/orgs/b/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/a/projects/default/environments/production/apps/my-game":
 			w.WriteHeader(http.StatusNotFound)
 		case "/api/v1/orgs/b/projects/default/environments/production/apps/my-game":
@@ -392,6 +394,8 @@ func TestAppInfoAmbiguousAcrossOrgs(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"a"},{"id":"2","slug":"b"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/a/projects", "/api/v1/orgs/b/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/a/environments", "/api/v1/orgs/b/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/a/projects/default/environments/production/apps/dup", "/api/v1/orgs/b/projects/default/environments/production/apps/dup":
 			w.Write([]byte(`{"name":"dup"}`)) //nolint:errcheck
 		default:
@@ -401,7 +405,7 @@ func TestAppInfoAmbiguousAcrossOrgs(t *testing.T) {
 	os.Unsetenv("GOSHIP_ORG")
 
 	_, err := run(t, "", "app", "info", "dup")
-	if err == nil || !strings.Contains(err.Error(), "a/default") || !strings.Contains(err.Error(), "b/default") {
+	if err == nil || !strings.Contains(err.Error(), "a/default/production") || !strings.Contains(err.Error(), "b/default/production") {
 		t.Fatalf("got %v", err)
 	}
 }

@@ -59,10 +59,11 @@ func newOrgListCmd[T any](app *App, use, short string, fetch func(*portal.Client
 
 // newTargetListCmd is the plural lister every project-scoped noun shares:
 // `apps`, `dbs`, `volumes`. The listing shows the current project's
-// environment; --all spans every project you can reach in every org, each in
-// its own environment, grouped under org/project — as does having no project
-// selected and several to choose from, since demanding `project use` first
-// for a read is friction.
+// environment; --all spans every environment of every project you can reach
+// in every org, grouped under org/project/environment — as does having no
+// project selected and several to choose from, since demanding `project use`
+// first for a read is friction. An environment that was chosen narrows the
+// span to it, and one whose listing answers 403 is skipped with a note.
 func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Client, context.Context, string, string, string) ([]T, error)) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
@@ -105,38 +106,60 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 			}
 			var sections []section[T]
 			for _, o := range orgs {
-				projects, err := client.Projects(ctx, o)
+				places, err := app.listPlaces(ctx, o, only)
 				if err != nil {
 					return err
 				}
-				for _, p := range projects {
-					if only != "" && p.Slug != only {
+				for _, t := range places {
+					items, err := fetch(client, ctx, t.Org, t.Project, t.Environment)
+					if portal.IsForbidden(err) {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s: your role there cannot see this.\n", t)
 						continue
 					}
-					items, err := fetch(client, ctx, o, p.Slug, app.listEnvironment(ctx, Target{Org: o, Project: p.Slug}))
 					if err != nil {
 						return err
 					}
-					key := o + "/" + p.Slug
-					sections = append(sections, section[T]{key: key, title: key, items: items})
+					sections = append(sections, section[T]{key: t.String(), title: t.String(), items: items})
 				}
 			}
 			return renderSections(app, sections, func(items []T) any { return items })
 		},
 	}
-	cmd.Flags().BoolVarP(&all, "all", "A", false, "list across every project you can reach in every organization")
+	cmd.Flags().BoolVarP(&all, "all", "A", false, "list across every environment of every project you can reach in every organization")
 	return cmd
 }
 
-// listEnvironment is the environment an --all listing shows t in: the one
-// chosen for it, else its organization's default. A default that cannot be
-// read is noted and production is listed.
-func (a *App) listEnvironment(ctx context.Context, t Target) string {
-	env, err := deploy.ResolveEnvironment(ctx, t, a.environmentChoice(), a.orgList)
+// listPlaces are the org/project/environment stops an --all listing makes in
+// org: each project (only, when set, keeps the projects of that slug), in the
+// environment chosen for it or else in every environment of the organization.
+// The organization's environments are asked for once, and not at all when
+// every project has one chosen.
+func (a *App) listPlaces(ctx context.Context, org, only string) ([]Target, error) {
+	projects, err := a.Portal().Projects(ctx, org)
 	if err != nil {
-		a.noteGuess(err)
+		return nil, err
 	}
-	return env
+	var envs []string
+	var places []Target
+	for _, p := range projects {
+		if only != "" && p.Slug != only {
+			continue
+		}
+		t := Target{Org: org, Project: p.Slug}
+		if chosen := a.environmentChoice().Chosen(t); chosen != "" {
+			places = append(places, Target{Org: org, Project: p.Slug, Environment: chosen})
+			continue
+		}
+		if envs == nil {
+			if envs, err = deploy.EnvironmentSlugs(ctx, a.Portal(), org); err != nil {
+				return nil, err
+			}
+		}
+		for _, e := range envs {
+			places = append(places, Target{Org: org, Project: p.Slug, Environment: e})
+		}
+	}
+	return places, nil
 }
 
 // listOption tunes newOrgListCmd for a noun that needs it.
@@ -146,8 +169,8 @@ type listOption int
 // listing, with a note on stderr, instead of failing the whole listing on it.
 const skipForbiddenPlaces listOption = iota + 1
 
-// section is one group of a listing that spans several places: an org or a
-// project. key names it in JSON, title above its table.
+// section is one group of a listing that spans several places: an org, or a
+// project in an environment. key names it in JSON, title above its table.
 type section[T any] struct {
 	key, title string
 	items      []T

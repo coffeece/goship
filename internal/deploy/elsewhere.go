@@ -1,7 +1,6 @@
 package deploy
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -10,33 +9,36 @@ import (
 	"github.com/coffeece/goship/internal/portal"
 )
 
-// FindApp lists every project the caller can reach, in org when given and
-// otherwise in all their organizations (from orgs), that holds an app called
-// name in env, or in the organization's default environment when env is
-// empty. A project slug narrows the search to projects of that name: a
-// project someone asked for is never swapped for another. A default that
-// cannot be read is an error, not a search of production: what is found
-// here is acted on.
+// FindApp lists every place the caller can reach that holds an app called
+// name: a project of org (of all their organizations, from orgs, when org is
+// empty) in an environment. An env narrows the search to that environment; an
+// empty one searches every environment of the organization. A project slug
+// narrows it to projects of that name: a project or environment someone asked
+// for is never swapped for another.
 func FindApp(ctx context.Context, client *portal.Client, orgs OrgLister, org, project, env, name string) ([]Target, error) {
-	var places []portal.Org
+	var slugs []string
 	if org != "" {
-		in, err := ResolveEnvironment(ctx, Target{Org: org}, EnvironmentChoice{Explicit: env}, orgs)
-		if err != nil {
-			return nil, UnknownDefaultError(org, err)
-		}
-		places = []portal.Org{{Slug: org, DefaultEnvironment: in}}
+		slugs = []string{org}
 	} else {
 		list, err := orgs(ctx)
 		if err != nil {
 			return nil, err
 		}
-		places = list
+		for _, o := range list {
+			slugs = append(slugs, o.Slug)
+		}
 	}
 
 	var found []Target
-	for _, o := range places {
-		in := cmp.Or(env, defaultEnvironment(o))
-		projects, err := client.Projects(ctx, o.Slug)
+	for _, o := range slugs {
+		envs := []string{env}
+		if env == "" {
+			var err error
+			if envs, err = EnvironmentSlugs(ctx, client, o); err != nil {
+				return nil, err
+			}
+		}
+		projects, err := client.Projects(ctx, o)
 		if err != nil {
 			return nil, err
 		}
@@ -44,17 +46,33 @@ func FindApp(ctx context.Context, client *portal.Client, orgs OrgLister, org, pr
 			if project != "" && p.Slug != project {
 				continue
 			}
-			_, err := client.App(ctx, o.Slug, p.Slug, in, name)
-			switch {
-			case err == nil:
-				found = append(found, Target{Org: o.Slug, Project: p.Slug, Environment: in})
-			case portal.IsNotFound(err), portal.IsForbidden(err):
-			default:
-				return nil, err
+			for _, e := range envs {
+				_, err := client.App(ctx, o, p.Slug, e, name)
+				switch {
+				case err == nil:
+					found = append(found, Target{Org: o, Project: p.Slug, Environment: e})
+				case portal.IsNotFound(err), portal.IsForbidden(err):
+				default:
+					return nil, err
+				}
 			}
 		}
 	}
 	return found, nil
+}
+
+// EnvironmentSlugs are the slugs of org's environments, in the portal's order.
+// Every project exists in every one of them.
+func EnvironmentSlugs(ctx context.Context, client *portal.Client, org string) ([]string, error) {
+	envs, err := client.Environments(ctx, org)
+	if err != nil {
+		return nil, err
+	}
+	slugs := make([]string, len(envs))
+	for i, e := range envs {
+		slugs[i] = e.Slug
+	}
+	return slugs, nil
 }
 
 // AppElsewhere looks for an app of the same name in the caller's other

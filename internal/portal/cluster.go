@@ -10,6 +10,9 @@ type ClusterRef struct {
 	Shared bool   `json:"shared"`
 }
 
+// String is the cluster's name, which is what a table cell shows of it.
+func (c ClusterRef) String() string { return c.Name }
+
 // Cluster is a machine or Kubernetes cluster an environment can run on. For a
 // shared cluster owned by another organization only ID, Name, Type, Status,
 // Shared and Namespaced are filled in.
