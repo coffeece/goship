@@ -24,15 +24,17 @@ func (h *heard) Begin(key string)                { h.lines = append(h.lines, "be
 func (h *heard) Done(key, _ string)              { h.lines = append(h.lines, "done: "+key) }
 func (h *heard) Event(portal.ReleaseEvent) error { return nil }
 
-// fakePortal serves acme (default environment production) with projects clave
-// and mova; web exists in the "project/environment" pairs named by holders.
-// Every request is recorded, and a created app's body is kept.
+// fakePortal serves acme (default environment production, and staging) with
+// projects clave and mova; web exists in the "project/environment" pairs named
+// by holders. Every request is recorded, and a created app's body is kept.
 type fakePortal struct {
 	holders []string
 	asked   []string
 	created portal.CreateAppRequest
 	// orgsDown makes GET /orgs answer 500.
 	orgsDown bool
+	// onlyClave leaves clave as acme's one project.
+	onlyClave bool
 }
 
 func (f *fakePortal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +46,12 @@ func (f *fakePortal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.URL.Path == "/api/v1/orgs":
 		w.Write([]byte(`[{"slug":"acme","default_environment":"production"}]`)) //nolint:errcheck
+		return
+	case r.URL.Path == "/api/v1/orgs/acme/environments":
+		w.Write([]byte(`[{"slug":"production"},{"slug":"staging"}]`)) //nolint:errcheck
+		return
+	case r.URL.Path == "/api/v1/orgs/acme/projects" && f.onlyClave:
+		w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
 		return
 	case r.URL.Path == "/api/v1/orgs/acme/projects":
 		w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
@@ -206,12 +214,17 @@ func countOf(list []string, s string) int {
 // Nothing chose an environment and the org list cannot say which is the
 // default: a deploy must not guess production and create or upload there.
 func TestRunRefusesWhenTheDefaultCannotBeRead(t *testing.T) {
-	for name, opts := range map[string]Options{
-		"org and project known": {App: "web", Org: "acme", Project: "clave"},
-		"project from the app":  {App: "web", Org: "acme"},
+	for name, tc := range map[string]struct {
+		opts Options
+		fake *fakePortal
+	}{
+		"org and project known": {Options{App: "web", Org: "acme", Project: "clave"}, &fakePortal{holders: []string{"clave/production"}, orgsDown: true}},
+		// A new app in the org's only project has no place that says which
+		// environment it is for.
+		"project from the org": {Options{App: "web", Org: "acme"}, &fakePortal{onlyClave: true, orgsDown: true}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			fake := &fakePortal{holders: []string{"clave/production"}, orgsDown: true}
+			fake, opts := tc.fake, tc.opts
 			srv := httptest.NewServer(fake)
 			defer srv.Close()
 			built := stubBuild(t)
@@ -240,5 +253,72 @@ func TestRunRefusesWhenTheDefaultCannotBeRead(t *testing.T) {
 	stubBuild(t)
 	if _, err := Run(context.Background(), portal.New(srv.URL, "t"), Options{Dir: t.TempDir(), App: "web", Org: "acme", Project: "clave", Environment: "staging"}, &heard{}); err != nil {
 		t.Errorf("chosen: %v", err)
+	}
+}
+
+// An app found in exactly one place says where it is: deploying there guesses
+// nothing, so a default that cannot be read does not stop it.
+func TestRunDeploysWhereTheAppIsWhenTheDefaultCannotBeRead(t *testing.T) {
+	fake := &fakePortal{holders: []string{"mova/staging"}, orgsDown: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	built := stubBuild(t)
+	dir := t.TempDir()
+	writeFile(t, dir+"/go.mod", "module web\n")
+
+	h := &heard{}
+	res, err := Run(context.Background(), portal.New(srv.URL, "t"), Options{Dir: dir, App: "web", Org: "acme"}, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (Target{Org: "acme", Project: "mova", Environment: "staging"}); *built != want || res.Environment != "staging" || res.Created {
+		t.Errorf("built in %+v, result %+v; want %+v, not created", *built, res, want)
+	}
+	if !slices.Contains(h.lines, "note: Deploying to acme/mova/staging") {
+		t.Errorf("reported %q", h.lines)
+	}
+}
+
+// With nothing chosen the app is searched in every environment, and two
+// places that hold it are two candidates, whichever project they are in.
+func TestFindAppSearchesEveryEnvironment(t *testing.T) {
+	fake := &fakePortal{holders: []string{"clave/staging", "mova/production", "mova/staging"}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	client := portal.New(srv.URL, "t")
+	orgs := func(ctx context.Context) ([]portal.Org, error) { return client.Orgs(ctx) }
+
+	got, err := FindApp(context.Background(), client, orgs, "", "", "", "web")
+	want := []Target{
+		{Org: "acme", Project: "clave", Environment: "staging"},
+		{Org: "acme", Project: "mova", Environment: "production"},
+		{Org: "acme", Project: "mova", Environment: "staging"},
+	}
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("FindApp = %v, %v; want %v", got, err, want)
+	}
+	if countOf(fake.asked, "GET /api/v1/orgs/acme/environments") != 1 {
+		t.Errorf("the environments are asked once per org: %q", fake.asked)
+	}
+
+	// An environment narrows the search to it: nothing else is asked, not even
+	// the list of environments.
+	fake.asked = nil
+	got, err = FindApp(context.Background(), client, orgs, "acme", "", "staging", "web")
+	want = []Target{{Org: "acme", Project: "clave", Environment: "staging"}, {Org: "acme", Project: "mova", Environment: "staging"}}
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("FindApp in staging = %v, %v; want %v", got, err, want)
+	}
+	for _, a := range fake.asked {
+		if strings.Contains(a, "/production/") || strings.HasSuffix(a, "/environments") || a == "GET /api/v1/orgs" {
+			t.Errorf("a search in staging asked %s", a)
+		}
+	}
+
+	// A project narrows it too, whatever the environment.
+	got, err = FindApp(context.Background(), client, orgs, "acme", "mova", "", "web")
+	want = []Target{{Org: "acme", Project: "mova", Environment: "production"}, {Org: "acme", Project: "mova", Environment: "staging"}}
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("FindApp in mova = %v, %v; want %v", got, err, want)
 	}
 }

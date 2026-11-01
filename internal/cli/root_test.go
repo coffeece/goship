@@ -272,6 +272,8 @@ func twoProjects(t *testing.T, holders ...string) *httptest.Server {
 			w.Write([]byte(`[{"slug":"menlo"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/menlo/projects":
 			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/menlo/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		default:
 			for _, p := range holders {
 				if r.URL.Path == "/api/v1/orgs/menlo/projects/"+p+"/environments/production/apps/web" {
@@ -339,6 +341,9 @@ func twoOrgs(t *testing.T, touched *[]string, holders ...string) {
 		case "/api/v1/orgs/acme/projects", "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
 			return
+		case "/api/v1/orgs/acme/environments", "/api/v1/orgs/globex/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
+			return
 		}
 		for _, h := range holders {
 			if r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/"+strings.Replace(h, "/", "/projects/", 1)+"/environments/production/apps/web" {
@@ -400,7 +405,7 @@ func TestListerKeepsTheProjectWhenNoOrgResolves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, "clave") || !strings.Contains(out, "globex/mova") {
+	if strings.Contains(out, "clave") || !strings.Contains(out, "globex/mova/production") {
 		t.Errorf("output:\n%s", out)
 	}
 }

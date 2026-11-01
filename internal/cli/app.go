@@ -44,6 +44,14 @@ func appCreateCmd(app *App) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			req.Name = args[0]
+			// Said before the request, as `deploy` does, so a wrong
+			// environment is seen before anything is created in it. The line
+			// is for people: -o json stays one document.
+			if app.Global.Output != render.JSON {
+				if err := app.Renderer().Message("Creating %s in %s", req.Name, t); err != nil {
+					return err
+				}
+			}
 			created, err := app.Portal().CreateApp(cmd.Context(), t.Org, t.Project, t.Environment, req)
 			if err != nil {
 				return err

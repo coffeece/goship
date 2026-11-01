@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -65,6 +67,139 @@ func TestAppCreateSendsThePlatform(t *testing.T) {
 	if body["name"] != "api" || body["platform"] != "go" {
 		t.Errorf("body = %v", body)
 	}
+}
+
+// syncBuilder is a stdout the portal stub can read while the command runs.
+type syncBuilder struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuilder) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuilder) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// `app create` names the org, project and environment before it asks for
+// anything, as `deploy` does, so a wrong environment is seen before it is
+// acted on.
+func TestAppCreatePrintsTheTargetFirst(t *testing.T) {
+	var out syncBuilder
+	var printedBeforeTheRequest string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			printedBeforeTheRequest = out.String()
+		}
+		w.Write([]byte(`{"name":"api","platform":"go"}`)) //nolint:errcheck
+	})
+
+	root := NewRoot("test")
+	root.SetArgs([]string{"app", "create", "api", "--platform", "go", "--environment", "staging"})
+	root.SetOut(&out)
+	root.SetErr(&strings.Builder{})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if want := "Creating api in acme/clave/staging\n"; printedBeforeTheRequest != want {
+		t.Errorf("before the request stdout = %q, want %q", printedBeforeTheRequest, want)
+	}
+	if !strings.HasPrefix(out.String(), "Creating api in acme/clave/staging\n") || strings.Count(out.String(), "Creating") != 1 {
+		t.Errorf("stdout = %q", out.String())
+	}
+}
+
+// -o json stays one JSON document: the line is for people.
+func TestAppCreateJSONHasNoCreatingLine(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"name":"api","platform":"go"}`)) //nolint:errcheck
+	})
+	out, err := run(t, "", "app", "create", "api", "--platform", "go", "--output", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got["name"] != "api" {
+		t.Errorf("stdout is not the created app: %v\n%s", err, out)
+	}
+}
+
+// Nothing selected: the app is searched in every environment of every
+// project, and found in the one that holds it.
+func TestAppInfoFindsTheAppInAnotherEnvironment(t *testing.T) {
+	// holders are the "project/environment" pairs that hold web.
+	serve := func(t *testing.T, touched *[]string, holders ...string) {
+		stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+			*touched = append(*touched, r.URL.Path)
+			switch r.URL.Path {
+			case "/api/v1/orgs":
+				w.Write([]byte(`[{"slug":"menlo","default_environment":"production"}]`)) //nolint:errcheck
+			case "/api/v1/orgs/menlo/projects":
+				w.Write([]byte(`[{"slug":"clave"},{"slug":"mova"}]`)) //nolint:errcheck
+			case "/api/v1/orgs/menlo/environments":
+				w.Write([]byte(`[{"slug":"production"},{"slug":"staging"}]`)) //nolint:errcheck
+			default:
+				for _, h := range holders {
+					project, env, _ := strings.Cut(h, "/")
+					if r.URL.Path == "/api/v1/orgs/menlo/projects/"+project+"/environments/"+env+"/apps/web" {
+						w.Write([]byte(`{"name":"web","platform":"go","plan_name":"Small"}`)) //nolint:errcheck
+						return
+					}
+				}
+				http.NotFound(w, r)
+			}
+		})
+		t.Setenv("GOSHIP_ORG", "")
+		t.Setenv("GOSHIP_PROJECT", "")
+		t.Setenv("GOSHIP_ENVIRONMENT", "")
+	}
+
+	t.Run("only in staging", func(t *testing.T) {
+		var touched []string
+		serve(t, &touched, "mova/staging")
+		out, err := run(t, "", "app", "info", "web")
+		if err != nil || !strings.Contains(out, "Small") {
+			t.Fatalf("out %q err %v", out, err)
+		}
+		// info then reads it where it was found, not in the default.
+		if last := touched[len(touched)-1]; last != "/api/v1/orgs/menlo/projects/mova/environments/staging/apps/web" {
+			t.Errorf("last request = %s", last)
+		}
+	})
+
+	t.Run("in staging and production", func(t *testing.T) {
+		var touched []string
+		serve(t, &touched, "clave/staging", "clave/production")
+		_, err := run(t, "", "app", "info", "web")
+		if err == nil {
+			t.Fatal("two environments hold web: info must not pick one")
+		}
+		for _, want := range []string{`"web" exists in: menlo/clave/production, menlo/clave/staging`, "--org, --project and --environment"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("err = %q, missing %q", err, want)
+			}
+		}
+	})
+
+	t.Run("an environment that was asked for is the only one searched", func(t *testing.T) {
+		var touched []string
+		serve(t, &touched, "mova/staging", "clave/production")
+		out, err := run(t, "", "app", "info", "web", "--environment", "production")
+		if err != nil || !strings.Contains(out, "Small") {
+			t.Fatalf("out %q err %v", out, err)
+		}
+		for _, p := range touched {
+			if strings.Contains(p, "/environments/staging") || p == "/api/v1/orgs/menlo/environments" {
+				t.Errorf("looked beyond production: %s", p)
+			}
+		}
+	})
 }
 
 func TestAppCreateRequiresAPlatform(t *testing.T) {
@@ -203,8 +338,9 @@ func TestProjectFileOrgBeatsTheSelectedOrg(t *testing.T) {
 }
 
 // "apps" alone shows only the current project. --all spans every project in
-// every org the user belongs to, grouped as org/project — the fuller view that matches what
-// people expect after seeing their apps scattered across orgs.
+// every org the user belongs to, grouped as org/project/environment — the
+// fuller view that matches what people expect after seeing their apps
+// scattered across orgs.
 func TestAppsAllSpansEveryProject(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -212,6 +348,8 @@ func TestAppsAllSpansEveryProject(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/environments", "/api/v1/orgs/globex/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects/default/environments/production/apps":
 			w.Write([]byte(`[{"name":"arcade","status":"stopped","plan_name":"Medium"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/globex/projects/default/environments/production/apps":
@@ -231,19 +369,24 @@ func TestAppsAllSpansEveryProject(t *testing.T) {
 			t.Errorf("--all output missing %q:\n%s", want, out)
 		}
 	}
-	// Grouped by org/project: each header precedes its own apps.
-	if strings.Index(out, "games/default") > strings.Index(out, "arcade") {
+	// Grouped by org/project/environment: each header precedes its own apps.
+	if got, want := sectionHeaders(out), []string{"games/default/production", "globex/default/production"}; !slices.Equal(got, want) {
+		t.Errorf("sections = %q, want %q", got, want)
+	}
+	if strings.Index(out, "games/default/production") > strings.Index(out, "arcade") {
 		t.Errorf("expected the org header before its apps:\n%s", out)
 	}
 }
 
-func TestAppsAllJSONKeysByOrgAndProject(t *testing.T) {
+func TestAppsAllJSONKeysByOrgProjectAndEnvironment(t *testing.T) {
 	stubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/orgs":
 			w.Write([]byte(`[{"id":"1","slug":"games"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects/default/environments/production/apps":
 			w.Write([]byte(`[{"name":"arcade"}]`)) //nolint:errcheck
 		default:
@@ -260,7 +403,7 @@ func TestAppsAllJSONKeysByOrgAndProject(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, out)
 	}
-	if len(got["games/default"]) != 1 || got["games/default"][0]["name"] != "arcade" {
+	if len(got["games/default/production"]) != 1 || got["games/default/production"][0]["name"] != "arcade" {
 		t.Errorf("got %v", got)
 	}
 }
@@ -274,6 +417,8 @@ func TestAppsWithNoOrgListsEverything(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"games"},{"id":"2","slug":"globex"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects", "/api/v1/orgs/globex/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/games/environments", "/api/v1/orgs/globex/environments":
+			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/games/projects/default/environments/production/apps":
 			w.Write([]byte(`[{"name":"arcade"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/globex/projects/default/environments/production/apps":

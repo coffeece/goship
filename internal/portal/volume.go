@@ -10,7 +10,7 @@ type Volume struct {
 	CapacityGiB int          `json:"capacity_gib" table:"GiB"`
 	Binds       []VolumeBind `json:"binds"`
 	// Cluster is where the volume lives.
-	Cluster ClusterRef `json:"cluster"`
+	Cluster ClusterRef `json:"cluster" table:"CLUSTER"`
 }
 
 type VolumeBind struct {

@@ -241,9 +241,10 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 // chooseTarget completes the organization and project the caller left open.
 // The app name is known before either has to be, so an unselected one is
 // answerable: if this app exists in exactly one of the caller's projects,
-// that is the one they meant. A new app in an organization with a single
-// project has nowhere else to go. An environment in t narrows the search,
-// and an empty one is left for the caller when no app decides it.
+// that is the one they meant, in the environment that holds it. A new app in
+// an organization with a single project has nowhere else to go. An environment
+// in t narrows the search; with none, every environment is searched and an
+// empty one is left for the caller when no app decides it.
 func chooseTarget(ctx context.Context, client *portal.Client, orgs OrgLister, t Target, name string, r Reporter) (Target, error) {
 	if t.Org != "" && t.Project != "" {
 		return t, nil
@@ -254,10 +255,12 @@ func chooseTarget(ctx context.Context, client *portal.Client, orgs OrgLister, t 
 	}
 	switch len(owners) {
 	case 1:
+		// The environment is part of where the app is: kept without it, the
+		// next deploy would go to the organization's default instead.
 		if t.Org == "" {
-			r.Note("Using %s, where %q already exists. Run `goship org use %s` and `goship project use %s` to keep it.", owners[0], name, owners[0].Org, owners[0].Project)
+			r.Note("Using %s, where %q already exists. Run `goship org use %s`, `goship project use %s` and `goship environment use %s` to keep it.", owners[0], name, owners[0].Org, owners[0].Project, owners[0].Environment)
 		} else {
-			r.Note("Using project %s, where %q already exists. Run `goship project use %s` to keep it.", owners[0].Project, name, owners[0].Project)
+			r.Note("Using project %s in %s, where %q already exists. Run `goship project use %s` and `goship environment use %s` to keep it.", owners[0].Project, owners[0].Environment, name, owners[0].Project, owners[0].Environment)
 		}
 		return owners[0], nil
 	case 0:
