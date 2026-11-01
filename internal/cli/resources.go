@@ -172,13 +172,13 @@ func newVolumeCmd(app *App) *cobra.Command {
 		Short:   "Delete a volume and the data on it",
 		Args:    cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if err := confirm(cmd, app.Global.Yes, "Delete volume %q and the data on it?", args[0]); err != nil {
+			if err := confirm(cmd, app.Global.Yes, "Delete volume %q in %s and the data on it?", args[0], t); err != nil {
 				return err
 			}
 			if err := app.Portal().DeleteVolume(cmd.Context(), t.Org, t.Project, t.Environment, args[0]); err != nil {
 				return err
 			}
-			return app.Renderer().Message("Volume %s deleted.", args[0])
+			return app.Renderer().Message("Volume %s deleted from %s.", args[0], t)
 		}),
 	}
 

@@ -244,13 +244,13 @@ func newDBCmd(app *App) *cobra.Command {
 		Short:   "Delete a database and its data",
 		Args:    cobra.ExactArgs(1),
 		RunE: targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-			if err := confirm(cmd, app.Global.Yes, "Delete database %q and all its data?", args[0]); err != nil {
+			if err := confirm(cmd, app.Global.Yes, "Delete database %q in %s and all its data?", args[0], t); err != nil {
 				return err
 			}
 			if err := app.Portal().DeleteDatabase(cmd.Context(), t.Org, t.Project, t.Environment, args[0]); err != nil {
 				return err
 			}
-			return app.Renderer().Message("Database %s deleted.", args[0])
+			return app.Renderer().Message("Database %s deleted from %s.", args[0], t)
 		}),
 	}
 

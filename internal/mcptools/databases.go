@@ -142,7 +142,7 @@ func (r *registry) databases() {
 			if err := c.DeleteDatabase(ctx, t.Org, t.Project, t.Environment, in.Database); err != nil {
 				return Message{}, err
 			}
-			return msgf("Database %s deleted.", in.Database)
+			return msgf("Database %s deleted from %s.", in.Database, t)
 		})
 	tool(r, "goship_bind_database", "Bind a database to an app, injecting its connection variables.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in DBBindArgs) (Message, error) {

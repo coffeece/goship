@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -133,18 +134,22 @@ func TestDomainAddTargetsTheApp(t *testing.T) {
 }
 
 func TestDestructiveCommandsAllConfirm(t *testing.T) {
-	for _, args := range [][]string{
-		{"app", "rm", "api"},
-		{"app", "access", "rm", "api", "ana"},
-		{"app", "access", "token", "api", "--rotate"},
-		{"db", "rm", "main"},
-		{"volume", "rm", "uploads"},
-		{"cluster", "rm", "n1"},
-		{"cluster", "resize", "n1", "--size", "x"},
-		{"environment", "rm", "staging"},
-		{"cloud", "disconnect", "acme-do"},
+	for _, tc := range []struct {
+		args []string
+		// asks is what the question must name: where the thing lives.
+		asks string
+	}{
+		{[]string{"app", "rm", "api"}, "acme/clave/production"},
+		{[]string{"app", "access", "rm", "api", "ana"}, ""},
+		{[]string{"app", "access", "token", "api", "--rotate"}, ""},
+		{[]string{"db", "rm", "main"}, "acme/clave/production"},
+		{[]string{"volume", "rm", "uploads"}, "acme/clave/production"},
+		{[]string{"cluster", "rm", "n1"}, "acme"},
+		{[]string{"cluster", "resize", "n1", "--size", "x"}, "acme"},
+		{[]string{"environment", "rm", "staging"}, "acme"},
+		{[]string{"cloud", "disconnect", "acme-do"}, ""},
 	} {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 				// Resolving a cluster's name is a read; it may happen before
 				// the question. Anything else must not.
@@ -152,11 +157,54 @@ func TestDestructiveCommandsAllConfirm(t *testing.T) {
 					w.Write([]byte(`[{"id":"n1","name":"n1"}]`)) //nolint:errcheck
 					return
 				}
-				t.Errorf("%v reached the API without confirmation", args)
+				t.Errorf("%v reached the API without confirmation", tc.args)
 			})
-			if _, err := run(t, "n\n", args...); err == nil {
-				t.Errorf("%v should abort when the answer is no", args)
+			_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("n\n"), tc.args...)
+			if err == nil {
+				t.Errorf("%v should abort when the answer is no", tc.args)
+			}
+			if !strings.Contains(stderr, tc.asks) {
+				t.Errorf("%v asked %q, want it to name %q", tc.args, stderr, tc.asks)
 			}
 		})
+	}
+}
+
+// Deleting names the environment it deleted from as well as the question did,
+// so the transcript says what happened where.
+func TestDeletesSayWhereTheyHappened(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"app", "rm", "api", "-y"}, "App api deleted from acme/clave/production."},
+		{[]string{"db", "rm", "main", "-y"}, "Database main deleted from acme/clave/production."},
+		{[]string{"volume", "rm", "uploads", "-y"}, "Volume uploads deleted from acme/clave/production."},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			stubAPIWithOrg(t, func(http.ResponseWriter, *http.Request) {})
+			out, err := run(t, "", tc.args...)
+			if err != nil || !strings.Contains(out, tc.want) {
+				t.Errorf("out = %q, %v; want %q", out, err, tc.want)
+			}
+		})
+	}
+}
+
+// A question that does not name the environment is a question about the
+// wrong thing when two environments hold an app of the same name.
+func TestDeleteQuestionNamesTheChosenEnvironment(t *testing.T) {
+	for _, args := range [][]string{
+		{"app", "rm", "api"},
+		{"db", "rm", "main"},
+		{"volume", "rm", "uploads"},
+	} {
+		stubAPIWithOrg(t, func(http.ResponseWriter, *http.Request) {
+			t.Error("reached the API without confirmation")
+		})
+		_, stderr, err := runWithStderr(t, context.Background(), strings.NewReader("n\n"), append(args, "--environment", "staging")...)
+		if err == nil || !strings.Contains(stderr, "acme/clave/staging") || strings.Contains(stderr, "production") {
+			t.Errorf("%v: asked %q, %v; want acme/clave/staging", args, stderr, err)
+		}
 	}
 }
