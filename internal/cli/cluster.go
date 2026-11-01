@@ -101,7 +101,7 @@ func newClusterCmd(app *App) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if err := confirm(cmd, app.Global.Yes, "Resize %s to %s? Every app on it is down for a few minutes.", args[0], size); err != nil {
+		if err := confirm(cmd, app.Global.Yes, "Resize cluster %q of %s to %s? Every app on it is down for a few minutes.", args[0], org, size); err != nil {
 			return err
 		}
 		if _, err := app.Portal().ResizeCluster(cmd.Context(), org, id, size); err != nil {
@@ -123,11 +123,11 @@ func newClusterCmd(app *App) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		question := "Disconnect cluster %q?"
+		question := "Disconnect cluster %q of %s?"
 		if destroy {
-			question = "Disconnect cluster %q and destroy its machine at the cloud provider?"
+			question = "Disconnect cluster %q of %s and destroy its machine at the cloud provider?"
 		}
-		if err := confirm(cmd, app.Global.Yes, question, args[0]); err != nil {
+		if err := confirm(cmd, app.Global.Yes, question, args[0], org); err != nil {
 			return err
 		}
 		if err := app.Portal().DeleteCluster(cmd.Context(), org, id, destroy); err != nil {

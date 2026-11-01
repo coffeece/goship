@@ -145,7 +145,7 @@ func TestClusterRmDestroySendsFlag(t *testing.T) {
 	if deleted != "DELETE /api/v1/orgs/acme/clusters/n1" || body["destroy_server"] != true {
 		t.Errorf("request = %s %v", deleted, body)
 	}
-	if !strings.Contains(stderr, `Disconnect cluster "vulcan" and destroy its machine at the cloud provider?`) {
+	if !strings.Contains(stderr, `Disconnect cluster "vulcan" of acme and destroy its machine at the cloud provider?`) {
 		t.Errorf("confirmation should name the destroy: %q", stderr)
 	}
 	if !strings.Contains(out, "Cluster vulcan is being removed; its machine will be destroyed — `goship clusters` shows when it is gone.") {
