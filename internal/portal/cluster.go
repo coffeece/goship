@@ -51,6 +51,9 @@ type CreateClusterRequest struct {
 	CloudAccountID string `json:"cloud_account_id,omitempty"`
 	Region         string `json:"region,omitempty"`
 	Size           string `json:"size,omitempty"`
+	// Kubeconfig connects a Kubernetes cluster you already run (Type
+	// "kubernetes").
+	Kubeconfig string `json:"kubeconfig,omitempty"`
 }
 
 func (c *Client) Clusters(ctx context.Context, org string) ([]Cluster, error) {

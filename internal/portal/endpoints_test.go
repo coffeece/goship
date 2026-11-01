@@ -212,7 +212,11 @@ func TestEndpoints(t *testing.T) {
 			return err
 		}},
 		{"connect cloud api key", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"provider":"digitalocean","label":"prod","api_key":"secret"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudAPIKey(ctx, "acme", "digitalocean", "prod", "secret")
+			_, err := c.ConnectCloudAPIKey(ctx, "acme", "digitalocean", "prod", "secret", "")
+			return err
+		}},
+		{"reconnect cloud api key in place", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"provider":"hetzner","label":"hz","api_key":"new","account_id":"acc-1"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAPIKey(ctx, "acme", "hetzner", "hz", "new", "acc-1")
 			return err
 		}},
 		{"begin cloud oauth", "POST", "/api/v1/orgs/acme/cloud-accounts/digitalocean/connect", "", func(ctx context.Context, c *Client) error {
