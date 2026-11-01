@@ -73,48 +73,39 @@ type CreateDatabaseServerRequest struct {
 	DiskLimitGB    *int   `json:"disk_limit_gb,omitempty"`
 }
 
-func databaseServersPath(org, project string) string {
-	if project == "" {
-		return orgPath(org, "/database-servers")
-	}
-	return projectPath(org, project, "/database-servers")
-}
+func databaseServersPath(org string) string { return orgPath(org, "/database-servers") }
 
-func (c *Client) DatabaseServers(ctx context.Context, org, project string) ([]DatabaseServer, error) {
+func (c *Client) DatabaseServers(ctx context.Context, org string) ([]DatabaseServer, error) {
 	var out []DatabaseServer
-	return out, c.get(ctx, databaseServersPath(org, project), &out)
+	return out, c.get(ctx, databaseServersPath(org), &out)
 }
 
-func (c *Client) CreateDatabaseServer(ctx context.Context, org, project string, req CreateDatabaseServerRequest) (*DatabaseServer, error) {
+func (c *Client) CreateDatabaseServer(ctx context.Context, org string, req CreateDatabaseServerRequest) (*DatabaseServer, error) {
 	var out DatabaseServer
-	return &out, c.post(ctx, databaseServersPath(org, project), req, &out)
+	return &out, c.post(ctx, databaseServersPath(org), req, &out)
 }
 
 // SetDatabaseServerDiskLimit caps how far the server's disk may grow; 0 removes
 // the cap.
-func (c *Client) SetDatabaseServerDiskLimit(ctx context.Context, org, project, id string, gb int) error {
-	return c.put(ctx, databaseServersPath(org, project)+"/"+esc(id)+"/disk-limit", map[string]int{"disk_limit_gb": gb}, nil)
+func (c *Client) SetDatabaseServerDiskLimit(ctx context.Context, org, id string, gb int) error {
+	return c.put(ctx, databaseServersPath(org)+"/"+esc(id)+"/disk-limit", map[string]int{"disk_limit_gb": gb}, nil)
 }
 
-func (c *Client) RetryDatabaseServer(ctx context.Context, org, project, id string) error {
-	return c.post(ctx, databaseServersPath(org, project)+"/"+esc(id)+"/retry", nil, nil)
+func (c *Client) RetryDatabaseServer(ctx context.Context, org, id string) error {
+	return c.post(ctx, databaseServersPath(org)+"/"+esc(id)+"/retry", nil, nil)
 }
 
-func (c *Client) DeleteDatabaseServer(ctx context.Context, org, project, id string) error {
-	return c.delete(ctx, databaseServersPath(org, project)+"/"+esc(id), nil)
+func (c *Client) DeleteDatabaseServer(ctx context.Context, org, id string) error {
+	return c.delete(ctx, databaseServersPath(org)+"/"+esc(id), nil)
 }
 
 // ForgetDatabaseServer drops the server from GoShip without touching the
 // cloud; the instance, if it still exists, stays in the customer's project.
-func (c *Client) ForgetDatabaseServer(ctx context.Context, org, project, id string) error {
-	return c.delete(ctx, databaseServersPath(org, project)+"/"+esc(id)+"?force=true", nil)
+func (c *Client) ForgetDatabaseServer(ctx context.Context, org, id string) error {
+	return c.delete(ctx, databaseServersPath(org)+"/"+esc(id)+"?force=true", nil)
 }
 
-func (c *Client) DatabaseServerTiers(ctx context.Context, org, project string) ([]DatabaseServerTier, error) {
+func (c *Client) DatabaseServerTiers(ctx context.Context, org string) ([]DatabaseServerTier, error) {
 	var out []DatabaseServerTier
-	path := orgPath(org, "/database-server-tiers")
-	if project != "" {
-		path = projectPath(org, project, "/database-server-tiers")
-	}
-	return out, c.get(ctx, path, &out)
+	return out, c.get(ctx, orgPath(org, "/database-server-tiers"), &out)
 }
