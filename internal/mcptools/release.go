@@ -73,7 +73,7 @@ func (r *registry) releases(withDeploy bool) {
 		// The project is chosen here only when the caller named it or one is
 		// selected; otherwise goship.yml, or the project that already holds the
 		// app, decides inside deploy.Run.
-		orgTool(r, "goship_deploy", "Deploy a directory: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback), applies env, uploads the source and follows the build and release. Returns the version and public URL. Can take minutes.", write,
+		orgTool(r, "goship_deploy", "Deploy a directory: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback), applies env, uploads the source and follows the build and release. The environment is the environment argument, else goship.yml's environment:, else the one selected for the project (`goship environment use`), else the organization's default. Returns the version and public URL. Can take minutes.", write,
 			func(ctx context.Context, c *portal.Client, org string, in DeployArgs) (*DeployResult, error) {
 				project := in.Project
 				if project == "" {
@@ -81,10 +81,12 @@ func (r *registry) releases(withDeploy bool) {
 						project, _ = r.clients.Project(ctx, c, org, "")
 					}
 				}
+				selected, orgs := r.clients.DeploySelection(c)
 				rec := &recorder{}
 				res, err := deploy.Run(ctx, c, deploy.Options{
-					Dir: in.Path, App: in.App, Org: org, Project: project, Platform: in.Platform, Plan: in.Plan,
-					Dockerfile: in.Dockerfile, Message: in.Message, Env: in.Env,
+					Dir: in.Path, App: in.App, Org: org, Project: project,
+					Environment: in.Environment, SelectedEnvironment: selected, Orgs: orgs,
+					Platform: in.Platform, Plan: in.Plan, Dockerfile: in.Dockerfile, Message: in.Message, Env: in.Env,
 				}, rec)
 				if errors.Is(err, deploy.ErrNoProject) {
 					return nil, errors.New(`no project selected: pass project, set project: in goship.yml, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`)

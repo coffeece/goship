@@ -5,13 +5,15 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 )
 
 // tokenClients serves each tool call with the token of the request it came
 // in on, which requireToken put in the context. Nothing is selected the way
 // `goship org use` selects on a machine, so an organization or project is
-// whatever the tool was given, or the only one the user has.
+// whatever the tool was given, or the only one the user has, and an
+// environment is whatever the tool was given, or the organization's default.
 type tokenClients struct {
 	api     string
 	version string
@@ -68,4 +70,22 @@ func (t tokenClients) Project(ctx context.Context, c *portal.Client, org, overri
 		return "", errors.New("you cannot reach any project in " + org + ": ask an admin of the organization to add you to one")
 	}
 	return "", fmt.Errorf("%s has %d projects and none is selected: pass project; goship_list_projects shows them", org, len(projects))
+}
+
+// Environment resolves the way the local server does, with nothing selected:
+// override, else the organization's default. When that default cannot be
+// read it returns the fallback with an error saying how to choose one, and
+// the caller decides whether a guess will do.
+func (t tokenClients) Environment(ctx context.Context, c *portal.Client, org, project, override string) (string, error) {
+	env, err := deploy.ResolveEnvironment(ctx, deploy.Target{Org: org, Project: project}, deploy.EnvironmentChoice{Explicit: override}, c.Orgs)
+	if err != nil {
+		return env, fmt.Errorf("could not determine the default environment of %s (%w): pass environment; goship_list_environments shows them", org, err)
+	}
+	return env, nil
+}
+
+// DeploySelection has nothing selected to offer; the hosted server does not
+// deploy.
+func (tokenClients) DeploySelection(c *portal.Client) (func(deploy.Target) string, deploy.OrgLister) {
+	return nil, c.Orgs
 }

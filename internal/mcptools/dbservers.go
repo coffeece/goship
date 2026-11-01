@@ -20,12 +20,12 @@ type DBServerTierList struct {
 }
 
 type DBServerArg struct {
-	ProjectArg
+	OrgArg
 	Server string `json:"server" jsonschema:"database server name or id (goship_list_database_servers)"`
 }
 
 type CreateDBServerArgs struct {
-	ProjectArg
+	OrgArg
 	CloudAccount string `json:"cloud_account" jsonschema:"connected Google Cloud account: id, label or provider (goship_list_cloud_accounts)"`
 	Region       string `json:"region" jsonschema:"cloud region slug (goship_list_cloud_regions)"`
 	Tier         string `json:"tier,omitempty" jsonschema:"machine size slug (goship_list_database_server_tiers); default db-f1-micro"`
@@ -44,19 +44,19 @@ type DeleteDBServerArgs struct {
 }
 
 func (r *registry) dbservers() {
-	tool(r, "goship_list_database_servers", "List the PostgreSQL servers in the customer's own cloud that the project can place databases on: its own and the organization's (scope says which). Databases on them are not billed by GoShip.", read,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (DBServerList, error) {
-			s, err := c.DatabaseServers(ctx, t.Org)
+	orgTool(r, "goship_list_database_servers", "List the organization's PostgreSQL servers in its own cloud. Any project can place databases on them (goship_create_database with server), and an environment can make one the default for its new databases. Databases on them are not billed by GoShip.", read,
+		func(ctx context.Context, c *portal.Client, org string, _ OrgArg) (DBServerList, error) {
+			s, err := c.DatabaseServers(ctx, org)
 			return DBServerList{Servers: s}, err
 		})
-	tool(r, "goship_list_database_server_tiers", "List the machine sizes a database server can have, with the cloud provider's price.", read,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, _ ProjectArg) (DBServerTierList, error) {
-			tiers, err := c.DatabaseServerTiers(ctx, t.Org)
+	orgTool(r, "goship_list_database_server_tiers", "List the machine sizes a database server can have, with the cloud provider's price.", read,
+		func(ctx context.Context, c *portal.Client, org string, _ OrgArg) (DBServerTierList, error) {
+			tiers, err := c.DatabaseServerTiers(ctx, org)
 			return DBServerTierList{Tiers: tiers}, err
 		})
-	tool(r, "goship_create_database_server", "Create a PostgreSQL server (a Cloud SQL instance) in a connected Google Cloud account. The cloud provider bills the instance; GoShip bills nothing for it or the databases on it. Provisioning takes about ten minutes in the background: goship_list_database_servers shows the stage, and databases created on it meanwhile are queued until it is ready. The disk auto-grows up to disk_limit_gb (default 100 GB). One server per cloud account.", write,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBServerArgs) (*portal.DatabaseServer, error) {
-			acc, err := resolveCloudAccount(ctx, c, t, in.CloudAccount)
+	orgTool(r, "goship_create_database_server", "Create a PostgreSQL server (a Cloud SQL instance) in a connected Google Cloud account. The cloud provider bills the instance; GoShip bills nothing for it or the databases on it. Provisioning takes about ten minutes in the background: goship_list_database_servers shows the stage, and databases created on it meanwhile are queued until it is ready. The disk auto-grows up to disk_limit_gb (default 100 GB). One server per cloud account.", write,
+		func(ctx context.Context, c *portal.Client, org string, in CreateDBServerArgs) (*portal.DatabaseServer, error) {
+			acc, err := resolveCloudAccount(ctx, c, org, in.CloudAccount)
 			if err != nil {
 				return nil, err
 			}
@@ -67,20 +67,20 @@ func (r *registry) dbservers() {
 			if tier == "" {
 				tier = "db-f1-micro"
 			}
-			return c.CreateDatabaseServer(ctx, t.Org, portal.CreateDatabaseServerRequest{
+			return c.CreateDatabaseServer(ctx, org, portal.CreateDatabaseServerRequest{
 				CloudAccountID: acc.ID, Name: name, Region: in.Region, Tier: tier, DiskLimitGB: in.DiskLimitGB,
 			})
 		})
-	tool(r, "goship_set_database_server_disk_limit", "Set or remove the disk cap of a database server: how far its disk may auto-grow (0 removes the cap). The cap must be at least 10 GB and not below the disk's current size; the cloud bill grows with the disk, so it is the customer's spending ceiling.", write,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetDBServerDiskLimitArgs) (Message, error) {
+	orgTool(r, "goship_set_database_server_disk_limit", "Set or remove the disk cap of a database server: how far its disk may auto-grow (0 removes the cap). The cap must be at least 10 GB and not below the disk's current size; the cloud bill grows with the disk, so it is the customer's spending ceiling.", write,
+		func(ctx context.Context, c *portal.Client, org string, in SetDBServerDiskLimitArgs) (Message, error) {
 			if in.DiskLimitGB < 0 {
 				return Message{}, errors.New("disk_limit_gb cannot be negative; 0 removes the cap")
 			}
-			s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
+			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
 			if err != nil {
 				return Message{}, err
 			}
-			if err := c.SetDatabaseServerDiskLimit(ctx, t.Org, s.ID, in.DiskLimitGB); err != nil {
+			if err := c.SetDatabaseServerDiskLimit(ctx, org, s.ID, in.DiskLimitGB); err != nil {
 				return Message{}, err
 			}
 			if in.DiskLimitGB == 0 {
@@ -88,25 +88,25 @@ func (r *registry) dbservers() {
 			}
 			return msgf("Disk cap of server %s set to %d GB.", s.Name, in.DiskLimitGB)
 		})
-	tool(r, "goship_retry_database_server", "Retry a database server that failed to come up, after fixing the cause its error_message names.", write,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, in DBServerArg) (Message, error) {
-			s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
+	orgTool(r, "goship_retry_database_server", "Retry a database server that failed to come up, after fixing the cause its error_message names.", write,
+		func(ctx context.Context, c *portal.Client, org string, in DBServerArg) (Message, error) {
+			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
 			if err != nil {
 				return Message{}, err
 			}
-			if err := c.RetryDatabaseServer(ctx, t.Org, s.ID); err != nil {
+			if err := c.RetryDatabaseServer(ctx, org, s.ID); err != nil {
 				return Message{}, err
 			}
 			return msgf("Retrying server %s.", s.Name)
 		})
-	tool(r, "goship_delete_database_server", "Delete a database server: its databases must be deleted first, then GoShip removes the Cloud SQL instance from the customer's project. With force, GoShip only forgets the server and the instance stays.", destructive,
-		func(ctx context.Context, c *portal.Client, t deploy.Target, in DeleteDBServerArgs) (Message, error) {
-			s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
+	orgTool(r, "goship_delete_database_server", "Delete a database server: its databases must be deleted first, then GoShip removes the Cloud SQL instance from the customer's project. With force, GoShip only forgets the server and the instance stays.", destructive,
+		func(ctx context.Context, c *portal.Client, org string, in DeleteDBServerArgs) (Message, error) {
+			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
 			if err != nil {
 				return Message{}, err
 			}
 			if in.Force {
-				if err := c.ForgetDatabaseServer(ctx, t.Org, s.ID); err != nil {
+				if err := c.ForgetDatabaseServer(ctx, org, s.ID); err != nil {
 					return Message{}, err
 				}
 				instance := s.CloudInstanceName
@@ -115,18 +115,18 @@ func (r *registry) dbservers() {
 				}
 				return msgf("Server %s forgotten. The Cloud SQL instance %s, if it still exists, keeps running in the customer's project: `gcloud sql instances delete %s --project <project id>` removes it.", s.Name, instance, instance)
 			}
-			if err := c.DeleteDatabaseServer(ctx, t.Org, s.ID); err != nil {
+			if err := c.DeleteDatabaseServer(ctx, org, s.ID); err != nil {
 				return Message{}, err
 			}
 			return msgf("Deleting server %s; the Cloud SQL instance is being removed from the customer's project.", s.Name)
 		})
 }
 
-// resolveCloudAccount matches what the caller passed against the project's
-// view of the cloud accounts: the id, then an exact label, then the provider
-// when exactly one account uses it.
-func resolveCloudAccount(ctx context.Context, c *portal.Client, t deploy.Target, ref string) (*portal.CloudAccount, error) {
-	accounts, err := c.CloudAccounts(ctx, t.Org)
+// resolveCloudAccount matches what the caller passed against the
+// organization's cloud accounts: the id, then an exact label, then the
+// provider when exactly one account uses it.
+func resolveCloudAccount(ctx context.Context, c *portal.Client, org, ref string) (*portal.CloudAccount, error) {
+	accounts, err := c.CloudAccounts(ctx, org)
 	if err != nil {
 		return nil, err
 	}
@@ -150,9 +150,9 @@ func resolveCloudAccount(ctx context.Context, c *portal.Client, t deploy.Target,
 	case 1:
 		return byProvider[0], nil
 	case 0:
-		return nil, fmt.Errorf("no cloud account %q in %s; goship_list_cloud_accounts shows them", ref, t)
+		return nil, fmt.Errorf("no cloud account %q in %s; goship_list_cloud_accounts shows them", ref, org)
 	default:
-		return nil, fmt.Errorf("more than one %s account in %s; pass the id", ref, t)
+		return nil, fmt.Errorf("more than one %s account in %s; pass the id", ref, org)
 	}
 }
 

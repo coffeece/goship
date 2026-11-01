@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -129,5 +131,73 @@ func TestMCPExplainsAMissingProject(t *testing.T) {
 	want := `no project selected: pass project, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`
 	if !res.IsError || msg.String() != want {
 		t.Errorf("isError=%v message %q, want %q", res.IsError, msg.String(), want)
+	}
+}
+
+// After `goship environment use staging`, the local server's tools act in
+// staging, goship_deploy included.
+func TestMCPToolsHonourTheSavedEnvironment(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		switch {
+		case r.URL.Path == "/api/v1/orgs":
+			w.Write([]byte(`[{"slug":"acme","default_environment":"production"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/acme/environments":
+			w.Write([]byte(twoEnvironments)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/acme/projects/clave/environments/staging/apps" && r.Method == http.MethodGet:
+			w.Write([]byte(`[]`)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+	if _, err := run(t, "", "environment", "use", "staging"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOSHIP_TOKEN", "tok")
+
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	root := NewRoot("test")
+	root.SetArgs([]string{"mcp"})
+	root.SetIn(inR)
+	root.SetOut(outW)
+	root.SetErr(&strings.Builder{})
+	go root.Execute() //nolint:errcheck
+	defer inW.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "t", Version: "0"}, nil).Connect(context.Background(), &mcp.IOTransport{Reader: outR, Writer: inW}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close() //nolint:errcheck
+
+	if res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "goship_list_apps", Arguments: map[string]any{}}); err != nil || res.IsError {
+		t.Fatalf("list apps: %v %v", err, res)
+	}
+	dir := t.TempDir()
+	write(t, dir+"/go.mod", "module web\n")
+	if _, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "goship_deploy", Arguments: map[string]any{"path": dir, "app": "web", "plan": "app-free"}}); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, want := range []string{"GET /api/v1/orgs/acme/projects/clave/environments/staging/apps", "POST /api/v1/orgs/acme/projects/clave/environments/staging/apps"} {
+		if !slices.Contains(paths, want) {
+			t.Errorf("no %s in %q", want, paths)
+		}
+	}
+	// Looking for the app elsewhere reads production; nothing is created there.
+	for _, p := range paths {
+		if !strings.HasPrefix(p, "GET ") && strings.Contains(p, "/environments/production/") {
+			t.Errorf("acted in production: %s", p)
+		}
 	}
 }
