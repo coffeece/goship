@@ -1,6 +1,11 @@
 package portal
 
-import "time"
+import (
+	"errors"
+	"io"
+	"net/url"
+	"time"
+)
 
 // Trial is an invited trial: apps and databases on GoShip's cluster within
 // its allowance need no card, and are billed from EndsAt. Only the owner of
@@ -23,4 +28,16 @@ type Trial struct {
 type Change struct {
 	Status          string     `json:"status"`
 	BillingStartsAt *time.Time `json:"billing_starts_at,omitempty"`
+}
+
+// madeChange is err for a create or a plan change that got a 2xx: an answer
+// with an empty body leaves the Change empty instead of turning a change that
+// was made into an error somebody retries. An EOF of the transport itself
+// (a *url.Error) says nothing about the change and stays an error.
+func madeChange(err error) error {
+	var transport *url.Error
+	if errors.Is(err, io.EOF) && !errors.As(err, &transport) {
+		return nil
+	}
+	return err
 }
