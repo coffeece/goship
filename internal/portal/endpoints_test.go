@@ -113,19 +113,19 @@ func TestEndpoints(t *testing.T) {
 		{"create database", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
 			return c.CreateDatabase(ctx, "acme", "atlas", "staging", "shop", "starter", "", "", nil)
 		}},
-		{"database servers", "GET", "/api/v1/orgs/acme/projects/atlas/database-servers", "", func(ctx context.Context, c *Client) error {
-			_, err := c.DatabaseServers(ctx, "acme", "atlas")
+		{"database servers", "GET", "/api/v1/orgs/acme/database-servers", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseServers(ctx, "acme")
 			return err
 		}},
-		{"database servers at org", "GET", "/api/v1/orgs/acme/database-servers", "", func(ctx context.Context, c *Client) error { _, err := c.DatabaseServers(ctx, "acme", ""); return err }},
 		{"create database server", "POST", "/api/v1/orgs/acme/database-servers", `{"cloud_account_id":"acc-1","name":"pg","region":"southamerica-east1","tier":"db-f1-micro"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateDatabaseServer(ctx, "acme", "", CreateDatabaseServerRequest{CloudAccountID: "acc-1", Name: "pg", Region: "southamerica-east1", Tier: "db-f1-micro"})
+			_, err := c.CreateDatabaseServer(ctx, "acme", CreateDatabaseServerRequest{CloudAccountID: "acc-1", Name: "pg", Region: "southamerica-east1", Tier: "db-f1-micro"})
 			return err
 		}},
-		{"retry database server", "POST", "/api/v1/orgs/acme/database-servers/s%201/retry", "", func(ctx context.Context, c *Client) error { return c.RetryDatabaseServer(ctx, "acme", "", "s 1") }},
-		{"delete database server", "DELETE", "/api/v1/orgs/acme/database-servers/s%201", "", func(ctx context.Context, c *Client) error { return c.DeleteDatabaseServer(ctx, "acme", "", "s 1") }},
+		{"retry database server", "POST", "/api/v1/orgs/acme/database-servers/s%201/retry", "", func(ctx context.Context, c *Client) error { return c.RetryDatabaseServer(ctx, "acme", "s 1") }},
+		{"delete database server", "DELETE", "/api/v1/orgs/acme/database-servers/s%201", "", func(ctx context.Context, c *Client) error { return c.DeleteDatabaseServer(ctx, "acme", "s 1") }},
+		{"forget database server", "DELETE", "/api/v1/orgs/acme/database-servers/s%201?force=true", "", func(ctx context.Context, c *Client) error { return c.ForgetDatabaseServer(ctx, "acme", "s 1") }},
 		{"database server tiers", "GET", "/api/v1/orgs/acme/database-server-tiers", "", func(ctx context.Context, c *Client) error {
-			_, err := c.DatabaseServerTiers(ctx, "acme", "")
+			_, err := c.DatabaseServerTiers(ctx, "acme")
 			return err
 		}},
 		{"create database on server", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/services/postgresql/instances", `{"description":"","name":"shop","plan":"db-small","server_id":"s1"}`, func(ctx context.Context, c *Client) error {
@@ -145,7 +145,7 @@ func TestEndpoints(t *testing.T) {
 			return err
 		}},
 		{"set database server disk limit", "PUT", "/api/v1/orgs/acme/database-servers/s1/disk-limit", `{"disk_limit_gb":200}`, func(ctx context.Context, c *Client) error {
-			return c.SetDatabaseServerDiskLimit(ctx, "acme", "", "s1", 200)
+			return c.SetDatabaseServerDiskLimit(ctx, "acme", "s1", 200)
 		}},
 		{"delete database", "DELETE", "/api/v1/orgs/acme/projects/atlas/environments/staging/services/postgresql/instances/shop", "", func(ctx context.Context, c *Client) error {
 			return c.DeleteDatabase(ctx, "acme", "atlas", "staging", "shop")
@@ -207,53 +207,53 @@ func TestEndpoints(t *testing.T) {
 		{"delete cluster", "DELETE", "/api/v1/orgs/acme/clusters/c1", `{"destroy_server":true}`, func(ctx context.Context, c *Client) error { return c.DeleteCluster(ctx, "acme", "c1", true) }},
 
 		{"cloud providers", "GET", "/api/v1/cloud/providers", "", func(ctx context.Context, c *Client) error { _, err := c.CloudProviders(ctx); return err }},
-		{"cloud accounts", "GET", "/api/v1/orgs/acme/projects/atlas/cloud-accounts", "", func(ctx context.Context, c *Client) error {
-			_, err := c.CloudAccounts(ctx, "acme", "atlas")
+		{"cloud accounts", "GET", "/api/v1/orgs/acme/cloud-accounts", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudAccounts(ctx, "acme")
 			return err
 		}},
-		{"connect cloud api key", "POST", "/api/v1/orgs/acme/projects/atlas/cloud-accounts", `{"provider":"digitalocean","label":"prod","api_key":"secret"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudAPIKey(ctx, "acme", "atlas", "digitalocean", "prod", "secret")
+		{"connect cloud api key", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"provider":"digitalocean","label":"prod","api_key":"secret"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAPIKey(ctx, "acme", "digitalocean", "prod", "secret")
 			return err
 		}},
-		{"begin cloud oauth", "POST", "/api/v1/orgs/acme/projects/atlas/cloud-accounts/digitalocean/connect", "", func(ctx context.Context, c *Client) error {
-			_, _, err := c.BeginCloudOAuth(ctx, "acme", "atlas", "digitalocean")
+		{"begin cloud oauth", "POST", "/api/v1/orgs/acme/cloud-accounts/digitalocean/connect", "", func(ctx context.Context, c *Client) error {
+			_, _, err := c.BeginCloudOAuth(ctx, "acme", "digitalocean")
 			return err
 		}},
-		{"begin aws connect", "POST", "/api/v1/orgs/acme/projects/atlas/cloud-accounts/aws/connect", "", func(ctx context.Context, c *Client) error {
-			_, _, err := c.BeginCloudAWSConnect(ctx, "acme", "atlas")
+		{"begin aws connect", "POST", "/api/v1/orgs/acme/cloud-accounts/aws/connect", "", func(ctx context.Context, c *Client) error {
+			_, _, err := c.BeginCloudAWSConnect(ctx, "acme")
 			return err
 		}},
-		{"cloud connect ticket", "GET", "/api/v1/orgs/acme/projects/atlas/cloud-accounts/connect/t1", "", func(ctx context.Context, c *Client) error {
-			_, err := c.CloudConnectTicket(ctx, "acme", "atlas", "t1")
+		{"cloud connect ticket", "GET", "/api/v1/orgs/acme/cloud-accounts/connect/t1", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudConnectTicket(ctx, "acme", "t1")
 			return err
 		}},
-		{"delete cloud account", "DELETE", "/api/v1/orgs/acme/projects/atlas/cloud-accounts/acc1", "", func(ctx context.Context, c *Client) error { return c.DeleteCloudAccount(ctx, "acme", "atlas", "acc1") }},
-		{"cloud regions", "GET", "/api/v1/orgs/acme/projects/atlas/cloud-accounts/acc1/regions", "", func(ctx context.Context, c *Client) error {
-			_, err := c.CloudRegions(ctx, "acme", "atlas", "acc1")
+		{"delete cloud account", "DELETE", "/api/v1/orgs/acme/cloud-accounts/acc1", "", func(ctx context.Context, c *Client) error { return c.DeleteCloudAccount(ctx, "acme", "acc1") }},
+		{"cloud regions", "GET", "/api/v1/orgs/acme/cloud-accounts/acc1/regions", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudRegions(ctx, "acme", "acc1")
 			return err
 		}},
-		{"cloud sizes", "GET", "/api/v1/orgs/acme/projects/atlas/cloud-accounts/acc1/sizes?region=nyc1", "", func(ctx context.Context, c *Client) error {
-			_, err := c.CloudSizes(ctx, "acme", "atlas", "acc1", "nyc1")
+		{"cloud sizes", "GET", "/api/v1/orgs/acme/cloud-accounts/acc1/sizes?region=nyc1", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudSizes(ctx, "acme", "acc1", "nyc1")
 			return err
 		}},
-		{"aws setup", "GET", "/api/v1/orgs/acme/projects/atlas/cloud-accounts/aws/setup", "", func(ctx context.Context, c *Client) error {
-			_, err := c.CloudAWSSetup(ctx, "acme", "atlas")
+		{"aws setup", "GET", "/api/v1/orgs/acme/cloud-accounts/aws/setup", "", func(ctx context.Context, c *Client) error {
+			_, err := c.CloudAWSSetup(ctx, "acme")
 			return err
 		}},
-		{"connect aws role", "POST", "/api/v1/orgs/acme/projects/atlas/cloud-accounts", `{"label":"prod","provider":"aws","role_arn":"arn:aws:iam::123456789012:role/GoShipNodeRole"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudAWSRole(ctx, "acme", "atlas", "prod", "arn:aws:iam::123456789012:role/GoShipNodeRole")
+		{"connect aws role", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"label":"prod","provider":"aws","role_arn":"arn:aws:iam::123456789012:role/GoShipNodeRole"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAWSRole(ctx, "acme", "prod", "arn:aws:iam::123456789012:role/GoShipNodeRole")
 			return err
 		}},
-		{"connect aws keys", "POST", "/api/v1/orgs/acme/projects/atlas/cloud-accounts", `{"access_key_id":"AKIA1","label":"","provider":"aws","secret_access_key":"s"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudAWSKeys(ctx, "acme", "atlas", "", "AKIA1", "s")
+		{"connect aws keys", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"access_key_id":"AKIA1","label":"","provider":"aws","secret_access_key":"s"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudAWSKeys(ctx, "acme", "", "AKIA1", "s")
 			return err
 		}},
-		{"begin gcp connect", "POST", "/api/v1/orgs/acme/projects/atlas/cloud-accounts/gcp/connect", "", func(ctx context.Context, c *Client) error {
-			_, err := c.BeginCloudGCPConnect(ctx, "acme", "atlas")
+		{"begin gcp connect", "POST", "/api/v1/orgs/acme/cloud-accounts/gcp/connect", "", func(ctx context.Context, c *Client) error {
+			_, err := c.BeginCloudGCPConnect(ctx, "acme")
 			return err
 		}},
-		{"connect gcp", "POST", "/api/v1/orgs/acme/projects/atlas/cloud-accounts", `{"label":"prod","project_number":"123456789","provider":"gcp"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudGCP(ctx, "acme", "atlas", "prod", "123456789")
+		{"connect gcp", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"label":"prod","project_number":"123456789","provider":"gcp"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ConnectCloudGCP(ctx, "acme", "prod", "123456789")
 			return err
 		}},
 
@@ -286,11 +286,6 @@ func TestEndpoints(t *testing.T) {
 		}},
 		{"available plans", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/available-plans?kind=app", "", func(ctx context.Context, c *Client) error {
 			_, err := c.AvailablePlans(ctx, "acme", "atlas", "staging", "app")
-			return err
-		}},
-		{"cloud accounts without a project", "GET", "/api/v1/orgs/acme/cloud-accounts", "", func(ctx context.Context, c *Client) error { _, err := c.CloudAccounts(ctx, "acme", ""); return err }},
-		{"connect cloud api key at the org level", "POST", "/api/v1/orgs/acme/cloud-accounts", `{"provider":"digitalocean","label":"prod","api_key":"secret"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ConnectCloudAPIKey(ctx, "acme", "", "digitalocean", "prod", "secret")
 			return err
 		}},
 
@@ -349,7 +344,7 @@ func TestCloudSizesEncodesTheRegionQuery(t *testing.T) {
 		w.Write([]byte(`null`)) //nolint:errcheck
 	})
 
-	if _, err := c.CloudSizes(context.Background(), "acme", "atlas", "acc1", "nyc 1"); err != nil {
+	if _, err := c.CloudSizes(context.Background(), "acme", "acc1", "nyc 1"); err != nil {
 		t.Fatal(err)
 	}
 	if gotQuery != "region=nyc+1" {
@@ -364,7 +359,7 @@ func TestCloudAWSSetupTreats404AsUnavailable(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c := New(srv.URL, "tok")
-	s, err := c.CloudAWSSetup(context.Background(), "acme", "atlas")
+	s, err := c.CloudAWSSetup(context.Background(), "acme")
 	if err != nil || s != nil {
 		t.Fatalf("CloudAWSSetup() = %+v, %v; want nil, nil", s, err)
 	}
