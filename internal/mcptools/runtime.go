@@ -48,7 +48,7 @@ func (r *registry) runtime() {
 				lines = maxLogLines
 			}
 			out := LogList{Entries: []portal.LogEntry{}}
-			err := c.Logs(ctx, t.Org, t.Project, in.App, portal.LogOptions{Lines: lines, Source: in.Source, Units: in.Units}, func(e portal.LogEntry) error {
+			err := c.Logs(ctx, t.Org, t.Project, t.Environment, in.App, portal.LogOptions{Lines: lines, Source: in.Source, Units: in.Units}, func(e portal.LogEntry) error {
 				out.Entries = append(out.Entries, e)
 				return nil
 			})
@@ -59,7 +59,7 @@ func (r *registry) runtime() {
 			ctx, cancel := context.WithTimeout(ctx, runTimeout)
 			defer cancel()
 			var buf bytes.Buffer
-			err := c.Run(ctx, t.Org, t.Project, in.App, in.Command, in.Once, in.Isolated, &buf)
+			err := c.Run(ctx, t.Org, t.Project, t.Environment, in.App, in.Command, in.Once, in.Isolated, &buf)
 			return RunResult{Output: buf.String()}, err
 		})
 }

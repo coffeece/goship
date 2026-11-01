@@ -36,13 +36,4 @@ func ResolveDatabaseServer(ctx context.Context, client *portal.Client, t Target,
 	return nil, fmt.Errorf("no database server %q in %s; `goship db server list` (goship_list_database_servers) shows them", ref, scope(t))
 }
 
-// ServerTarget is where a server is acted on: the organization's routes for
-// a server the organization shares, the project's for its own.
-func ServerTarget(s *portal.DatabaseServer, t Target) Target {
-	if s.Scope == "org" {
-		return Target{Org: t.Org}
-	}
-	return t
-}
-
 func scope(t Target) string { return fmt.Sprintf("org %q", t.Org) }
