@@ -47,24 +47,24 @@ type DatabaseUser struct {
 	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 }
 
-func (c *Client) Databases(ctx context.Context, org, project string) ([]Database, error) {
+func (c *Client) Databases(ctx context.Context, org, project, env string) ([]Database, error) {
 	var dbs []Database
-	return dbs, c.get(ctx, projectPath(org, project, "/databases"), &dbs)
+	return dbs, c.get(ctx, envPath(org, project, env, "/databases"), &dbs)
 }
 
-func (c *Client) Database(ctx context.Context, org, project, name string) (*Database, error) {
+func (c *Client) Database(ctx context.Context, org, project, env, name string) (*Database, error) {
 	var db Database
-	return &db, c.get(ctx, dbPath(org, project, name), &db)
+	return &db, c.get(ctx, dbPath(org, project, env, name), &db)
 }
 
-func (c *Client) DatabaseStats(ctx context.Context, org, project, name string) (*DatabaseStats, error) {
+func (c *Client) DatabaseStats(ctx context.Context, org, project, env, name string) (*DatabaseStats, error) {
 	var stats DatabaseStats
-	return &stats, c.get(ctx, dbPath(org, project, name)+"/stats", &stats)
+	return &stats, c.get(ctx, dbPath(org, project, env, name)+"/stats", &stats)
 }
 
-func (c *Client) DatabaseUsers(ctx context.Context, org, project, name string) ([]DatabaseUser, error) {
+func (c *Client) DatabaseUsers(ctx context.Context, org, project, env, name string) ([]DatabaseUser, error) {
 	var users []DatabaseUser
-	return users, c.get(ctx, dbPath(org, project, name)+"/users", &users)
+	return users, c.get(ctx, dbPath(org, project, env, name)+"/users", &users)
 }
 
 // NewDatabaseUser is a user just created. Password is the only copy of the
@@ -74,13 +74,13 @@ type NewDatabaseUser struct {
 	Password string       `json:"password"`
 }
 
-func (c *Client) CreateDatabaseUser(ctx context.Context, org, project, name, username, accessMode string) (*NewDatabaseUser, error) {
+func (c *Client) CreateDatabaseUser(ctx context.Context, org, project, env, name, username, accessMode string) (*NewDatabaseUser, error) {
 	var out NewDatabaseUser
 	body := map[string]string{"username": username}
 	if accessMode != "" {
 		body["access_mode"] = accessMode
 	}
-	return &out, c.post(ctx, dbPath(org, project, name)+"/users", body, &out)
+	return &out, c.post(ctx, dbPath(org, project, env, name)+"/users", body, &out)
 }
 
 // DatabaseExtension is one extension of a database. Status is "enabled",
@@ -130,26 +130,26 @@ func (e *DatabaseExtensions) IsEnabled(name string) (DatabaseExtension, bool) {
 	return DatabaseExtension{}, false
 }
 
-func (c *Client) DatabaseExtensions(ctx context.Context, org, project, name string) (*DatabaseExtensions, error) {
+func (c *Client) DatabaseExtensions(ctx context.Context, org, project, env, name string) (*DatabaseExtensions, error) {
 	var exts DatabaseExtensions
-	return &exts, c.get(ctx, dbPath(org, project, name)+"/extensions", &exts)
+	return &exts, c.get(ctx, dbPath(org, project, env, name)+"/extensions", &exts)
 }
 
 // EnableDatabaseExtension returns Status "enabled", or "enabling" when the
 // server lets a slow install finish in the background; poll
 // DatabaseExtensions until the name shows as enabled.
-func (c *Client) EnableDatabaseExtension(ctx context.Context, org, project, name, ext string) (*DatabaseExtension, error) {
+func (c *Client) EnableDatabaseExtension(ctx context.Context, org, project, env, name, ext string) (*DatabaseExtension, error) {
 	var out DatabaseExtension
-	return &out, c.post(ctx, dbPath(org, project, name)+"/extensions", map[string]string{"name": ext}, &out)
+	return &out, c.post(ctx, dbPath(org, project, env, name)+"/extensions", map[string]string{"name": ext}, &out)
 }
 
-func (c *Client) DisableDatabaseExtension(ctx context.Context, org, project, name, ext string) error {
-	return c.delete(ctx, dbPath(org, project, name)+"/extensions/"+esc(ext), nil)
+func (c *Client) DisableDatabaseExtension(ctx context.Context, org, project, env, name, ext string) error {
+	return c.delete(ctx, dbPath(org, project, env, name)+"/extensions/"+esc(ext), nil)
 }
 
 // CreateDatabase leaves the plan out when it is empty, which is how a database
 // on your own server is created. sizeLimitMB nil means no limit.
-func (c *Client) CreateDatabase(ctx context.Context, org, project, name, plan, description, serverID string, sizeLimitMB *int) error {
+func (c *Client) CreateDatabase(ctx context.Context, org, project, env, name, plan, description, serverID string, sizeLimitMB *int) error {
 	body := map[string]any{"name": name, "description": description}
 	if plan != "" {
 		body["plan"] = plan
@@ -160,35 +160,35 @@ func (c *Client) CreateDatabase(ctx context.Context, org, project, name, plan, d
 	if sizeLimitMB != nil {
 		body["size_limit_mb"] = *sizeLimitMB
 	}
-	return c.post(ctx, instancesPath(org, project), body, nil)
+	return c.post(ctx, instancesPath(org, project, env), body, nil)
 }
 
 // SetDatabaseSizeLimit sets the size limit of a database on your own server;
 // nil clears it. The limit is enforced by a periodic check, not immediately.
-func (c *Client) SetDatabaseSizeLimit(ctx context.Context, org, project, name string, mb *int) (string, error) {
+func (c *Client) SetDatabaseSizeLimit(ctx context.Context, org, project, env, name string, mb *int) (string, error) {
 	var out struct {
 		Message string `json:"message"`
 	}
-	err := c.put(ctx, dbPath(org, project, name)+"/size-limit", map[string]*int{"size_limit_mb": mb}, &out)
+	err := c.put(ctx, dbPath(org, project, env, name)+"/size-limit", map[string]*int{"size_limit_mb": mb}, &out)
 	return out.Message, err
 }
 
-func (c *Client) DeleteDatabase(ctx context.Context, org, project, name string) error {
-	return c.delete(ctx, instancesPath(org, project)+"/"+esc(name), nil)
+func (c *Client) DeleteDatabase(ctx context.Context, org, project, env, name string) error {
+	return c.delete(ctx, instancesPath(org, project, env)+"/"+esc(name), nil)
 }
 
-func (c *Client) BindDatabase(ctx context.Context, org, project, name, appName string) error {
-	return c.post(ctx, instancesPath(org, project)+"/"+esc(name)+"/bind", map[string]string{"app_name": appName}, nil)
+func (c *Client) BindDatabase(ctx context.Context, org, project, env, name, appName string) error {
+	return c.post(ctx, instancesPath(org, project, env)+"/"+esc(name)+"/bind", map[string]string{"app_name": appName}, nil)
 }
 
-func (c *Client) UnbindDatabase(ctx context.Context, org, project, name, appName string) error {
-	return c.delete(ctx, instancesPath(org, project)+"/"+esc(name)+"/bind/"+esc(appName), nil)
+func (c *Client) UnbindDatabase(ctx context.Context, org, project, env, name, appName string) error {
+	return c.delete(ctx, instancesPath(org, project, env)+"/"+esc(name)+"/bind/"+esc(appName), nil)
 }
 
-func dbPath(org, project, name string) string {
-	return projectPath(org, project, "/databases/"+esc(name))
+func dbPath(org, project, env, name string) string {
+	return envPath(org, project, env, "/databases/"+esc(name))
 }
 
-func instancesPath(org, project string) string {
-	return projectPath(org, project, "/services/"+ServicePostgres+"/instances")
+func instancesPath(org, project, env string) string {
+	return envPath(org, project, env, "/services/"+ServicePostgres+"/instances")
 }

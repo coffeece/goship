@@ -1,7 +1,6 @@
 package portal
 
 import (
-	"cmp"
 	"context"
 	"net/url"
 	"slices"
@@ -17,32 +16,27 @@ type Plan struct {
 	IsFree      bool   `json:"is_free"`
 	IsActive    bool   `json:"is_active"`
 	SortOrder   int    `json:"sort_order"`
-	// Default is the plan the placement's pool applies when none is named;
-	// Billed is false on a customer's own node, where nothing is charged.
+	// Default is the plan the environment's cluster applies when none is named;
+	// Billed is false on a customer's own cluster, where nothing is charged.
 	Default bool `json:"default"`
 	Billed  bool `json:"billed"`
 }
 
-// AvailablePlans lists what this organization may actually select for a
-// placement. Without a node it is the shared cluster: the public catalogue,
-// plus a free plan only for an org holding a grant. With one it is the
-// node's own pool, read from the platform, in the order the platform applies.
-func (c *Client) AvailablePlans(ctx context.Context, org, project, kind, node string) ([]Plan, error) {
-	path := projectPath(org, project, "/available-plans")
-	if node != "" {
-		path += "?node=" + url.QueryEscape(node)
+// AvailablePlans lists what this organization may actually select in an
+// environment, for an app (kind "app", also the default) or a database (kind
+// "database"). The environment's cluster decides: on the shared cluster it is
+// the public catalogue, plus a free plan only for an org holding a grant; on
+// the organization's own cluster it is the cluster's pool, in the order the
+// platform applies. The server filters by kind and orders the list, so the
+// client only drops what is inactive.
+func (c *Client) AvailablePlans(ctx context.Context, org, project, env, kind string) ([]Plan, error) {
+	path := envPath(org, project, env, "/available-plans")
+	if kind != "" {
+		path += "?" + url.Values{"kind": {kind}}.Encode()
 	}
 	var plans []Plan
 	if err := c.get(ctx, path, &plans); err != nil {
 		return nil, err
 	}
-	plans = slices.DeleteFunc(plans, func(p Plan) bool {
-		return !p.IsActive || (kind != "" && p.Kind != kind)
-	})
-	// The pool's order is meaningful (first = default); only the shared
-	// catalogue carries a sort order worth applying.
-	if node == "" {
-		slices.SortStableFunc(plans, func(a, b Plan) int { return cmp.Compare(a.SortOrder, b.SortOrder) })
-	}
-	return plans, nil
+	return slices.DeleteFunc(plans, func(p Plan) bool { return !p.IsActive }), nil
 }
