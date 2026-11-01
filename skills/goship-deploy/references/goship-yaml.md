@@ -10,7 +10,7 @@ writes the CLI half from what it finds in the directory.
 | `app` | app name (default: directory name) |
 | `org` | organization slug, instead of `goship org use` |
 | `project` | project slug inside the organization, instead of `goship project use` |
-| `environment` | environment slug inside the project (`goship environments`); left out, what `goship environment use` saved, else the organization's default (production unless changed) |
+| `environment` | environment slug inside the project (`goship environments`); left out, `GOSHIP_ENVIRONMENT`, then what `goship environment use` saved, then the organization's default (production unless changed) |
 | `platform` | `go`, `python`, `nodejs`, `static` |
 | `dockerfile` | build from this container file instead of a platform |
 | `plan` | plan slug for a new app |
@@ -73,6 +73,8 @@ Ignore file: the first of `.goshipignore`, `.dockerignore`
 ## Addresses
 
 Shared cluster: `https://<app>-<token>.apps.goship.sh`. Own clusters:
-`https://<app>.<cluster-token>.apps.goship.sh`. Read the real one from the
-deploy result or `goship_get_app`. A custom domain is a CNAME to it; TLS is
+`https://<app>.<project-token>.apps.goship.sh`, where the token identifies the
+project in that environment and is not tied to the cluster (the same project on
+a different cluster keeps its token). Read the real one from the deploy result
+or `goship_get_app`. A custom domain is a CNAME to it; TLS is
 automatic.

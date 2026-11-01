@@ -33,9 +33,9 @@ Find out, asking only for what is not already known:
   staging"), check it is in that list and pass `environment: staging` to
   `goship_deploy` (CLI: `--environment staging`). Do not ask where it should
   run: the environment already decides that. If the name is not in the list,
-  show the list and ask. Say which environment the deploy is going to before
-  you run it. Pin `environment:` in goship.yml only for a repo that always
-  deploys to one.
+  show the list and ask. When you pass `environment`, say which one before you
+  run the deploy; otherwise report the environment from the deploy result.
+  Pin `environment:` in goship.yml only for a repo that always deploys to one.
 - **Plan**: `goship_list_plans` (with the same `environment`) shows what that
   environment offers and the price. A plan with `billed: false` is free to
   choose. Never pick a paid plan without the user saying which.
@@ -147,7 +147,8 @@ and every plan is billed on GoShip's server, so name the plan and its price
 to the user before creating one.
 
 - MCP: `goship_create_database` with `name` and `plan`, then
-  `goship_bind_database` to the app.
+  `goship_bind_database` to the app. Pass the same `environment` on every
+  later call, so none lands on a same-named app in another environment.
 - CLI: `goship db create <app>-db --plan db-micro` then
   `goship db bind <app>-db -a <app>`.
 
@@ -213,6 +214,9 @@ ended. On failure, the result carries the last lines of the build log; fix
 the cause and deploy again rather than retrying blindly.
 
 ## 6. Verify
+
+Pass the `environment` the deploy reported to every call below, so a check
+cannot land on a same-named app in another environment (production, say).
 
 1. `goship_get_app`: status `running`, units healthy, the address.
 2. Request the URL (or its health route) and confirm a 200. If `visibility`

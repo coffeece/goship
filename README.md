@@ -156,7 +156,8 @@ goship cluster create acme-k8s --kubeconfig ./kubeconfig                        
 ```
 
 `goship clusters` lists them, and `goship cluster info|sizes|resize|rm` manage
-one. Cloud accounts (`goship cloud`) and database servers (`goship db server`)
+one. A cluster you create is billed monthly by size; apps on it are not billed
+by plan. Cloud accounts (`goship cloud`) and database servers (`goship db server`)
 belong to the organization too: they take no project.
 
 ## Commands
@@ -318,9 +319,8 @@ or ask for `org` and `project`, and the environment is the one you pass as
 Deploying a directory reads files on your machine, so `goship_deploy` only
 works with the local `goship mcp`; everything else works the same.
 
-The server is `cmd/goship-mcp`, deployed on GoShip itself
-(`tsuru app deploy -a goship-mcp .`; `Procfile` and `tsuru.yaml` are its).
-It holds no credential: it checks each request's token against
+The server is `cmd/goship-mcp`, deployed on GoShip itself; the `Procfile` at
+the repository root is its. It holds no credential: it checks each request's token against
 `https://goship.sh/.well-known/jwks.json` and calls the API with it.
 `PORT`, `GOSHIP_API_URL`, `GOSHIP_MCP_URL` and `GOSHIP_ISSUER` override the
 production defaults.
