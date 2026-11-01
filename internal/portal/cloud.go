@@ -25,12 +25,9 @@ type CloudAccount struct {
 	RoleARN      string     `json:"role_arn,omitempty"`
 	ProjectID    string     `json:"project_id,omitempty"`
 	Status       string     `json:"status" table:"STATUS"`
-	NodeCount    int        `json:"node_count" table:"NODES"`
+	NodeCount    int        `json:"node_count" table:"CLUSTERS"`
 	ErrorMessage string     `json:"error_message,omitempty"`
 	LastUsedAt   *time.Time `json:"last_used_at,omitempty"`
-	// Scope is "org" or "project": where the account was connected. Only the
-	// project-level listing says.
-	Scope string `json:"scope,omitempty" table:"SCOPE"`
 }
 
 type CloudRegion struct {
@@ -105,9 +102,15 @@ func (c *Client) ConnectCloudAWSKeys(ctx context.Context, org, label, accessKeyI
 	return &account, c.post(ctx, cloudAccountsPath(org), body, &account)
 }
 
-func (c *Client) ConnectCloudAPIKey(ctx context.Context, org, provider, label, apiKey string) (*CloudAccount, error) {
+// ConnectCloudAPIKey connects an API-key account. A non-empty accountID
+// names the account whose key this one replaces: it keeps its id and the
+// clusters on it.
+func (c *Client) ConnectCloudAPIKey(ctx context.Context, org, provider, label, apiKey, accountID string) (*CloudAccount, error) {
 	var account CloudAccount
 	body := map[string]any{"provider": provider, "label": label, "api_key": apiKey}
+	if accountID != "" {
+		body["account_id"] = accountID
+	}
 	return &account, c.post(ctx, cloudAccountsPath(org), body, &account)
 }
 
