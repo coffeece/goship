@@ -157,7 +157,7 @@ func TestEnvironmentRmForgetsTheSavedSelection(t *testing.T) {
 	t.Setenv("GOSHIP_ENVIRONMENT", "")
 	saved := &config.Config{Environments: map[string]string{
 		"acme/atlas":   "staging",
-		"acme/comet":    "staging",
+		"acme/labs":    "staging",
 		"acme/web":     "production",
 		"globex/atlas": "staging",
 	}}
