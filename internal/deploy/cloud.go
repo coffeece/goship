@@ -44,7 +44,7 @@ func ResolveCloudAccount(ctx context.Context, client *portal.Client, org, ref st
 				}
 			}
 		}
-		return nil, fmt.Errorf("no cloud account %q in org %q; run `goship cloud connect <provider>`", ref, org)
+		return nil, fmt.Errorf("no cloud account %q in org %q; `goship cloud list` (goship_list_cloud_accounts) shows the connected ones, `goship cloud connect <provider>` adds one", ref, org)
 	default:
 		labels := make([]string, len(byProvider))
 		for i, a := range byProvider {

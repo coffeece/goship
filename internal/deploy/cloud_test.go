@@ -49,4 +49,7 @@ func TestResolveCloudAccount(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "goship cloud connect") {
 		t.Fatalf("missing ref should point at connect, got %v", err)
 	}
+	if !strings.Contains(err.Error(), "goship cloud list") || !strings.Contains(err.Error(), "goship_list_cloud_accounts") {
+		t.Fatalf("missing ref should say how to list the accounts, got %v", err)
+	}
 }
