@@ -1,6 +1,7 @@
 package config
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,6 +205,28 @@ func TestEnvironmentsSurviveASaveAndLoad(t *testing.T) {
 	}
 	if got := c.SelectedEnvironment("acme", "clave"); got != "staging" || c.Environments["acme/clave"] != "staging" {
 		t.Errorf("Environments = %v", c.Environments)
+	}
+}
+
+// A removed environment is forgotten wherever it was selected in its own
+// org, and nowhere else.
+func TestForgetEnvironmentDropsOnlyThatOrgsSelections(t *testing.T) {
+	c := &Config{Environments: map[string]string{
+		"acme/clave":    "staging",
+		"acme/mova":     "staging",
+		"acme/web":      "development",
+		"acme-labs/web": "staging",
+		"globex/clave":  "staging",
+	}}
+	if !c.ForgetEnvironment("acme", "staging") {
+		t.Fatal("ForgetEnvironment = false, want true: two selections were dropped")
+	}
+	want := map[string]string{"acme/web": "development", "acme-labs/web": "staging", "globex/clave": "staging"}
+	if !maps.Equal(c.Environments, want) {
+		t.Errorf("Environments = %v, want %v", c.Environments, want)
+	}
+	if c.ForgetEnvironment("acme", "staging") {
+		t.Error("ForgetEnvironment = true with nothing left to drop")
 	}
 }
 

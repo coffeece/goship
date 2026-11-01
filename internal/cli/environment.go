@@ -128,6 +128,13 @@ func newEnvironmentCmd(app *App) *cobra.Command {
 			if err := app.Portal().DeleteEnvironment(cmd.Context(), org, args[0]); err != nil {
 				return err
 			}
+			// A selection of the removed environment would fail every later
+			// command; forgetting it is best effort.
+			if app.Config.ForgetEnvironment(org, args[0]) {
+				if err := app.Config.Save(); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "could not forget the saved environment %s: %v\n", args[0], err)
+				}
+			}
 			return app.Renderer().Message("Environment %s deleted.", args[0])
 		}),
 	}

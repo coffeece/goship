@@ -439,3 +439,56 @@ func TestStaleProjectSelectionIsExplained(t *testing.T) {
 		t.Errorf("a valid project: err = %v", err)
 	}
 }
+
+// A saved or GOSHIP_ENVIRONMENT selection the organization no longer has earns
+// an explanation, not the API's bare 404.
+func TestStaleEnvironmentSelectionIsExplained(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs/acme/environments":
+			w.Write([]byte(twoEnvironments)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"clave"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	explained := func(err error) bool {
+		return err != nil && strings.Contains(err.Error(), `environment "gone" is not one of acme's environments; run goship environments and goship environment use <slug>`)
+	}
+	commands := [][]string{{"apps"}, {"app", "rm", "web", "--yes"}, {"app", "info", "web"}}
+
+	// Saved by `goship environment use`.
+	t.Setenv("GOSHIP_ENVIRONMENT", "")
+	if err := (&config.Config{Environments: map[string]string{"acme/clave": "gone"}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range commands {
+		if _, err := run(t, "", args...); !explained(err) {
+			t.Errorf("saved %v: err = %v", args, err)
+		}
+	}
+
+	// From the process environment.
+	if err := (&config.Config{}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOSHIP_ENVIRONMENT", "gone")
+	for _, args := range commands {
+		if _, err := run(t, "", args...); !explained(err) {
+			t.Errorf("GOSHIP_ENVIRONMENT %v: err = %v", args, err)
+		}
+	}
+
+	// Said on the command line, it is the user's own words and the API's
+	// answer stands.
+	if _, err := run(t, "", "apps", "--environment", "gone"); err == nil || explained(err) {
+		t.Errorf("--environment: err = %v", err)
+	}
+
+	// An environment the organization does have keeps its plain errors.
+	t.Setenv("GOSHIP_ENVIRONMENT", "staging")
+	if _, err := run(t, "", "app", "rm", "web", "--yes"); err == nil || strings.Contains(err.Error(), "is not one of") {
+		t.Errorf("a listed environment: err = %v", err)
+	}
+}
