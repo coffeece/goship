@@ -68,7 +68,7 @@ func (r *registry) clusters() {
 				return nil, err
 			}
 			if in.CloudAccount != "" {
-				acc, err := resolveCloudAccount(ctx, c, org, in.CloudAccount)
+				acc, err := deploy.ResolveCloudAccount(ctx, c, org, in.CloudAccount)
 				if err != nil {
 					return nil, err
 				}

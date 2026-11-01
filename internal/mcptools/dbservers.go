@@ -3,7 +3,6 @@ package mcptools
 import (
 	"context"
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -56,7 +55,7 @@ func (r *registry) dbservers() {
 		})
 	orgTool(r, "goship_create_database_server", "Create a PostgreSQL server (a Cloud SQL instance) in a connected Google Cloud account. The cloud provider bills the instance; GoShip bills nothing for it or the databases on it. Provisioning takes about ten minutes in the background: goship_list_database_servers shows the stage, and databases created on it meanwhile are queued until it is ready. The disk auto-grows up to disk_limit_gb (default 100 GB). One server per cloud account.", write,
 		func(ctx context.Context, c *portal.Client, org string, in CreateDBServerArgs) (*portal.DatabaseServer, error) {
-			acc, err := resolveCloudAccount(ctx, c, org, in.CloudAccount)
+			acc, err := deploy.ResolveCloudAccount(ctx, c, org, in.CloudAccount)
 			if err != nil {
 				return nil, err
 			}
@@ -120,40 +119,6 @@ func (r *registry) dbservers() {
 			}
 			return msgf("Deleting server %s; the Cloud SQL instance is being removed from the customer's project.", s.Name)
 		})
-}
-
-// resolveCloudAccount matches what the caller passed against the
-// organization's cloud accounts: the id, then an exact label, then the
-// provider when exactly one account uses it.
-func resolveCloudAccount(ctx context.Context, c *portal.Client, org, ref string) (*portal.CloudAccount, error) {
-	accounts, err := c.CloudAccounts(ctx, org)
-	if err != nil {
-		return nil, err
-	}
-	for i := range accounts {
-		if accounts[i].ID == ref {
-			return &accounts[i], nil
-		}
-	}
-	for i := range accounts {
-		if accounts[i].Label == ref {
-			return &accounts[i], nil
-		}
-	}
-	var byProvider []*portal.CloudAccount
-	for i := range accounts {
-		if accounts[i].Provider == ref {
-			byProvider = append(byProvider, &accounts[i])
-		}
-	}
-	switch len(byProvider) {
-	case 1:
-		return byProvider[0], nil
-	case 0:
-		return nil, fmt.Errorf("no cloud account %q in %s; goship_list_cloud_accounts shows them", ref, org)
-	default:
-		return nil, fmt.Errorf("more than one %s account in %s; pass the id", ref, org)
-	}
 }
 
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)

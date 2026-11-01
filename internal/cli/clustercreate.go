@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/coffeece/goship/internal/render"
 	"github.com/spf13/cobra"
@@ -76,7 +77,7 @@ func newClusterCreateCmd(app *App) *cobra.Command {
 
 			switch path {
 			case "cloud":
-				account, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, cloudRef)
+				account, err := deploy.ResolveCloudAccount(cmd.Context(), app.Portal(), org, cloudRef)
 				if err != nil {
 					return err
 				}
