@@ -12,9 +12,19 @@ import (
 	"testing"
 )
 
-func streamServer(t *testing.T, handler http.HandlerFunc) *Client {
+// blogPath is the staging environment's blog app: a transposed environment and
+// app in a client method lands on another route, which streamServer refuses.
+const blogPath = "/api/v1/orgs/acme/projects/atlas/environments/staging/apps/blog"
+
+// streamServer serves one operation, which must ask for wantPath.
+func streamServer(t *testing.T, wantPath string, handler http.HandlerFunc) *Client {
 	t.Helper()
-	srv := httptest.NewServer(handler)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != wantPath {
+			t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
+		}
+		handler(w, r)
+	}))
 	t.Cleanup(srv.Close)
 	return New(srv.URL, "gsp_token", WithVersion("1.2.3"))
 }
@@ -22,7 +32,7 @@ func streamServer(t *testing.T, handler http.HandlerFunc) *Client {
 func TestDeployUploadsTheArchiveLastAndCopiesTheOutput(t *testing.T) {
 	var parts []string
 	var archive, version string
-	c := streamServer(t, func(w http.ResponseWriter, r *http.Request) {
+	c := streamServer(t, blogPath+"/deploys", func(w http.ResponseWriter, r *http.Request) {
 		version = r.Header.Get("X-Goship-Version")
 		mr, err := r.MultipartReader()
 		if err != nil {
@@ -59,7 +69,7 @@ func TestDeployUploadsTheArchiveLastAndCopiesTheOutput(t *testing.T) {
 }
 
 func TestStreamReportsAFailedOperation(t *testing.T) {
-	c := streamServer(t, func(w http.ResponseWriter, r *http.Request) {
+	c := streamServer(t, blogPath+"/deploys/rollback", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, `{"type":"output","data":"main.go:3: undefined: x\n"}`)
 		fmt.Fprintln(w, `{"type":"result","ok":false,"error":"deploy failed: exit status 1"}`)
 	})
@@ -77,7 +87,7 @@ func TestStreamReportsAFailedOperation(t *testing.T) {
 
 // A 200 says nothing about the outcome; only the result line does.
 func TestStreamWithoutAResultIsAFailure(t *testing.T) {
-	c := streamServer(t, func(w http.ResponseWriter, r *http.Request) {
+	c := streamServer(t, blogPath+"/run", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, `{"type":"output","data":"---> building\n"}`)
 	})
 
@@ -88,7 +98,7 @@ func TestStreamWithoutAResultIsAFailure(t *testing.T) {
 }
 
 func TestStreamRefusedUpFrontIsAnAPIError(t *testing.T) {
-	c := streamServer(t, func(w http.ResponseWriter, r *http.Request) {
+	c := streamServer(t, blogPath+"/deploys", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		fmt.Fprintln(w, `{"error":"data conflict: app \"blog\" is paused — wake it up before deploying"}`)
 	})
@@ -102,7 +112,7 @@ func TestStreamRefusedUpFrontIsAnAPIError(t *testing.T) {
 
 func TestLogsPassesTheOptionsAndEveryLine(t *testing.T) {
 	var query string
-	c := streamServer(t, func(w http.ResponseWriter, r *http.Request) {
+	c := streamServer(t, blogPath+"/logs", func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.RawQuery
 		fmt.Fprintln(w, `{"type":"log","date":"2026-09-19T10:00:00Z","source":"web","unit":"u1","message":"one"}`)
 		fmt.Fprintln(w, `{"type":"log","message":"two"}`)
@@ -128,7 +138,7 @@ func TestLogsPassesTheOptionsAndEveryLine(t *testing.T) {
 }
 
 func TestReleaseEventsCarryTheirStep(t *testing.T) {
-	c := streamServer(t, func(w http.ResponseWriter, r *http.Request) {
+	c := streamServer(t, blogPath+"/deploys/rollback", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, `{"type":"step","step":"build","state":"start"}`)
 		fmt.Fprintln(w, `{"type":"output","step":"build","data":"#1 load\n"}`)
 		fmt.Fprintln(w, `{"type":"ping"}`)
@@ -163,5 +173,23 @@ func printOutput(w io.Writer) func(ReleaseEvent) error {
 		}
 		_, err := io.WriteString(w, ev.Data)
 		return err
+	}
+}
+
+func TestShellDialsTheAppsPath(t *testing.T) {
+	var gotPath, gotQuery string
+	c := streamServer(t, blogPath+"/shell", func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintln(w, `{"error":"app is paused"}`)
+	})
+
+	_, err := c.Shell(context.Background(), "acme", "atlas", "staging", "blog", ShellOptions{Unit: "u1"})
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict {
+		t.Fatalf("error = %v, want the API's refusal", err)
+	}
+	if gotPath == "" || gotQuery != "unit=u1" {
+		t.Errorf("path = %q, query = %q", gotPath, gotQuery)
 	}
 }

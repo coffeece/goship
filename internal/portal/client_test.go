@@ -110,7 +110,7 @@ func TestAvailablePlansKeepsTheServersOrder(t *testing.T) {
 		var gotQuery string
 		c := serve(t, func(w http.ResponseWriter, r *http.Request) {
 			gotQuery = r.URL.RawQuery
-			w.Write([]byte(`[{"slug":"b","kind":"app","is_active":true,"default":true},{"slug":"x","kind":"app","is_active":false},{"slug":"a","kind":"app","is_active":true,"sort_order":1}]`)) //nolint:errcheck
+			w.Write([]byte(`[{"slug":"b","kind":"app","is_active":true,"default":true,"sort_order":5},{"slug":"x","kind":"app","is_active":false},{"slug":"a","kind":"app","is_active":true,"sort_order":1}]`)) //nolint:errcheck
 		})
 
 		plans, err := c.AvailablePlans(context.Background(), "acme", "atlas", "staging", tc.kind)
@@ -121,8 +121,8 @@ func TestAvailablePlansKeepsTheServersOrder(t *testing.T) {
 			t.Errorf("kind %q: query = %q, want %q", tc.kind, gotQuery, tc.wantQuery)
 		}
 		// The environment's cluster decides the order (first = default
-		// on a customer cluster); sort_order is not applied, and an
-		// inactive plan is dropped.
+		// on a customer cluster): b stays ahead of a although its
+		// sort_order is higher. An inactive plan is dropped.
 		if len(plans) != 2 || plans[0].Slug != "b" || !plans[0].Default || plans[1].Slug != "a" {
 			t.Errorf("kind %q: got %+v", tc.kind, plans)
 		}
@@ -133,14 +133,14 @@ func TestAvailablePlansKeepsTheServersOrder(t *testing.T) {
 // nothing fails, so the shapes are pinned against a sample of the wire format.
 func TestEnvironmentAndClusterShapes(t *testing.T) {
 	var envs []ProjectEnvironment
-	err := json.Unmarshal([]byte(`[{"environment":{"id":"e1","name":"Staging","slug":"staging","cluster_id":"c1","cluster_name":"vulcan","db_server_id":"s1","is_default":false,"position":2,"created_at":"2026-10-31T10:00:00Z","updated_at":"2026-10-31T11:00:00Z"},"cluster":{"id":"c1","name":"vulcan","shared":false},"pinned":true,"apps":3,"databases":1,"volumes":2}]`), &envs)
+	err := json.Unmarshal([]byte(`[{"environment":{"id":"e1","name":"Staging","slug":"staging","cluster_id":"goship","cluster_name":"GoShip","db_server_id":"s1","is_default":true,"position":2,"created_at":"2026-10-31T10:00:00Z","updated_at":"2026-10-31T11:00:00Z"},"cluster":{"id":"goship","name":"GoShip","shared":true},"pinned":true,"apps":3,"databases":1,"volumes":2}]`), &envs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := ProjectEnvironment{
-		Environment: Environment{ID: "e1", Name: "Staging", Slug: "staging", ClusterID: "c1", ClusterName: "vulcan", DBServerID: "s1", Position: 2,
+		Environment: Environment{ID: "e1", Name: "Staging", Slug: "staging", ClusterID: "goship", ClusterName: "GoShip", DBServerID: "s1", IsDefault: true, Position: 2,
 			CreatedAt: time.Date(2026, 10, 31, 10, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 10, 31, 11, 0, 0, 0, time.UTC)},
-		Cluster: ClusterRef{ID: "c1", Name: "vulcan"}, Pinned: true, Apps: 3, Databases: 1, Volumes: 2,
+		Cluster: ClusterRef{ID: "goship", Name: "GoShip", Shared: true}, Pinned: true, Apps: 3, Databases: 1, Volumes: 2,
 	}
 	if len(envs) != 1 || !reflect.DeepEqual(envs[0], want) {
 		t.Errorf("got %+v, want %+v", envs, want)
@@ -156,19 +156,27 @@ func TestEnvironmentAndClusterShapes(t *testing.T) {
 	}
 
 	var app App
-	if err := json.Unmarshal([]byte(`{"name":"api","environment":"staging","cluster":{"id":"c1","name":"vulcan","shared":false}}`), &app); err != nil {
+	if err := json.Unmarshal([]byte(`{"name":"api","environment":"staging","cluster":{"id":"c1","name":"vulcan","shared":true}}`), &app); err != nil {
 		t.Fatal(err)
 	}
-	if app.Environment != "staging" || app.Cluster != (ClusterRef{ID: "c1", Name: "vulcan"}) {
+	if app.Environment != "staging" || app.Cluster != (ClusterRef{ID: "c1", Name: "vulcan", Shared: true}) {
 		t.Errorf("got %+v", app)
 	}
 
 	var vol Volume
-	if err := json.Unmarshal([]byte(`{"name":"data","cluster":{"id":"c1","name":"vulcan","shared":false}}`), &vol); err != nil {
+	if err := json.Unmarshal([]byte(`{"name":"data","cluster":{"id":"c1","name":"vulcan","shared":true}}`), &vol); err != nil {
 		t.Fatal(err)
 	}
-	if vol.Cluster.ID != "c1" {
+	if vol.Cluster != (ClusterRef{ID: "c1", Name: "vulcan", Shared: true}) {
 		t.Errorf("got %+v", vol)
+	}
+
+	var me Me
+	if err := json.Unmarshal([]byte(`{"email":"a@b.c","environments":[{"org":"acme","slug":"prod","name":"Production","is_default":true}]}`), &me); err != nil {
+		t.Fatal(err)
+	}
+	if want := []MeEnvironment{{Org: "acme", Slug: "prod", Name: "Production", IsDefault: true}}; !reflect.DeepEqual(me.Environments, want) {
+		t.Errorf("got %+v, want %+v", me.Environments, want)
 	}
 
 	var orgs []Org
