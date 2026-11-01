@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coffeece/goship/internal/config"
 	"github.com/coffeece/goship/internal/portal"
 	"github.com/spf13/cobra"
 )
@@ -330,28 +329,6 @@ func TestCloudDisconnectConfirms(t *testing.T) {
 	}
 	if called {
 		t.Error("account was deleted without consent")
-	}
-}
-
-func TestResolveCloudAccountAmbiguousAndMissing(t *testing.T) {
-	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[{"id":"acc-1","provider":"digitalocean","label":"prod-do"},` +
-			`{"id":"acc-2","provider":"digitalocean","label":"staging-do"}]`)) //nolint:errcheck
-	})
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := portal.New(cfg.Endpoint(), "")
-
-	_, err = resolveCloudAccount(context.Background(), client, "acme", "digitalocean")
-	if err == nil || !strings.Contains(err.Error(), "prod-do") || !strings.Contains(err.Error(), "staging-do") {
-		t.Fatalf("ambiguous ref should list both labels, got %v", err)
-	}
-
-	_, err = resolveCloudAccount(context.Background(), client, "acme", "hetzner")
-	if err == nil || !strings.Contains(err.Error(), "goship cloud connect") {
-		t.Fatalf("missing ref should point at connect, got %v", err)
 	}
 }
 

@@ -291,7 +291,7 @@ func newDBServerCmd(app *App) *cobra.Command {
 			}
 			diskCap = &gb
 		}
-		acc, err := resolveCloudAccount(cmd.Context(), app.Portal(), org, account)
+		acc, err := deploy.ResolveCloudAccount(cmd.Context(), app.Portal(), org, account)
 		if err != nil {
 			return err
 		}
