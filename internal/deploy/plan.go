@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/coffeece/goship/internal/portal"
@@ -20,18 +21,21 @@ func Price(p portal.Plan) string {
 	}
 }
 
-// ChoosePlan picks the plan for an app being created on the shared cluster. A
-// free plan, where the organization has one, is the only thing safe to select
-// on the user's behalf; otherwise the choice costs money and is theirs.
+// ChoosePlan picks the plan for an app being created in t's environment when
+// none was named: the plan the environment's cluster marks as its default,
+// else the first unbilled one in the order the API lists them. Only a plan
+// nothing is billed for is safe to select on the user's behalf; otherwise
+// the choice costs money and is theirs.
 func ChoosePlan(ctx context.Context, client *portal.Client, t Target) (portal.Plan, error) {
-	plans, err := client.AvailablePlans(ctx, t.Org, t.Project, "app", "")
+	plans, err := client.AvailablePlans(ctx, t.Org, t.Project, t.Environment, "app")
 	if err != nil {
 		return portal.Plan{}, err
 	}
-	for _, p := range plans {
-		if !p.Billed {
-			return p, nil
-		}
+	if i := slices.IndexFunc(plans, func(p portal.Plan) bool { return p.Default && !p.Billed }); i >= 0 {
+		return plans[i], nil
+	}
+	if i := slices.IndexFunc(plans, func(p portal.Plan) bool { return !p.Billed }); i >= 0 {
+		return plans[i], nil
 	}
 	return portal.Plan{}, fmt.Errorf("a plan is required to create an app:\n%s\nPass --plan <slug>, or set plan: in goship.yml", PlanTable(plans))
 }

@@ -18,12 +18,12 @@ import (
 // stepTitles are the steps a deploy or rollback shows, in the reader's words.
 // build, release and route come from the API; the others are the CLI's own.
 var stepTitles = map[string]string{
-	"create":      "Create",
-	"environment": "Environment",
-	"upload":      "Upload",
-	"build":       "Build",
-	"release":     "Release",
-	"route":       "Route",
+	"create":    "Create",
+	"variables": "Variables",
+	"upload":    "Upload",
+	"build":     "Build",
+	"release":   "Release",
+	"route":     "Route",
 
 	// A node's provisioning stages, reported by `goship node create`'s follow.
 	"creating_machine": "Create machine",

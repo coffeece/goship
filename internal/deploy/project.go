@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -25,12 +26,13 @@ type Project struct {
 	Org string `yaml:"org"`
 	// ProjectSlug pins the project inside the organization.
 	ProjectSlug string `yaml:"project"`
+	// Environment pins the environment inside the project; the
+	// organization's default when unset. Env, not this, is the variables.
+	Environment string `yaml:"environment"`
 	Platform    string `yaml:"platform"`
 	Plan        string `yaml:"plan"`
-	// Node places the app on one of the project's own machines, or on
-	// GoShip's servers with "goship". Unset, the project's default
-	// placement decides. A node-placed app is never billed, so it needs no
-	// plan.
+	// Node is no longer used: the environment decides the cluster an app
+	// runs on. It is read only to say so, and goes in a later release.
 	Node string            `yaml:"node"`
 	Env  map[string]string `yaml:"env"`
 	// Dockerfile names a container file to build from instead of letting a
@@ -54,7 +56,23 @@ func LoadProject(dir string) (*Project, string, error) {
 		if err := yaml.Unmarshal(data, p); err != nil {
 			return nil, "", fmt.Errorf("parsing %s: %w", path, err)
 		}
+		if p.Node != "" {
+			warnOnce(path, fmt.Sprintf("%s: \"node\" is no longer used; pick an environment instead", name))
+		}
 		return p, name, nil
 	}
 	return &Project{}, "", nil
+}
+
+// warned holds the files already warned about: a command reads its project
+// file more than once, and says so once.
+var warned sync.Map
+
+func warnOnce(path, msg string) {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	if _, seen := warned.LoadOrStore(path, true); !seen {
+		fmt.Fprintln(os.Stderr, msg)
+	}
 }

@@ -262,7 +262,7 @@ func TestDeployStopsWhenTheAppLivesInAnotherOrg(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"acme"},{"id":"2","slug":"other"}]`)) //nolint:errcheck
 		case strings.HasSuffix(r.URL.Path, "/projects"):
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/other/projects/default/apps/widget":
+		case r.URL.Path == "/api/v1/orgs/other/projects/default/environments/production/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
 			t.Error("a duplicate app was created in the wrong org")
@@ -335,7 +335,7 @@ func TestDeployFindsTheAppWhenThePinnedOrgIsForbidden(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"mine"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/mine/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case r.URL.Path == "/api/v1/orgs/mine/projects/default/apps/widget":
+		case r.URL.Path == "/api/v1/orgs/mine/projects/default/environments/production/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		case r.Method == http.MethodPost:
 			t.Error("an app was created despite one existing in a reachable org")
@@ -398,7 +398,7 @@ func TestDeployPicksTheOrgThatOwnsTheApp(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/alpha/projects", "/api/v1/orgs/beta/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/beta/projects/default/apps/widget":
+		case "/api/v1/orgs/beta/projects/default/environments/production/apps/widget":
 			deployedOrg = "beta"
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
@@ -431,7 +431,7 @@ func TestDeployAsksWhenTheNameIsAmbiguous(t *testing.T) {
 			w.Write([]byte(`[{"id":"1","slug":"alpha"},{"id":"2","slug":"beta"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/alpha/projects", "/api/v1/orgs/beta/projects":
 			w.Write([]byte(`[{"slug":"default"}]`)) //nolint:errcheck
-		case "/api/v1/orgs/alpha/projects/default/apps/widget", "/api/v1/orgs/beta/projects/default/apps/widget":
+		case "/api/v1/orgs/alpha/projects/default/environments/production/apps/widget", "/api/v1/orgs/beta/projects/default/environments/production/apps/widget":
 			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -590,20 +590,20 @@ func TestDeployHonoursTheDockerfileFromConfig(t *testing.T) {
 	}
 }
 
-// On the customer's own hardware there is nothing to bill, so the API applies
-// the free plan itself when none is named. Offering the paid catalogue here
-// would be asking someone to pay for a machine they already own.
-func TestDeployOnANodeDoesNotAskForAPlan(t *testing.T) {
-	var created map[string]any
+// The environment flag names where the app lives and is deployed, and the
+// output says it before anything happens.
+func TestDeployUsesTheEnvironmentFlag(t *testing.T) {
+	var touched []string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/v1/orgs/acme/projects/atlas/nodes":
-			w.Write([]byte(`[{"id":"n-1","name":"do-server1"}]`)) //nolint:errcheck
-		case strings.HasSuffix(r.URL.Path, "/available-plans"):
-			t.Error("the paid catalogue must not be consulted for a node-placed app")
-		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created)                      //nolint:errcheck
-			w.Write([]byte(`{"name":"quake","tsuru_name":"acme-quake"}`)) //nolint:errcheck
+		touched = append(touched, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"atlas"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/atlas/environments/staging/apps/quake":
+			w.Write([]byte(`{"name":"quake","platform":"go"}`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/projects/atlas/environments/staging/apps/quake/deploys":
+			io.Copy(io.Discard, r.Body)                           //nolint:errcheck
+			w.Write([]byte(`{"type":"result","ok":true}` + "\n")) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -615,32 +615,28 @@ func TestDeployOnANodeDoesNotAskForAPlan(t *testing.T) {
 	}
 	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
 
-	out, _ := run(t, "", "deploy", dir, "--node", "do-server1")
-
-	if created == nil {
-		t.Fatal("the app was never created")
+	out, _ := run(t, "", "deploy", dir, "--environment", "staging")
+	if !slices.Contains(touched, "POST /api/v1/orgs/acme/projects/atlas/environments/staging/apps/quake/deploys") {
+		t.Errorf("touched %q, want the deploy in staging", touched)
 	}
-	if created["node_id"] != "n-1" {
-		t.Errorf("node_id = %v, want the id resolved from the name", created["node_id"])
-	}
-	if p, ok := created["plan"]; ok && p != "" {
-		t.Errorf("plan = %v, want none — the API applies the free plan on a node", p)
-	}
-	if !strings.Contains(out, "on your node") {
-		t.Errorf("the placement should be visible, got %q", out)
+	if !strings.Contains(out, "Deploying to acme/atlas/staging\n") {
+		t.Errorf("the target should be named, got %q", out)
 	}
 }
 
-// The same placement can live in the project file.
-func TestDeployReadsTheNodeFromConfig(t *testing.T) {
-	var created map[string]any
+// The same choice can live in the project file, under environment: — env:
+// stays the variables.
+func TestDeployReadsTheEnvironmentFromConfig(t *testing.T) {
+	var created string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/v1/orgs/acme/projects/atlas/nodes":
-			w.Write([]byte(`[{"id":"n-1","name":"do-server1"}]`)) //nolint:errcheck
-		case r.Method == http.MethodPost:
-			json.NewDecoder(r.Body).Decode(&created)                      //nolint:errcheck
-			w.Write([]byte(`{"name":"quake","tsuru_name":"acme-quake"}`)) //nolint:errcheck
+		case r.URL.Path == "/api/v1/orgs/acme/projects":
+			w.Write([]byte(`[{"slug":"atlas"}]`)) //nolint:errcheck
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/apps"):
+			created = r.URL.Path
+			w.Write([]byte(`{"name":"quake"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -651,11 +647,11 @@ func TestDeployReadsTheNodeFromConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(dir, "go.mod"), "module quake\n")
-	write(t, filepath.Join(dir, "goship.yml"), "app: quake\nnode: do-server1\n")
+	write(t, filepath.Join(dir, "goship.yml"), "app: quake\nenvironment: staging\nenv:\n  LOG_LEVEL: debug\n")
 
 	run(t, "", "deploy", dir) //nolint:errcheck
-	if created["node_id"] != "n-1" {
-		t.Errorf("node_id = %v, want the id resolved from the config's name", created["node_id"])
+	if created != "/api/v1/orgs/acme/projects/atlas/environments/staging/apps" {
+		t.Errorf("created at %q, want staging", created)
 	}
 }
 
@@ -726,7 +722,7 @@ func TestDeployUploadsTheProjectUnderItsDisplayName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deployPath != "/api/v1/orgs/acme/projects/atlas/apps/quake/deploys" {
+	if deployPath != "/api/v1/orgs/acme/projects/atlas/environments/production/apps/quake/deploys" {
 		t.Errorf("deploy path = %q, want the display name", deployPath)
 	}
 	if message != "first" {
@@ -983,7 +979,7 @@ func TestDeployIgnoresTheFileProjectForAnotherOrg(t *testing.T) {
 
 	touched = nil
 	run(t, "", "deploy", dir) //nolint:errcheck
-	if !slices.Contains(touched, "GET /api/v1/orgs/initech/projects/atlas/apps/widget") {
+	if !slices.Contains(touched, "GET /api/v1/orgs/initech/projects/atlas/environments/production/apps/widget") {
 		t.Errorf("without --org the file's org and project apply: %q", touched)
 	}
 }
@@ -1013,7 +1009,7 @@ func TestDeployWithAFileProjectAndNoOrgNeverUsesAnotherProject(t *testing.T) {
 	touched = nil
 	twoOrgs(t, &touched, "acme/atlas", "globex/comet")
 	run(t, "", "deploy", dir) //nolint:errcheck
-	if !slices.Contains(touched, "POST /api/v1/orgs/globex/projects/comet/apps/web/deploys") {
+	if !slices.Contains(touched, "POST /api/v1/orgs/globex/projects/comet/environments/production/apps/web/deploys") {
 		t.Errorf("touched %q, want the deploy in globex/comet", touched)
 	}
 	for _, p := range touched {
