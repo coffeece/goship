@@ -110,13 +110,19 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 				if err != nil {
 					return err
 				}
-				for _, t := range places {
+				for _, p := range places {
+					t := p.Target
 					items, err := fetch(client, ctx, t.Org, t.Project, t.Environment)
-					if portal.IsForbidden(err) {
+					switch {
+					case portal.IsForbidden(err):
 						fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s: your role there cannot see this.\n", t)
 						continue
-					}
-					if err != nil {
+					case p.chosen && portal.IsNotFound(err):
+						// A chosen environment need not exist in every
+						// organization an --all listing spans.
+						fmt.Fprintf(cmd.ErrOrStderr(), "Skipping %s: no such environment.\n", t)
+						continue
+					case err != nil:
 						return err
 					}
 					sections = append(sections, section[T]{key: t.String(), title: t.String(), items: items})
@@ -129,25 +135,33 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 	return cmd
 }
 
+// place is one stop of an --all listing; chosen says its environment was
+// picked (--environment, goship.yaml, GOSHIP_ENVIRONMENT or `environment
+// use`) rather than listed from the organization, so it may not exist there.
+type place struct {
+	Target
+	chosen bool
+}
+
 // listPlaces are the org/project/environment stops an --all listing makes in
 // org: each project (only, when set, keeps the projects of that slug), in the
 // environment chosen for it or else in every environment of the organization.
 // The organization's environments are asked for once, and not at all when
 // every project has one chosen.
-func (a *App) listPlaces(ctx context.Context, org, only string) ([]Target, error) {
+func (a *App) listPlaces(ctx context.Context, org, only string) ([]place, error) {
 	projects, err := a.Portal().Projects(ctx, org)
 	if err != nil {
 		return nil, err
 	}
 	var envs []string
-	var places []Target
+	var places []place
 	for _, p := range projects {
 		if only != "" && p.Slug != only {
 			continue
 		}
 		t := Target{Org: org, Project: p.Slug}
 		if chosen := a.environmentChoice().Chosen(t); chosen != "" {
-			places = append(places, Target{Org: org, Project: p.Slug, Environment: chosen})
+			places = append(places, place{Target: Target{Org: org, Project: p.Slug, Environment: chosen}, chosen: true})
 			continue
 		}
 		if envs == nil {
@@ -156,7 +170,7 @@ func (a *App) listPlaces(ctx context.Context, org, only string) ([]Target, error
 			}
 		}
 		for _, e := range envs {
-			places = append(places, Target{Org: org, Project: p.Slug, Environment: e})
+			places = append(places, place{Target: Target{Org: org, Project: p.Slug, Environment: e}})
 		}
 	}
 	return places, nil

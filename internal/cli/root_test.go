@@ -389,6 +389,25 @@ func TestTargetForAppKeepsTheProjectWhenNoOrgResolves(t *testing.T) {
 	}
 }
 
+// An environment that was asked for is part of what was not found.
+func TestTargetForAppNamesTheEnvironmentItSearchedIn(t *testing.T) {
+	var touched []string
+	twoOrgs(t, &touched, "acme/clave")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--org", "acme"}, `app "web" not found in environment qa of any project of acme that you can reach`},
+		{[]string{"--project", "mova"}, `app "web" not found in environment qa of any project named "mova" that you can reach`},
+		{nil, `app "web" not found in environment qa of any of your projects`},
+	} {
+		args := append([]string{"app", "info", "web", "--environment", "qa"}, tc.args...)
+		if _, err := run(t, "", args...); err == nil || err.Error() != tc.want {
+			t.Errorf("%v: err = %v, want %q", tc.args, err, tc.want)
+		}
+	}
+}
+
 func TestGOSHIPProjectNarrowsTheAppSearchToo(t *testing.T) {
 	var touched []string
 	twoOrgs(t, &touched, "acme/clave")
