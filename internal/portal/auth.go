@@ -19,6 +19,17 @@ type Me struct {
 	Provider      string   `json:"provider"`
 	EmailVerified bool     `json:"email_verified"`
 	IsAdmin       bool     `json:"is_admin"`
+	// Environments are the environments of every organization the user
+	// belongs to.
+	Environments []MeEnvironment `json:"environments"`
+}
+
+// MeEnvironment is one environment of the organization with slug Org.
+type MeEnvironment struct {
+	Org       string `json:"org"`
+	Slug      string `json:"slug"`
+	Name      string `json:"name"`
+	IsDefault bool   `json:"is_default"`
 }
 
 // Login exchanges credentials for a bearer token the API accepts.
