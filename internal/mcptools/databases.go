@@ -27,7 +27,7 @@ type CreateDBArgs struct {
 	Name        string `json:"name" jsonschema:"database name"`
 	Plan        string `json:"plan,omitempty" jsonschema:"database plan slug; required on GoShip, ignored on the customer's own server"`
 	Description string `json:"description,omitempty"`
-	Server      string `json:"server,omitempty" jsonschema:"place it on one of the customer's own database servers, by name or id (goship_list_database_servers); default: GoShip's managed server"`
+	Server      string `json:"server,omitempty" jsonschema:"place it on one of the customer's own database servers, by name or id (goship_list_database_servers), or pass goship for GoShip's managed PostgreSQL; default: the environment's database server"`
 	SizeLimitMB *int   `json:"size_limit_mb,omitempty" jsonschema:"size limit in MB (minimum 10), only for a database on the customer's own server; default: none"`
 }
 
@@ -90,12 +90,13 @@ func (r *registry) databases() {
 			}
 			return msgf("Extension %s disabled on %s.", in.Extension, in.Database)
 		})
-	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server a plan is required and billed. On one of the customer's own database servers (server) there is no plan and GoShip bills nothing: the server's disk and connections are the limits, and an optional size_limit_mb caps this database. A server still provisioning queues the database until it is ready (status pending, then ready).", write,
+	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server (server goship, or no server when the environment uses it) a plan is required and billed. On one of the customer's own database servers (server) there is no plan and GoShip bills nothing: the server's disk and connections are the limits, and an optional size_limit_mb caps this database. A server still provisioning queues the database until it is ready (status pending, then ready).", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (Message, error) {
-			if in.Server == "" && in.Plan == "" {
+			onGoShip := in.Server == "" || in.Server == deploy.GoShipDatabaseServer
+			if onGoShip && in.Plan == "" {
 				return Message{}, errors.New("plan is required unless the database goes on the customer's own server (server)")
 			}
-			if in.Server == "" && in.SizeLimitMB != nil {
+			if onGoShip && in.SizeLimitMB != nil {
 				return Message{}, errors.New("size_limit_mb is only for databases on the customer's own server (server)")
 			}
 			if in.SizeLimitMB != nil {
@@ -104,7 +105,9 @@ func (r *registry) databases() {
 				}
 			}
 			var serverID string
-			if in.Server != "" {
+			if in.Server == deploy.GoShipDatabaseServer {
+				serverID = in.Server
+			} else if in.Server != "" {
 				s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
 				if err != nil {
 					return Message{}, err
@@ -114,7 +117,7 @@ func (r *registry) databases() {
 			if err := c.CreateDatabase(ctx, t.Org, t.Project, t.Environment, in.Name, in.Plan, in.Description, serverID, in.SizeLimitMB); err != nil {
 				return Message{}, err
 			}
-			if serverID != "" {
+			if !onGoShip {
 				return msgf("Database %s is being created on server %s; it is queued while the server is still provisioning.", in.Name, in.Server)
 			}
 			return msgf("Database %s is being created.", in.Name)
