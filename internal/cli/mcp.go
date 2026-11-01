@@ -90,6 +90,14 @@ func (l localClients) Environment(ctx context.Context, _ *portal.Client, org, pr
 	return env, nil
 }
 
+// DeploySelection hands goship_deploy what the other tools' Environment
+// weighs short of the default (the server's own --environment, the working
+// directory's goship.yml when it speaks for the target, GOSHIP_ENVIRONMENT,
+// the project's saved choice) and the org list the call already read.
+func (l localClients) DeploySelection(*portal.Client) (func(deploy.Target) string, deploy.OrgLister) {
+	return l.app.environmentChoice().Chosen, l.app.orgList
+}
+
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }

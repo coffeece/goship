@@ -43,7 +43,7 @@ func (f *fakeAPI) serve(t *testing.T) string {
 			w.Write([]byte(f.orgs))
 		case "/api/v1/orgs/acme/projects":
 			w.Write([]byte(f.projects))
-		case "/api/v1/orgs/acme/projects/atlas/apps":
+		case "/api/v1/orgs/acme/projects/atlas/environments/production/apps", "/api/v1/orgs/acme/projects/atlas/environments/staging/apps":
 			w.Write([]byte(`[{"name":"api","status":"running"}]`))
 		default:
 			http.NotFound(w, r)
@@ -198,7 +198,7 @@ func TestHostedServerEndToEnd(t *testing.T) {
 	}
 	api.mu.Lock()
 	defer api.mu.Unlock()
-	if !slices.Contains(api.calls, "GET /api/v1/orgs/acme/projects/atlas/apps") {
+	if !slices.Contains(api.calls, "GET /api/v1/orgs/acme/projects/atlas/environments/production/apps") {
 		t.Errorf("API calls %v", api.calls)
 	}
 	for _, a := range api.auth {
@@ -258,6 +258,34 @@ func TestOrgAndProjectNeedChoosingWhenThereAreSeveral(t *testing.T) {
 	}
 	if len(api.calls) != 0 {
 		t.Errorf("overrides called the API: %v", api.calls)
+	}
+}
+
+// With nothing selected on the hosted server, an environment is the one the
+// tool was given, else the organization's default; a default that cannot be
+// read comes back with how to choose one, for the tool to refuse.
+func TestEnvironmentIsTheArgumentElseTheOrgsDefault(t *testing.T) {
+	ctx := withToken(context.Background(), "tok")
+	api := &fakeAPI{orgs: `[{"slug":"acme","default_environment":"staging"}]`}
+	tc := tokenClients{api: api.serve(t)}
+	c, _ := tc.Client(ctx)
+	if env, err := tc.Environment(ctx, c, "acme", "atlas", ""); env != "staging" || err != nil {
+		t.Errorf("default: %q %v", env, err)
+	}
+	api.calls = nil
+	if env, err := tc.Environment(ctx, c, "acme", "atlas", "qa"); env != "qa" || err != nil || len(api.calls) != 0 {
+		t.Errorf("override: %q %v, called %v", env, err, api.calls)
+	}
+
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer down.Close()
+	tc = tokenClients{api: down.URL}
+	c, _ = tc.Client(ctx)
+	env, err := tc.Environment(ctx, c, "acme", "atlas", "")
+	if err == nil || !strings.Contains(err.Error(), "pass environment") || !strings.Contains(err.Error(), "goship_list_environments") {
+		t.Errorf("unreadable default: %q %v", env, err)
 	}
 }
 

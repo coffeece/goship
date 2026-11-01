@@ -13,9 +13,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Clients gives each tool call its API client, organization and project. The
-// local server reads them from the config file; the hosted one from the
-// request.
+// Clients gives each tool call its API client, organization, project and
+// environment. The local server reads them from the config file; the hosted
+// one from the request.
 type Clients interface {
 	Client(ctx context.Context) (*portal.Client, error)
 	// Org resolves the organization for a call: override when the tool was
@@ -29,6 +29,11 @@ type Clients interface {
 	// the tool was given one, else the caller's selection, else the
 	// organization's default. The error says how to choose one.
 	Environment(ctx context.Context, c *portal.Client, org, project, override string) (string, error)
+	// DeploySelection is what goship_deploy weighs after its environment
+	// argument and the deployed directory's goship.yml: the environment the
+	// caller chose for a target ("" when nothing did), then the default of
+	// the organization, from orgs.
+	DeploySelection(c *portal.Client) (environment func(deploy.Target) string, orgs deploy.OrgLister)
 }
 
 // Options selects what the server offers.
@@ -49,6 +54,8 @@ func New(c Clients, version string, o Options) *mcp.Server {
 func Register(s *mcp.Server, c Clients, o Options) {
 	r := &registry{s: s, clients: c}
 	r.identity()
+	r.environments()
+	r.clusters()
 	r.apps()
 	r.access()
 	r.env()
@@ -114,7 +121,9 @@ func tool[In targetCarrier, Out any](r *registry, name, desc string, k kind, fn 
 			if err != nil {
 				return nil, zero, err
 			}
-			env, err := r.clients.Environment(ctx, c, org, project, "")
+			// Never a guess: an environment nobody chose whose default cannot
+			// be read refuses the call, reads included.
+			env, err := r.clients.Environment(ctx, c, org, project, in.environment())
 			if err != nil {
 				return nil, zero, err
 			}
@@ -176,6 +185,7 @@ type orgCarrier interface{ org() string }
 type targetCarrier interface {
 	orgCarrier
 	project() string
+	environment() string
 }
 
 // OrgArg is the organization override every org-scoped tool accepts.
@@ -185,14 +195,16 @@ type OrgArg struct {
 
 func (o OrgArg) org() string { return o.Org }
 
-// ProjectArg is the organization and project overrides every project-scoped
-// tool accepts.
+// ProjectArg is the organization, project and environment overrides every
+// project-scoped tool accepts.
 type ProjectArg struct {
 	OrgArg
-	Project string `json:"project,omitempty" jsonschema:"project slug; defaults to the selected project (goship_list_projects)"`
+	Project     string `json:"project,omitempty" jsonschema:"project slug; defaults to the selected project (goship_list_projects)"`
+	Environment string `json:"environment,omitempty" jsonschema:"environment slug; defaults to the organization's default environment (production)"`
 }
 
-func (p ProjectArg) project() string { return p.Project }
+func (p ProjectArg) project() string     { return p.Project }
+func (p ProjectArg) environment() string { return p.Environment }
 
 // Message is the result of a call that changes something and returns nothing.
 type Message struct {

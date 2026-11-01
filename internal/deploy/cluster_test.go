@@ -47,7 +47,7 @@ func TestResolveCluster(t *testing.T) {
 	}
 
 	_, err = ResolveCluster(ctx, client, "acme", "nope")
-	if err == nil || !strings.Contains(err.Error(), `no cluster "nope"`) || !strings.Contains(err.Error(), "goship clusters") {
+	if err == nil || !strings.Contains(err.Error(), `no cluster "nope"`) || !strings.Contains(err.Error(), "`goship clusters` (goship_list_clusters)") {
 		t.Errorf("an unknown ref should say how to list them, got %v", err)
 	}
 }

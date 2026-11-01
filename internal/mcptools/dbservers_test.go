@@ -8,23 +8,25 @@ import (
 	"testing"
 )
 
-// serversAPI is a project with one server of its own and one shared by the
-// organization.
+// serversAPI is an organization with two database servers and two cloud
+// accounts.
 func serversAPI(t *testing.T, record func(r *http.Request, body string)) string {
 	t.Helper()
 	return api(t, func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		record(r, string(b))
 		switch r.URL.Path {
-		case "/api/v1/orgs/acme/projects/atlas/database-servers":
+		case "/api/v1/orgs/acme/database-servers":
 			if r.Method == http.MethodGet {
-				w.Write([]byte(`[{"id":"srv-own","name":"pg-prod","scope":"project","status":"ready"},{"id":"srv-org","name":"pg-shared","scope":"org","status":"ready"}]`)) //nolint:errcheck
+				w.Write([]byte(`[{"id":"srv-prod","name":"pg-prod","status":"ready"},{"id":"srv-staging","name":"pg-staging","status":"ready"}]`)) //nolint:errcheck
 				return
 			}
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"id":"srv-new","name":"pg-gcp","status":"provisioning"}`)) //nolint:errcheck
-		case "/api/v1/orgs/acme/projects/atlas/cloud-accounts":
-			w.Write([]byte(`[{"id":"acc-org","provider":"gcp","label":"gcp","scope":"org"},{"id":"acc-own","provider":"aws","label":"aws","scope":"project"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-gcp","provider":"gcp","label":"gcp"},{"id":"acc-aws","provider":"aws","label":"aws"}]`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/cloud-accounts/acc-gcp/regions", "/api/v1/orgs/acme/cloud-accounts/acc-gcp/sizes", "/api/v1/orgs/acme/database-server-tiers":
+			w.Write([]byte(`[]`)) //nolint:errcheck
 		default:
 			w.Write([]byte(`{}`)) //nolint:errcheck
 		}
@@ -34,7 +36,7 @@ func serversAPI(t *testing.T, record func(r *http.Request, body string)) string 
 func TestCreateDatabaseOnAServerSendsItsID(t *testing.T) {
 	var posted string
 	url := serversAPI(t, func(r *http.Request, body string) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/atlas/services/postgresql/instances" {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/atlas/environments/production/services/postgresql/instances" {
 			posted = body
 		}
 	})
@@ -44,7 +46,7 @@ func TestCreateDatabaseOnAServerSendsItsID(t *testing.T) {
 		t.Fatal(text(res))
 	}
 	var body map[string]string
-	if err := json.Unmarshal([]byte(posted), &body); err != nil || body["server_id"] != "srv-own" {
+	if err := json.Unmarshal([]byte(posted), &body); err != nil || body["server_id"] != "srv-prod" {
 		t.Errorf("posted %s: %v", posted, err)
 	}
 
@@ -54,7 +56,55 @@ func TestCreateDatabaseOnAServerSendsItsID(t *testing.T) {
 	}
 }
 
-func TestDatabaseServerToolsFollowTheServerScope(t *testing.T) {
+// Cloud accounts and database servers belong to the organization: their
+// tools resolve no project, and every path they call is the organization's.
+func TestCloudToolsAreOrgLevel(t *testing.T) {
+	var paths []string
+	url := serversAPI(t, func(r *http.Request, _ string) {
+		paths = append(paths, r.Method+" "+r.URL.RequestURI())
+	})
+	// No project is selected, so a tool that asked for one would fail.
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme"}, Options{})
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"goship_list_cloud_accounts", nil},
+		{"goship_list_cloud_regions", map[string]any{"account_id": "acc-gcp"}},
+		{"goship_list_cloud_sizes", map[string]any{"account_id": "acc-gcp", "region": "r"}},
+		{"goship_delete_cloud_account", map[string]any{"account_id": "acc-gcp"}},
+		{"goship_list_database_servers", nil},
+		{"goship_list_database_server_tiers", nil},
+		{"goship_create_database_server", map[string]any{"cloud_account": "gcp", "region": "r"}},
+		{"goship_set_database_server_disk_limit", map[string]any{"server": "pg-prod", "disk_limit_gb": 50}},
+		{"goship_retry_database_server", map[string]any{"server": "pg-prod"}},
+		{"goship_delete_database_server", map[string]any{"server": "pg-prod"}},
+	} {
+		paths = nil
+		res := call(t, cs, c.tool, c.args)
+		if res.IsError {
+			t.Errorf("%s: %s", c.tool, text(res))
+			continue
+		}
+		if len(paths) == 0 {
+			t.Errorf("%s called nothing", c.tool)
+		}
+		for _, p := range paths {
+			if !strings.Contains(p, " /api/v1/orgs/acme/") || strings.Contains(p, "/projects/") {
+				t.Errorf("%s called %s", c.tool, p)
+			}
+		}
+	}
+	for name, tl := range toolsByName(t, Options{}) {
+		if strings.Contains(name, "cloud") || strings.Contains(name, "database_server") {
+			if _, ok := properties(t, tl)["project"]; ok {
+				t.Errorf("%s takes a project", name)
+			}
+		}
+	}
+}
+
+func TestDatabaseServerToolsResolveTheName(t *testing.T) {
 	var paths []string
 	url := serversAPI(t, func(r *http.Request, _ string) {
 		if r.Method != http.MethodGet {
@@ -68,8 +118,8 @@ func TestDatabaseServerToolsFollowTheServerScope(t *testing.T) {
 		t.Fatal(text(res))
 	}
 	raw, _ := json.Marshal(res.StructuredContent)
-	if !strings.Contains(string(raw), `"pg-shared"`) {
-		t.Errorf("the listing must include the organization's servers: %s", raw)
+	if !strings.Contains(string(raw), `"pg-staging"`) {
+		t.Errorf("listing %s", raw)
 	}
 
 	for _, c := range []struct {
@@ -77,12 +127,12 @@ func TestDatabaseServerToolsFollowTheServerScope(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{"goship_retry_database_server", map[string]any{"server": "pg-prod"}, "POST /api/v1/orgs/acme/projects/atlas/database-servers/srv-own/retry"},
-		{"goship_retry_database_server", map[string]any{"server": "pg-shared"}, "POST /api/v1/orgs/acme/database-servers/srv-org/retry"},
-		{"goship_delete_database_server", map[string]any{"server": "pg-shared"}, "DELETE /api/v1/orgs/acme/database-servers/srv-org"},
-		{"goship_delete_database_server", map[string]any{"server": "pg-prod", "force": true}, "DELETE /api/v1/orgs/acme/projects/atlas/database-servers/srv-own?force=true"},
+		{"goship_retry_database_server", map[string]any{"server": "pg-prod"}, "POST /api/v1/orgs/acme/database-servers/srv-prod/retry"},
+		{"goship_retry_database_server", map[string]any{"server": "srv-staging"}, "POST /api/v1/orgs/acme/database-servers/srv-staging/retry"},
+		{"goship_delete_database_server", map[string]any{"server": "pg-staging"}, "DELETE /api/v1/orgs/acme/database-servers/srv-staging"},
+		{"goship_delete_database_server", map[string]any{"server": "pg-prod", "force": true}, "DELETE /api/v1/orgs/acme/database-servers/srv-prod?force=true"},
 		{"goship_create_database_server", map[string]any{"cloud_account": "gcp", "region": "southamerica-east1"}, "POST /api/v1/orgs/acme/database-servers"},
-		{"goship_create_database_server", map[string]any{"cloud_account": "acc-own", "region": "us-east-1", "tier": "db-g1-small", "name": "pg-aws"}, "POST /api/v1/orgs/acme/projects/atlas/database-servers"},
+		{"goship_create_database_server", map[string]any{"cloud_account": "acc-aws", "region": "us-east-1", "tier": "db-g1-small", "name": "pg-aws"}, "POST /api/v1/orgs/acme/database-servers"},
 	} {
 		paths = nil
 		res := call(t, cs, c.tool, c.args)
@@ -109,29 +159,8 @@ func TestCreateDatabaseServerDefaultsNameAndTier(t *testing.T) {
 		t.Fatal(text(res))
 	}
 	var body map[string]string
-	if err := json.Unmarshal([]byte(posted), &body); err != nil || body["cloud_account_id"] != "acc-org" || body["name"] != "pg-gcp" || body["tier"] != "db-f1-micro" {
+	if err := json.Unmarshal([]byte(posted), &body); err != nil || body["cloud_account_id"] != "acc-gcp" || body["name"] != "pg-gcp" || body["tier"] != "db-f1-micro" {
 		t.Errorf("posted %s: %v", posted, err)
-	}
-}
-
-func TestMoveCloudAccount(t *testing.T) {
-	var path, posted string
-	url := serversAPI(t, func(r *http.Request, body string) {
-		if r.Method == http.MethodPost {
-			path, posted = r.URL.Path, body
-		}
-	})
-	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
-	res := call(t, cs, "goship_move_cloud_account", map[string]any{"account_id": "acc-own", "to_project": "comet"})
-	if res.IsError {
-		t.Fatal(text(res))
-	}
-	if path != "/api/v1/orgs/acme/cloud-accounts/acc-own/move" || !strings.Contains(posted, `"project":"comet"`) {
-		t.Errorf("called %s with %s", path, posted)
-	}
-	res = call(t, cs, "goship_move_cloud_account", map[string]any{"account_id": "acc-own"})
-	if res.IsError || !strings.Contains(posted, `"project":""`) {
-		t.Errorf("to the organization: isError=%v %q posted %s", res.IsError, text(res), posted)
 	}
 }
 
@@ -143,12 +172,12 @@ func TestDisableDatabaseExtensionDeletesIt(t *testing.T) {
 	})
 	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
 	res := call(t, cs, "goship_disable_database_extension", map[string]any{"database": "db", "extension": "postgis"})
-	if res.IsError || got != "DELETE /api/v1/orgs/acme/projects/atlas/databases/db/extensions/postgis" {
+	if res.IsError || got != "DELETE /api/v1/orgs/acme/projects/atlas/environments/production/databases/db/extensions/postgis" {
 		t.Errorf("isError=%v %q called %s", res.IsError, text(res), got)
 	}
 }
 
-func TestSetDatabaseServerDiskLimitResolvesNameAndScope(t *testing.T) {
+func TestSetDatabaseServerDiskLimitResolvesTheName(t *testing.T) {
 	var calls []string
 	url := serversAPI(t, func(r *http.Request, body string) {
 		if r.Method == http.MethodPut {
@@ -160,8 +189,8 @@ func TestSetDatabaseServerDiskLimitResolvesNameAndScope(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{map[string]any{"server": "pg-prod", "disk_limit_gb": 200}, `/api/v1/orgs/acme/projects/atlas/database-servers/srv-own/disk-limit {"disk_limit_gb":200}`},
-		{map[string]any{"server": "srv-org", "disk_limit_gb": 0}, `/api/v1/orgs/acme/database-servers/srv-org/disk-limit {"disk_limit_gb":0}`},
+		{map[string]any{"server": "pg-prod", "disk_limit_gb": 200}, `/api/v1/orgs/acme/database-servers/srv-prod/disk-limit {"disk_limit_gb":200}`},
+		{map[string]any{"server": "srv-staging", "disk_limit_gb": 0}, `/api/v1/orgs/acme/database-servers/srv-staging/disk-limit {"disk_limit_gb":0}`},
 	} {
 		calls = nil
 		res := call(t, cs, "goship_set_database_server_disk_limit", c.args)

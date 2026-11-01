@@ -29,7 +29,7 @@ func ResolveCluster(ctx context.Context, client *portal.Client, org, ref string)
 	case 1:
 		return named[0].ID, nil
 	case 0:
-		return "", fmt.Errorf("no cluster %q in org %q; `goship clusters` lists them", ref, org)
+		return "", fmt.Errorf("no cluster %q in org %q; `goship clusters` (goship_list_clusters) lists them", ref, org)
 	}
 	ids := make([]string, len(named))
 	for i, c := range named {
