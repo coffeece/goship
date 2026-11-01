@@ -110,6 +110,16 @@ func (c *Config) UseEnvironment(org, project, env string) {
 	c.Environments[environmentKey(org, project)] = env
 }
 
+// ForgetEnvironment drops every project of org that had env selected, for an
+// environment that no longer exists, and says whether it dropped any.
+func (c *Config) ForgetEnvironment(org, env string) bool {
+	n := len(c.Environments)
+	maps.DeleteFunc(c.Environments, func(key, v string) bool {
+		return v == env && strings.HasPrefix(key, environmentKey(org, ""))
+	})
+	return len(c.Environments) < n
+}
+
 func environmentKey(org, project string) string { return org + "/" + project }
 
 // Credential is the token to send: GOSHIP_TOKEN, for CI and anywhere without

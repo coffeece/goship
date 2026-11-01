@@ -81,7 +81,7 @@ func newTargetListCmd[T any](app *App, use, short string, fetch func(*portal.Cli
 				case err == nil:
 					items, err := fetch(client, ctx, t.Org, t.Project, t.Environment)
 					if err != nil {
-						return app.explainProject(ctx, t, err)
+						return app.explainTarget(ctx, t, err)
 					}
 					return app.Renderer().Render(items)
 				case errors.Is(err, errNoProject):
