@@ -9,97 +9,109 @@ import (
 	"testing"
 )
 
-// Every call is a method, a path and maybe a body; a typo in any of them is a
-// 404 in production. Names with a space prove each segment is escaped.
+// Every call is a method, a path (query included) and maybe a body; a typo in
+// any of them is a 404 in production. Names with a space prove each segment is escaped.
 func TestEndpoints(t *testing.T) {
-	node := "n 1"
 	for _, tc := range []struct {
 		name, method, path, body string
 		call                     func(context.Context, *Client) error
 	}{
-		{"apps", "GET", "/api/v1/orgs/my%20org/projects/clave/apps", "", func(ctx context.Context, c *Client) error { _, err := c.Apps(ctx, "my org", "clave"); return err }},
-		{"app", "GET", "/api/v1/orgs/acme/projects/clave/apps/my%20app", "", func(ctx context.Context, c *Client) error {
-			_, err := c.App(ctx, "acme", "clave", "my app")
+		{"apps", "GET", "/api/v1/orgs/my%20org/projects/clave/environments/staging/apps", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Apps(ctx, "my org", "clave", "staging")
 			return err
 		}},
-		{"create app", "POST", "/api/v1/orgs/acme/projects/clave/apps", `{"name":"api","platform":"go","node_id":"n 1"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateApp(ctx, "acme", "clave", CreateAppRequest{Name: "api", Platform: "go", NodeID: &node})
+		{"app", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/my%20app", "", func(ctx context.Context, c *Client) error {
+			_, err := c.App(ctx, "acme", "clave", "staging", "my app")
 			return err
 		}},
-		{"create private app", "POST", "/api/v1/orgs/acme/projects/clave/apps", `{"name":"api","platform":"go","private":true}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateApp(ctx, "acme", "clave", CreateAppRequest{Name: "api", Platform: "go", Private: true})
+		{"create app", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/apps", `{"name":"api","platform":"go"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateApp(ctx, "acme", "clave", "staging", CreateAppRequest{Name: "api", Platform: "go"})
 			return err
 		}},
-		{"visibility", "PUT", "/api/v1/orgs/acme/projects/clave/apps/api/visibility", `{"visibility":"private"}`, func(ctx context.Context, c *Client) error {
-			return c.SetAppVisibility(ctx, "acme", "clave", "api", "private")
-		}},
-		{"access users", "GET", "/api/v1/orgs/acme/projects/clave/apps/api/access/users", "", func(ctx context.Context, c *Client) error {
-			_, err := c.ListAppAccess(ctx, "acme", "clave", "api")
+		{"create private app", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/apps", `{"name":"api","platform":"go","private":true}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateApp(ctx, "acme", "clave", "staging", CreateAppRequest{Name: "api", Platform: "go", Private: true})
 			return err
 		}},
-		{"add access user", "POST", "/api/v1/orgs/acme/projects/clave/apps/api/access/users", `{"username":"ana"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.AddAppAccess(ctx, "acme", "clave", "api", "ana", "")
+		{"visibility", "PUT", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/visibility", `{"visibility":"private"}`, func(ctx context.Context, c *Client) error {
+			return c.SetAppVisibility(ctx, "acme", "clave", "staging", "api", "private")
+		}},
+		{"access users", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/access/users", "", func(ctx context.Context, c *Client) error {
+			_, err := c.ListAppAccess(ctx, "acme", "clave", "staging", "api")
 			return err
 		}},
-		{"reset access user", "PUT", "/api/v1/orgs/acme/projects/clave/apps/api/access/users/a%20na", `{"password":"pw"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ResetAppAccess(ctx, "acme", "clave", "api", "a na", "pw")
+		{"add access user", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/access/users", `{"username":"ana"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.AddAppAccess(ctx, "acme", "clave", "staging", "api", "ana", "")
 			return err
 		}},
-		{"remove access user", "DELETE", "/api/v1/orgs/acme/projects/clave/apps/api/access/users/ana", "", func(ctx context.Context, c *Client) error {
-			return c.RemoveAppAccess(ctx, "acme", "clave", "api", "ana")
-		}},
-		{"access token", "GET", "/api/v1/orgs/acme/projects/clave/apps/api/access/token", "", func(ctx context.Context, c *Client) error {
-			_, err := c.AppAccessToken(ctx, "acme", "clave", "api", false)
+		{"reset access user", "PUT", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/access/users/a%20na", `{"password":"pw"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ResetAppAccess(ctx, "acme", "clave", "staging", "api", "a na", "pw")
 			return err
 		}},
-		{"rotate access token", "POST", "/api/v1/orgs/acme/projects/clave/apps/api/access/token/rotate", "", func(ctx context.Context, c *Client) error {
-			_, err := c.RotateAppAccessToken(ctx, "acme", "clave", "api")
+		{"remove access user", "DELETE", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/access/users/ana", "", func(ctx context.Context, c *Client) error {
+			return c.RemoveAppAccess(ctx, "acme", "clave", "staging", "api", "ana")
+		}},
+		{"access token", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/access/token", "", func(ctx context.Context, c *Client) error {
+			_, err := c.AppAccessToken(ctx, "acme", "clave", "staging", "api", false)
 			return err
 		}},
-		{"delete app", "DELETE", "/api/v1/orgs/acme/projects/clave/apps/api", "", func(ctx context.Context, c *Client) error { return c.DeleteApp(ctx, "acme", "clave", "api") }},
-		{"lifecycle", "POST", "/api/v1/orgs/acme/projects/clave/apps/api/restart", "", func(ctx context.Context, c *Client) error { return c.Lifecycle(ctx, "acme", "clave", "api", "restart") }},
-		{"scale", "PUT", "/api/v1/orgs/acme/projects/clave/apps/api/units", `{"units":3}`, func(ctx context.Context, c *Client) error { return c.ScaleApp(ctx, "acme", "clave", "api", 3) }},
-		{"plan", "PUT", "/api/v1/orgs/acme/projects/clave/apps/api/plan", `{"plan":"app-small"}`, func(ctx context.Context, c *Client) error {
-			return c.SetAppPlan(ctx, "acme", "clave", "api", "app-small")
+		{"rotate access token", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/access/token/rotate", "", func(ctx context.Context, c *Client) error {
+			_, err := c.RotateAppAccessToken(ctx, "acme", "clave", "staging", "api")
+			return err
 		}},
-		{"env", "GET", "/api/v1/orgs/acme/projects/clave/apps/api/env", "", func(ctx context.Context, c *Client) error { _, err := c.Env(ctx, "acme", "clave", "api"); return err }},
-		{"set env", "POST", "/api/v1/orgs/acme/projects/clave/apps/api/env", `{"envs":[{"name":"A","value":"1","public":false}],"no_restart":true}`, func(ctx context.Context, c *Client) error {
-			return c.SetEnv(ctx, "acme", "clave", "api", []EnvVar{{Name: "A", Value: "1"}}, true)
+		{"delete app", "DELETE", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api", "", func(ctx context.Context, c *Client) error { return c.DeleteApp(ctx, "acme", "clave", "staging", "api") }},
+		{"lifecycle", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/restart", "", func(ctx context.Context, c *Client) error {
+			return c.Lifecycle(ctx, "acme", "clave", "staging", "api", "restart")
 		}},
-		{"unset env", "DELETE", "/api/v1/orgs/acme/projects/clave/apps/api/env", `{"envs":["A"],"no_restart":false}`, func(ctx context.Context, c *Client) error {
-			return c.UnsetEnv(ctx, "acme", "clave", "api", []string{"A"}, false)
+		{"scale", "PUT", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/units", `{"units":3}`, func(ctx context.Context, c *Client) error {
+			return c.ScaleApp(ctx, "acme", "clave", "staging", "api", 3)
+		}},
+		{"plan", "PUT", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/plan", `{"plan":"app-small"}`, func(ctx context.Context, c *Client) error {
+			return c.SetAppPlan(ctx, "acme", "clave", "staging", "api", "app-small")
+		}},
+		{"env", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/env", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Env(ctx, "acme", "clave", "staging", "api")
+			return err
+		}},
+		{"set env", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/env", `{"envs":[{"name":"A","value":"1","public":false}],"no_restart":true}`, func(ctx context.Context, c *Client) error {
+			return c.SetEnv(ctx, "acme", "clave", "staging", "api", []EnvVar{{Name: "A", Value: "1"}}, true)
+		}},
+		{"unset env", "DELETE", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/env", `{"envs":["A"],"no_restart":false}`, func(ctx context.Context, c *Client) error {
+			return c.UnsetEnv(ctx, "acme", "clave", "staging", "api", []string{"A"}, false)
 		}},
 
-		{"databases", "GET", "/api/v1/orgs/acme/projects/clave/databases", "", func(ctx context.Context, c *Client) error { _, err := c.Databases(ctx, "acme", "clave"); return err }},
-		{"database", "GET", "/api/v1/orgs/acme/projects/clave/databases/shop", "", func(ctx context.Context, c *Client) error {
-			_, err := c.Database(ctx, "acme", "clave", "shop")
+		{"databases", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/databases", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Databases(ctx, "acme", "clave", "staging")
 			return err
 		}},
-		{"database stats", "GET", "/api/v1/orgs/acme/projects/clave/databases/shop/stats", "", func(ctx context.Context, c *Client) error {
-			_, err := c.DatabaseStats(ctx, "acme", "clave", "shop")
+		{"database", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Database(ctx, "acme", "clave", "staging", "shop")
 			return err
 		}},
-		{"database users", "GET", "/api/v1/orgs/acme/projects/clave/databases/shop/users", "", func(ctx context.Context, c *Client) error {
-			_, err := c.DatabaseUsers(ctx, "acme", "clave", "shop")
+		{"database stats", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop/stats", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseStats(ctx, "acme", "clave", "staging", "shop")
 			return err
 		}},
-		{"create database user", "POST", "/api/v1/orgs/acme/projects/clave/databases/shop/users", `{"access_mode":"ro","username":"reader"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateDatabaseUser(ctx, "acme", "clave", "shop", "reader", "ro")
+		{"database users", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop/users", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseUsers(ctx, "acme", "clave", "staging", "shop")
 			return err
 		}},
-		{"database extensions", "GET", "/api/v1/orgs/acme/projects/clave/databases/shop/extensions", "", func(ctx context.Context, c *Client) error {
-			_, err := c.DatabaseExtensions(ctx, "acme", "clave", "shop")
+		{"create database user", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop/users", `{"access_mode":"ro","username":"reader"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateDatabaseUser(ctx, "acme", "clave", "staging", "shop", "reader", "ro")
 			return err
 		}},
-		{"enable database extension", "POST", "/api/v1/orgs/acme/projects/clave/databases/shop/extensions", `{"name":"postgis"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.EnableDatabaseExtension(ctx, "acme", "clave", "shop", "postgis")
+		{"database extensions", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop/extensions", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseExtensions(ctx, "acme", "clave", "staging", "shop")
 			return err
 		}},
-		{"disable database extension", "DELETE", "/api/v1/orgs/acme/projects/clave/databases/shop/extensions/uuid-ossp", "", func(ctx context.Context, c *Client) error {
-			return c.DisableDatabaseExtension(ctx, "acme", "clave", "shop", "uuid-ossp")
+		{"enable database extension", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop/extensions", `{"name":"postgis"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.EnableDatabaseExtension(ctx, "acme", "clave", "staging", "shop", "postgis")
+			return err
 		}},
-		{"create database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
-			return c.CreateDatabase(ctx, "acme", "clave", "shop", "starter", "", "", nil)
+		{"disable database extension", "DELETE", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop/extensions/uuid-ossp", "", func(ctx context.Context, c *Client) error {
+			return c.DisableDatabaseExtension(ctx, "acme", "clave", "staging", "shop", "uuid-ossp")
+		}},
+		{"create database", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/services/postgresql/instances", `{"description":"","name":"shop","plan":"starter"}`, func(ctx context.Context, c *Client) error {
+			return c.CreateDatabase(ctx, "acme", "clave", "staging", "shop", "starter", "", "", nil)
 		}},
 		{"database servers", "GET", "/api/v1/orgs/acme/projects/clave/database-servers", "", func(ctx context.Context, c *Client) error {
 			_, err := c.DatabaseServers(ctx, "acme", "clave")
@@ -116,29 +128,33 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.DatabaseServerTiers(ctx, "acme", "")
 			return err
 		}},
-		{"create database on server", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","plan":"db-small","server_id":"s1"}`, func(ctx context.Context, c *Client) error {
-			return c.CreateDatabase(ctx, "acme", "clave", "shop", "db-small", "", "s1", nil)
+		{"create database on server", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/services/postgresql/instances", `{"description":"","name":"shop","plan":"db-small","server_id":"s1"}`, func(ctx context.Context, c *Client) error {
+			return c.CreateDatabase(ctx, "acme", "clave", "staging", "shop", "db-small", "", "s1", nil)
 		}},
-		{"create database on server without plan", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances", `{"description":"","name":"shop","server_id":"s1","size_limit_mb":2048}`, func(ctx context.Context, c *Client) error {
+		{"create database on server without plan", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/services/postgresql/instances", `{"description":"","name":"shop","server_id":"s1","size_limit_mb":2048}`, func(ctx context.Context, c *Client) error {
 			mb := 2048
-			return c.CreateDatabase(ctx, "acme", "clave", "shop", "", "", "s1", &mb)
+			return c.CreateDatabase(ctx, "acme", "clave", "staging", "shop", "", "", "s1", &mb)
 		}},
-		{"set database size limit", "PUT", "/api/v1/orgs/acme/projects/clave/databases/shop/size-limit", `{"size_limit_mb":500}`, func(ctx context.Context, c *Client) error {
+		{"set database size limit", "PUT", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop/size-limit", `{"size_limit_mb":500}`, func(ctx context.Context, c *Client) error {
 			mb := 500
-			_, err := c.SetDatabaseSizeLimit(ctx, "acme", "clave", "shop", &mb)
+			_, err := c.SetDatabaseSizeLimit(ctx, "acme", "clave", "staging", "shop", &mb)
 			return err
 		}},
-		{"clear database size limit", "PUT", "/api/v1/orgs/acme/projects/clave/databases/shop/size-limit", `{"size_limit_mb":null}`, func(ctx context.Context, c *Client) error {
-			_, err := c.SetDatabaseSizeLimit(ctx, "acme", "clave", "shop", nil)
+		{"clear database size limit", "PUT", "/api/v1/orgs/acme/projects/clave/environments/staging/databases/shop/size-limit", `{"size_limit_mb":null}`, func(ctx context.Context, c *Client) error {
+			_, err := c.SetDatabaseSizeLimit(ctx, "acme", "clave", "staging", "shop", nil)
 			return err
 		}},
 		{"set database server disk limit", "PUT", "/api/v1/orgs/acme/database-servers/s1/disk-limit", `{"disk_limit_gb":200}`, func(ctx context.Context, c *Client) error {
 			return c.SetDatabaseServerDiskLimit(ctx, "acme", "", "s1", 200)
 		}},
-		{"delete database", "DELETE", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop", "", func(ctx context.Context, c *Client) error { return c.DeleteDatabase(ctx, "acme", "clave", "shop") }},
-		{"bind database", "POST", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop/bind", `{"app_name":"api"}`, func(ctx context.Context, c *Client) error { return c.BindDatabase(ctx, "acme", "clave", "shop", "api") }},
-		{"unbind database", "DELETE", "/api/v1/orgs/acme/projects/clave/services/postgresql/instances/shop/bind/api", "", func(ctx context.Context, c *Client) error {
-			return c.UnbindDatabase(ctx, "acme", "clave", "shop", "api")
+		{"delete database", "DELETE", "/api/v1/orgs/acme/projects/clave/environments/staging/services/postgresql/instances/shop", "", func(ctx context.Context, c *Client) error {
+			return c.DeleteDatabase(ctx, "acme", "clave", "staging", "shop")
+		}},
+		{"bind database", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/services/postgresql/instances/shop/bind", `{"app_name":"api"}`, func(ctx context.Context, c *Client) error {
+			return c.BindDatabase(ctx, "acme", "clave", "staging", "shop", "api")
+		}},
+		{"unbind database", "DELETE", "/api/v1/orgs/acme/projects/clave/environments/staging/services/postgresql/instances/shop/bind/api", "", func(ctx context.Context, c *Client) error {
+			return c.UnbindDatabase(ctx, "acme", "clave", "staging", "shop", "api")
 		}},
 
 		{"org domains", "GET", "/api/v1/orgs/acme/domains", "", func(ctx context.Context, c *Client) error { _, err := c.OrgDomains(ctx, "acme"); return err }},
@@ -148,32 +164,47 @@ func TestEndpoints(t *testing.T) {
 		}},
 		{"verify domain", "POST", "/api/v1/orgs/acme/domains/d1/verify", "", func(ctx context.Context, c *Client) error { return c.VerifyOrgDomain(ctx, "acme", "d1") }},
 		{"delete domain", "DELETE", "/api/v1/orgs/acme/domains/d1", "", func(ctx context.Context, c *Client) error { return c.DeleteOrgDomain(ctx, "acme", "d1") }},
-		{"add app domain", "POST", "/api/v1/orgs/acme/projects/clave/apps/api/domains", `{"domain":"api.acme.dev"}`, func(ctx context.Context, c *Client) error {
-			return c.AddAppDomain(ctx, "acme", "clave", "api", "api.acme.dev")
+		{"add app domain", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/domains", `{"domain":"api.acme.dev"}`, func(ctx context.Context, c *Client) error {
+			return c.AddAppDomain(ctx, "acme", "clave", "staging", "api", "api.acme.dev")
 		}},
-		{"remove app domain", "DELETE", "/api/v1/orgs/acme/projects/clave/apps/api/domains/api.acme.dev", "", func(ctx context.Context, c *Client) error {
-			return c.RemoveAppDomain(ctx, "acme", "clave", "api", "api.acme.dev")
+		{"remove app domain", "DELETE", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/domains/api.acme.dev", "", func(ctx context.Context, c *Client) error {
+			return c.RemoveAppDomain(ctx, "acme", "clave", "staging", "api", "api.acme.dev")
 		}},
 
-		{"nodes", "GET", "/api/v1/orgs/acme/projects/clave/nodes", "", func(ctx context.Context, c *Client) error { _, err := c.Nodes(ctx, "acme", "clave"); return err }},
-		{"node", "GET", "/api/v1/orgs/acme/projects/clave/nodes/n1", "", func(ctx context.Context, c *Client) error { _, err := c.Node(ctx, "acme", "clave", "n1"); return err }},
-		{"create node", "POST", "/api/v1/orgs/acme/projects/clave/nodes", `{"name":"box","type":"vps","host":"10.0.0.1","port":22}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateNode(ctx, "acme", "clave", CreateNodeRequest{Name: "box", Type: "vps", Host: "10.0.0.1", Port: 22})
+		{"environments", "GET", "/api/v1/orgs/acme/environments", "", func(ctx context.Context, c *Client) error { _, err := c.Environments(ctx, "acme"); return err }},
+		{"create environment", "POST", "/api/v1/orgs/acme/environments", `{"name":"Staging","slug":"staging","cluster_id":"c1","db_server_id":"s1"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateEnvironment(ctx, "acme", CreateEnvironmentRequest{Name: "Staging", Slug: "staging", ClusterID: "c1", DBServerID: "s1"})
 			return err
 		}},
-		{"create node from cloud account", "POST", "/api/v1/orgs/acme/projects/clave/nodes", `{"name":"box","cloud_account_id":"acc1","region":"nyc1","size":"s-1vcpu-1gb"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateNode(ctx, "acme", "clave", CreateNodeRequest{Name: "box", CloudAccountID: "acc1", Region: "nyc1", Size: "s-1vcpu-1gb"})
+		{"create environment on the shared cluster", "POST", "/api/v1/orgs/acme/environments", `{"name":"Staging","slug":"staging"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateEnvironment(ctx, "acme", CreateEnvironmentRequest{Name: "Staging", Slug: "staging"})
 			return err
 		}},
-		{"node sizes", "GET", "/api/v1/orgs/acme/projects/clave/nodes/n1/sizes", "", func(ctx context.Context, c *Client) error {
-			_, err := c.NodeSizes(ctx, "acme", "clave", "n1")
+		{"delete environment", "DELETE", "/api/v1/orgs/acme/environments/staging", "", func(ctx context.Context, c *Client) error { return c.DeleteEnvironment(ctx, "acme", "staging") }},
+		{"project environments", "GET", "/api/v1/orgs/acme/projects/clave/environments", "", func(ctx context.Context, c *Client) error {
+			_, err := c.ProjectEnvironments(ctx, "acme", "clave")
 			return err
 		}},
-		{"resize node", "POST", "/api/v1/orgs/acme/projects/clave/nodes/n1/resize", `{"size":"e2-standard-4"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.ResizeNode(ctx, "acme", "clave", "n1", "e2-standard-4")
+
+		{"clusters", "GET", "/api/v1/orgs/acme/clusters", "", func(ctx context.Context, c *Client) error { _, err := c.Clusters(ctx, "acme"); return err }},
+		{"cluster", "GET", "/api/v1/orgs/acme/clusters/c%201", "", func(ctx context.Context, c *Client) error { _, err := c.Cluster(ctx, "acme", "c 1"); return err }},
+		{"create cluster", "POST", "/api/v1/orgs/acme/clusters", `{"name":"box","type":"vps","host":"10.0.0.1","port":22}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateCluster(ctx, "acme", CreateClusterRequest{Name: "box", Type: "vps", Host: "10.0.0.1", Port: 22})
 			return err
 		}},
-		{"delete node", "DELETE", "/api/v1/orgs/acme/projects/clave/nodes/n1", `{"destroy_server":true}`, func(ctx context.Context, c *Client) error { return c.DeleteNode(ctx, "acme", "clave", "n1", true) }},
+		{"create cluster from cloud account", "POST", "/api/v1/orgs/acme/clusters", `{"name":"box","cloud_account_id":"acc1","region":"nyc1","size":"s-1vcpu-1gb"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateCluster(ctx, "acme", CreateClusterRequest{Name: "box", CloudAccountID: "acc1", Region: "nyc1", Size: "s-1vcpu-1gb"})
+			return err
+		}},
+		{"cluster sizes", "GET", "/api/v1/orgs/acme/clusters/c1/sizes", "", func(ctx context.Context, c *Client) error {
+			_, err := c.ClusterSizes(ctx, "acme", "c1")
+			return err
+		}},
+		{"resize cluster", "POST", "/api/v1/orgs/acme/clusters/c1/resize", `{"size":"s-2"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.ResizeCluster(ctx, "acme", "c1", "s-2")
+			return err
+		}},
+		{"delete cluster", "DELETE", "/api/v1/orgs/acme/clusters/c1", `{"destroy_server":true}`, func(ctx context.Context, c *Client) error { return c.DeleteCluster(ctx, "acme", "c1", true) }},
 
 		{"cloud providers", "GET", "/api/v1/cloud/providers", "", func(ctx context.Context, c *Client) error { _, err := c.CloudProviders(ctx); return err }},
 		{"cloud accounts", "GET", "/api/v1/orgs/acme/projects/clave/cloud-accounts", "", func(ctx context.Context, c *Client) error {
@@ -201,7 +232,7 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.CloudRegions(ctx, "acme", "clave", "acc1")
 			return err
 		}},
-		{"cloud sizes", "GET", "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc1/sizes", "", func(ctx context.Context, c *Client) error {
+		{"cloud sizes", "GET", "/api/v1/orgs/acme/projects/clave/cloud-accounts/acc1/sizes?region=nyc1", "", func(ctx context.Context, c *Client) error {
 			_, err := c.CloudSizes(ctx, "acme", "clave", "acc1", "nyc1")
 			return err
 		}},
@@ -226,31 +257,35 @@ func TestEndpoints(t *testing.T) {
 			return err
 		}},
 
-		{"volumes", "GET", "/api/v1/orgs/acme/projects/clave/volumes", "", func(ctx context.Context, c *Client) error { _, err := c.Volumes(ctx, "acme", "clave"); return err }},
-		{"volume", "GET", "/api/v1/orgs/acme/projects/clave/volumes/data", "", func(ctx context.Context, c *Client) error {
-			_, err := c.Volume(ctx, "acme", "clave", "data")
+		{"volumes", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/volumes", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Volumes(ctx, "acme", "clave", "staging")
 			return err
 		}},
-		{"create volume", "POST", "/api/v1/orgs/acme/projects/clave/volumes", `{"capacity_gib":5,"name":"data","node_id":"n1","plan":"byon-local"}`, func(ctx context.Context, c *Client) error {
-			_, err := c.CreateVolume(ctx, "acme", "clave", "data", "n1", "byon-local", 5)
+		{"volume", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/volumes/data", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Volume(ctx, "acme", "clave", "staging", "data")
 			return err
 		}},
-		{"bind volume", "POST", "/api/v1/orgs/acme/projects/clave/volumes/data/bind", `{"app":"api","mount_point":"/data","read_only":true}`, func(ctx context.Context, c *Client) error {
-			return c.BindVolume(ctx, "acme", "clave", "data", "api", "/data", true)
+		{"create volume", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/volumes", `{"capacity_gib":5,"name":"data","plan":"byon-local"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateVolume(ctx, "acme", "clave", "staging", "data", "byon-local", 5)
+			return err
 		}},
-		{"unbind volume", "POST", "/api/v1/orgs/acme/projects/clave/volumes/data/unbind", `{"app":"api","mount_point":"/data"}`, func(ctx context.Context, c *Client) error {
-			return c.UnbindVolume(ctx, "acme", "clave", "data", "api", "/data")
+		{"bind volume", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/volumes/data/bind", `{"app":"api","mount_point":"/data","read_only":true}`, func(ctx context.Context, c *Client) error {
+			return c.BindVolume(ctx, "acme", "clave", "staging", "data", "api", "/data", true)
 		}},
-		{"delete volume", "DELETE", "/api/v1/orgs/acme/projects/clave/volumes/data", "", func(ctx context.Context, c *Client) error { return c.DeleteVolume(ctx, "acme", "clave", "data") }},
+		{"unbind volume", "POST", "/api/v1/orgs/acme/projects/clave/environments/staging/volumes/data/unbind", `{"app":"api","mount_point":"/data"}`, func(ctx context.Context, c *Client) error {
+			return c.UnbindVolume(ctx, "acme", "clave", "staging", "data", "api", "/data")
+		}},
+		{"delete volume", "DELETE", "/api/v1/orgs/acme/projects/clave/environments/staging/volumes/data", "", func(ctx context.Context, c *Client) error {
+			return c.DeleteVolume(ctx, "acme", "clave", "staging", "data")
+		}},
 
 		{"projects", "GET", "/api/v1/orgs/acme/projects", "", func(ctx context.Context, c *Client) error { _, err := c.Projects(ctx, "acme"); return err }},
 		{"create project", "POST", "/api/v1/orgs/acme/projects", `{"name":"Clave","slug":"clave"}`, func(ctx context.Context, c *Client) error {
 			_, err := c.CreateProject(ctx, "acme", "Clave", "clave")
 			return err
 		}},
-		{"placement", "GET", "/api/v1/orgs/acme/projects/clave/placement", "", func(ctx context.Context, c *Client) error { _, err := c.Placement(ctx, "acme", "clave"); return err }},
-		{"available plans", "GET", "/api/v1/orgs/acme/projects/clave/available-plans", "", func(ctx context.Context, c *Client) error {
-			_, err := c.AvailablePlans(ctx, "acme", "clave", "app", "")
+		{"available plans", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/available-plans?kind=app", "", func(ctx context.Context, c *Client) error {
+			_, err := c.AvailablePlans(ctx, "acme", "clave", "staging", "app")
 			return err
 		}},
 		{"cloud accounts without a project", "GET", "/api/v1/orgs/acme/cloud-accounts", "", func(ctx context.Context, c *Client) error { _, err := c.CloudAccounts(ctx, "acme", ""); return err }},
@@ -263,15 +298,15 @@ func TestEndpoints(t *testing.T) {
 		{"create api token", "POST", "/api/v1/auth/tokens", `{"expires_in_days":90,"name":"ci"}`, func(ctx context.Context, c *Client) error { _, err := c.CreateAPIToken(ctx, "ci", 90); return err }},
 		{"revoke api token", "DELETE", "/api/v1/auth/tokens/t1", "", func(ctx context.Context, c *Client) error { return c.RevokeAPIToken(ctx, "t1") }},
 		{"me", "GET", "/api/v1/auth/me", "", func(ctx context.Context, c *Client) error { _, err := c.Me(ctx); return err }},
-		{"deploys", "GET", "/api/v1/orgs/acme/projects/clave/apps/api/deploys", "", func(ctx context.Context, c *Client) error {
-			_, err := c.Deploys(ctx, "acme", "clave", "api", 0)
+		{"deploys", "GET", "/api/v1/orgs/acme/projects/clave/environments/staging/apps/api/deploys", "", func(ctx context.Context, c *Client) error {
+			_, err := c.Deploys(ctx, "acme", "clave", "staging", "api", 0)
 			return err
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := serve(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != tc.method || r.URL.EscapedPath() != tc.path {
-					t.Errorf("got %s %s, want %s %s", r.Method, r.URL.EscapedPath(), tc.method, tc.path)
+				if r.Method != tc.method || r.URL.RequestURI() != tc.path {
+					t.Errorf("got %s %s, want %s %s", r.Method, r.URL.RequestURI(), tc.method, tc.path)
 				}
 				body, _ := io.ReadAll(r.Body)
 				if !sameJSON(t, string(body), tc.body) {
@@ -294,7 +329,7 @@ func TestAppAccessTokenRevealQuery(t *testing.T) {
 			gotQuery = r.URL.RawQuery
 			w.Write([]byte(`{"token":"tok","masked":false}`)) //nolint:errcheck
 		})
-		tok, err := c.AppAccessToken(context.Background(), "acme", "clave", "api", reveal)
+		tok, err := c.AppAccessToken(context.Background(), "acme", "clave", "staging", "api", reveal)
 		if err != nil || tok != "tok" {
 			t.Fatalf("token = %q, err = %v", tok, err)
 		}

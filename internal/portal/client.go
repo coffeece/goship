@@ -181,5 +181,16 @@ func projectPath(org, project, rest string) string {
 	return orgPath(org, "/projects/"+esc(project)+rest)
 }
 
-// appPath is an API path under one of the project's apps.
-func appPath(org, project, app string) string { return projectPath(org, project, "/apps/"+esc(app)) }
+// envPath is an API path under one of the project's environments: the
+// resources a project holds (apps, databases, volumes, plans) live there.
+func envPath(org, project, env, rest string) string {
+	return projectPath(org, project, "/environments/"+esc(env)+rest)
+}
+
+// clustersPath is an API path under the organization's clusters.
+func clustersPath(org, rest string) string { return orgPath(org, "/clusters"+rest) }
+
+// appPath is an API path under one of the environment's apps.
+func appPath(org, project, env, app string) string {
+	return envPath(org, project, env, "/apps/"+esc(app))
+}

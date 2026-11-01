@@ -2,11 +2,14 @@ package portal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func serve(t *testing.T, h http.HandlerFunc) *Client {
@@ -102,23 +105,75 @@ func TestTraceLogsOneLinePerRequest(t *testing.T) {
 	}
 }
 
-func TestAvailablePlansAsksForTheNodesPool(t *testing.T) {
-	var gotQuery string
-	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.Write([]byte(`[{"slug":"b","kind":"app","is_active":true,"default":true},{"slug":"a","kind":"app","is_active":true,"sort_order":1}]`)) //nolint:errcheck
-	})
+func TestAvailablePlansKeepsTheServersOrder(t *testing.T) {
+	for _, tc := range []struct{ kind, wantQuery string }{{"app", "kind=app"}, {"database", "kind=database"}, {"", ""}} {
+		var gotQuery string
+		c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+			gotQuery = r.URL.RawQuery
+			w.Write([]byte(`[{"slug":"b","kind":"app","is_active":true,"default":true},{"slug":"x","kind":"app","is_active":false},{"slug":"a","kind":"app","is_active":true,"sort_order":1}]`)) //nolint:errcheck
+		})
 
-	plans, err := c.AvailablePlans(context.Background(), "acme", "clave", "app", "node 1")
+		plans, err := c.AvailablePlans(context.Background(), "acme", "clave", "staging", tc.kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gotQuery != tc.wantQuery {
+			t.Errorf("kind %q: query = %q, want %q", tc.kind, gotQuery, tc.wantQuery)
+		}
+		// The environment's cluster decides the order (first = default
+		// on a customer cluster); sort_order is not applied, and an
+		// inactive plan is dropped.
+		if len(plans) != 2 || plans[0].Slug != "b" || !plans[0].Default || plans[1].Slug != "a" {
+			t.Errorf("kind %q: got %+v", tc.kind, plans)
+		}
+	}
+}
+
+// The contract's JSON tags: a renamed field here decodes to a zero value and
+// nothing fails, so the shapes are pinned against a sample of the wire format.
+func TestEnvironmentAndClusterShapes(t *testing.T) {
+	var envs []ProjectEnvironment
+	err := json.Unmarshal([]byte(`[{"environment":{"id":"e1","name":"Staging","slug":"staging","cluster_id":"c1","cluster_name":"homolog","db_server_id":"s1","is_default":false,"position":2,"created_at":"2026-10-31T10:00:00Z","updated_at":"2026-10-31T11:00:00Z"},"cluster":{"id":"c1","name":"homolog","shared":false},"pinned":true,"apps":3,"databases":1,"volumes":2}]`), &envs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotQuery != "node=node+1" {
-		t.Errorf("query = %q", gotQuery)
+	want := ProjectEnvironment{
+		Environment: Environment{ID: "e1", Name: "Staging", Slug: "staging", ClusterID: "c1", ClusterName: "homolog", DBServerID: "s1", Position: 2,
+			CreatedAt: time.Date(2026, 10, 31, 10, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 10, 31, 11, 0, 0, 0, time.UTC)},
+		Cluster: ClusterRef{ID: "c1", Name: "homolog"}, Pinned: true, Apps: 3, Databases: 1, Volumes: 2,
 	}
-	// For a node the platform's order is the contract; sort_order is ignored.
-	if plans[0].Slug != "b" || !plans[0].Default {
-		t.Errorf("got %+v", plans)
+	if len(envs) != 1 || !reflect.DeepEqual(envs[0], want) {
+		t.Errorf("got %+v, want %+v", envs, want)
+	}
+
+	// A shared cluster of another organization is only the narrow view.
+	var cl Cluster
+	if err := json.Unmarshal([]byte(`{"id":"goship","name":"GoShip","type":"kubernetes","status":"active","shared":true,"namespaced":true}`), &cl); err != nil {
+		t.Fatal(err)
+	}
+	if cl.ID != "goship" || cl.Name != "GoShip" || !cl.Shared || !cl.Namespaced || cl.Host != "" {
+		t.Errorf("got %+v", cl)
+	}
+
+	var app App
+	if err := json.Unmarshal([]byte(`{"name":"api","environment":"staging","cluster":{"id":"c1","name":"homolog","shared":false}}`), &app); err != nil {
+		t.Fatal(err)
+	}
+	if app.Environment != "staging" || app.Cluster != (ClusterRef{ID: "c1", Name: "homolog"}) {
+		t.Errorf("got %+v", app)
+	}
+
+	var vol Volume
+	if err := json.Unmarshal([]byte(`{"name":"data","cluster":{"id":"c1","name":"homolog","shared":false}}`), &vol); err != nil {
+		t.Fatal(err)
+	}
+	if vol.Cluster.ID != "c1" {
+		t.Errorf("got %+v", vol)
+	}
+
+	var orgs []Org
+	if err := json.Unmarshal([]byte(`[{"slug":"acme","default_environment":"prod"}]`), &orgs); err != nil || orgs[0].DefaultEnvironment != "prod" {
+		t.Errorf("got %+v, err %v", orgs, err)
 	}
 }
 
