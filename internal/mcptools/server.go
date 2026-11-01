@@ -10,6 +10,7 @@ import (
 
 	"github.com/coffeece/goship/internal/deploy"
 	"github.com/coffeece/goship/internal/portal"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -53,6 +54,9 @@ func New(c Clients, version string, o Options) *mcp.Server {
 // Register adds the tools to s.
 func Register(s *mcp.Server, c Clients, o Options) {
 	r := &registry{s: s, clients: c}
+	if o.Deploy {
+		r.environmentDesc = localEnvironmentDesc
+	}
 	r.identity()
 	r.environments()
 	r.clusters()
@@ -73,6 +77,33 @@ func Register(s *mcp.Server, c Clients, o Options) {
 type registry struct {
 	s       *mcp.Server
 	clients Clients
+	// environmentDesc replaces the description of the environment argument
+	// when what ProjectArg says does not hold on this server.
+	environmentDesc string
+}
+
+// localEnvironmentDesc is the environment argument's description on the
+// local server, whose default is the selection its own process carries (see
+// localClients.Environment). The hosted server's is ProjectArg's tag.
+const localEnvironmentDesc = "environment slug; defaults to the environment this server has selected (--environment, the working directory's goship.yml, GOSHIP_ENVIRONMENT or goship environment use — goship_list_environments does not show it), else the organization's default environment. Pass it explicitly before anything destructive."
+
+// inputSchema is the schema the SDK would infer for In, with the environment
+// description this server can stand behind when In takes that argument.
+// Registering it as the tool's schema keeps one ProjectArg for both servers.
+func inputSchema[In any](r *registry) *jsonschema.Schema {
+	s, err := jsonschema.For[In](nil)
+	if err != nil {
+		panic(fmt.Sprintf("input schema for %T: %v", *new(In), err))
+	}
+	var zero In
+	if _, ok := any(zero).(targetCarrier); ok && r.environmentDesc != "" {
+		p, ok := s.Properties["environment"]
+		if !ok {
+			panic(fmt.Sprintf("%T takes an environment but its schema has no such property", zero))
+		}
+		p.Description = r.environmentDesc
+	}
+	return s
 }
 
 // kind is what a tool does to the world, for its annotations.
@@ -106,7 +137,7 @@ func tool[In targetCarrier, Out any](r *registry, name, desc string, k kind, fn 
 	if k == destructive {
 		desc += confirm
 	}
-	mcp.AddTool(r.s, &mcp.Tool{Name: name, Description: desc, Annotations: k.annotations()},
+	mcp.AddTool(r.s, &mcp.Tool{Name: name, Description: desc, Annotations: k.annotations(), InputSchema: inputSchema[In](r)},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 			var zero Out
 			c, err := r.clients.Client(ctx)
@@ -141,7 +172,7 @@ func orgTool[In orgCarrier, Out any](r *registry, name, desc string, k kind, fn 
 	if k == destructive {
 		desc += confirm
 	}
-	mcp.AddTool(r.s, &mcp.Tool{Name: name, Description: desc, Annotations: k.annotations()},
+	mcp.AddTool(r.s, &mcp.Tool{Name: name, Description: desc, Annotations: k.annotations(), InputSchema: inputSchema[In](r)},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
 			var zero Out
 			c, err := r.clients.Client(ctx)
@@ -200,7 +231,7 @@ func (o OrgArg) org() string { return o.Org }
 type ProjectArg struct {
 	OrgArg
 	Project     string `json:"project,omitempty" jsonschema:"project slug; defaults to the selected project (goship_list_projects)"`
-	Environment string `json:"environment,omitempty" jsonschema:"environment slug; defaults to the organization's default environment (production)"`
+	Environment string `json:"environment,omitempty" jsonschema:"environment slug; defaults to the organization's default environment (production unless changed)"`
 }
 
 func (p ProjectArg) project() string     { return p.Project }

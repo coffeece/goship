@@ -26,7 +26,7 @@ type EnvironmentArg struct {
 }
 
 func (r *registry) environments() {
-	orgTool(r, "goship_list_environments", "List the organization's environments (production, staging, ...) with the cluster each runs on; is_default marks the one a tool uses when it is given no environment. Every project exists in every environment: pass a slug as environment to the project tools.", read,
+	orgTool(r, "goship_list_environments", "List the organization's environments (production, staging, ...) with the cluster each runs on; is_default marks the one a tool uses when neither the call nor the server selected an environment. Every project exists in every environment: pass a slug as environment to the project tools.", read,
 		func(ctx context.Context, c *portal.Client, org string, _ OrgArg) (EnvironmentList, error) {
 			envs, err := c.Environments(ctx, org)
 			return EnvironmentList{Environments: envs}, err
