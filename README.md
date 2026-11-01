@@ -102,23 +102,26 @@ goship deploy --env-file .env
 
 ## Environments and clusters
 
-Every project exists in each of your organization's environments: `production`
-to start with, and any you add. An environment is where its apps run — on
+Every project exists in each of your organization's environments. An
+organization starts with three: `production` (the default), `staging` and
+`development`, and can add more. An environment is where its apps run — on
 GoShip's shared cluster, or on a cluster of your own (a machine, or a Kubernetes
 cluster) — so staging can live on different hardware without becoming a second
 project.
 
 ```
 $ goship environments
-SLUG         NAME         CLUSTER    DEFAULT
-production   Production   goship     true
-staging      Staging      acme-vps   false
+SLUG          NAME          CLUSTER    DEFAULT
+production    Production    goship     true
+staging       Staging       goship     false
+development   Development   goship     false
+qa            QA            acme-vps   false
 ```
 
 ```sh
-goship environment create staging --cluster acme-vps   # every project of the organization gets it
-goship deploy --environment staging                    # deploy there once
-goship environment use staging                         # or make it this project's default
+goship environment create qa --cluster acme-vps        # every project of the organization gets it
+goship deploy --environment qa                         # deploy there once
+goship environment use qa                              # or make it this project's default
 ```
 
 A command that acts on a project picks its environment, in order, from
