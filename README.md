@@ -231,7 +231,8 @@ own machines are managed as clusters that environments run on.
 - MCP tools: the project tools take `environment`; the node and placement tools
   and `goship_move_cloud_account` are gone, replaced by
   `goship_list_environments`, `goship_create_environment`,
-  `goship_enable_environment`, `goship_disable_environment`, `goship_delete_environment`, `goship_list_clusters`, `goship_get_cluster`,
+  `goship_enable_environment`, `goship_disable_environment`,
+  `goship_delete_environment`, `goship_list_clusters`, `goship_get_cluster`,
   `goship_list_cluster_sizes`, `goship_create_cluster`,
   `goship_resize_cluster` and `goship_delete_cluster`. Update an installed
   Claude plugin to get the matching skill.

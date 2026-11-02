@@ -10,7 +10,7 @@ writes the CLI half from what it finds in the directory.
 | `app` | app name (default: directory name) |
 | `org` | organization slug, instead of `goship org use` |
 | `project` | project slug inside the organization, instead of `goship project use` |
-| `environment` | environment slug inside the project (`goship environments`); left out, `GOSHIP_ENVIRONMENT`, then what `goship environment use` saved, then the organization's default (production unless changed) |
+| `environment` | environment slug inside the project (`goship environments`); left out, `GOSHIP_ENVIRONMENT`, then what `goship environment use` saved, then the organization's default (development unless changed) |
 | `platform` | `go`, `python`, `nodejs`, `static` |
 | `dockerfile` | build from this container file instead of a platform |
 | `plan` | plan slug for a new app |

@@ -14,7 +14,7 @@ import (
 )
 
 const twoEnvironments = `[{"id":"e1","slug":"production","name":"Production","cluster_name":"goship","is_default":true,"enabled":true},
-                          {"id":"e2","slug":"staging","name":"Staging","cluster_id":"c-home","cluster_name":"vulcan"}]`
+                          {"id":"e2","slug":"staging","name":"Staging","cluster_id":"c-home","cluster_name":"vulcan","enabled":true}]`
 
 func TestEnvironmentsListsTheOrgsEnvironments(t *testing.T) {
 	var gotPath string
