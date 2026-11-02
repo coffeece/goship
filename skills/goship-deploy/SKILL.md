@@ -26,11 +26,12 @@ Find out, asking only for what is not already known:
 - **Project**: `goship_list_projects` shows the organization's; one project
   needs no choice. Pass `project` to the tools, or set `project:` in goship.yml.
 - **Environment**: every project exists in each of the organization's
-  environments (development, staging, production, ...) and an app lives in one of them.
-  Call `goship_list_environments`: it lists them and marks the default, which
-  is where a deploy goes when nothing names one (development unless the
-  organization changed it; staging is opt-in and starts disabled). When the user names one ("deploy this to
-  staging"), check it is in that list and pass `environment: staging` to
+  environments (development, staging, production, ...) and an app lives in
+  one of them. Call `goship_list_environments`: it lists them and marks the
+  default, which is where a deploy goes when nothing names one (development
+  unless the organization changed it; staging is opt-in and starts disabled).
+  When the user names one ("deploy this to staging"), check it is in that
+  list and pass `environment: staging` to
   `goship_deploy` (CLI: `--environment staging`). Do not ask where it should
   run: the environment already decides that. If the name is not in the list,
   show the list and ask. When you pass `environment`, say which one before you
@@ -219,7 +220,7 @@ the cause and deploy again rather than retrying blindly.
 ## 6. Verify
 
 Pass the `environment` the deploy reported to every call below, so a check
-cannot land on a same-named app in another environment (another environment, say).
+cannot land on a same-named app in another environment (development, say).
 
 1. `goship_get_app`: status `running`, units healthy, the address.
 2. Request the URL (or its health route) and confirm a 200. If `visibility`

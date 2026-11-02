@@ -6,9 +6,10 @@ import (
 	"time"
 )
 
-// Environment is a stage of an organization (development, staging, production, ...). Every
-// project exists in every environment; the environment says which cluster new
-// project environments land on and which database server new databases use.
+// Environment is a stage of an organization (development, staging,
+// production, ...). Every project exists in every environment; the
+// environment says which cluster new project environments land on and which
+// database server new databases use.
 type Environment struct {
 	ID          string    `json:"id"`
 	Slug        string    `json:"slug" table:"SLUG"`

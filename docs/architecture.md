@@ -98,7 +98,7 @@ The environment resolves after the project, in order:
    asked when 1–4 chose nothing
 
 When 1–4 chose nothing and the default cannot be read, the answer is
-`production` — but only for commands that read: they say so once on stderr. A
+`development` — but only for commands that read: they say so once on stderr. A
 command that creates or changes something refuses and asks for `--environment`,
 rather than act in a guessed environment. `deploy` finds the app by name when
 no project is selected, in the environment that holds it; an app of the same

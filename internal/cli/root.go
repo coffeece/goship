@@ -53,7 +53,7 @@ type App struct {
 
 	// orgs is GET /orgs, asked at most once per command: Org and the default
 	// environment both read it. guessNoted says the command already said it
-	// fell back to production.
+	// fell back to development.
 	orgsMu     sync.Mutex
 	orgs       []portal.Org
 	orgsErr    error
@@ -112,7 +112,7 @@ func (a *App) forgetOrgs() {
 	a.orgs, a.orgsErr, a.orgsSet, a.guessNoted = nil, nil, false, false
 }
 
-// noteGuess says, once per command, that the environment is production only
+// noteGuess says, once per command, that the environment is development only
 // because the organization's default could not be read.
 func (a *App) noteGuess(err error) {
 	a.orgsMu.Lock()
@@ -160,7 +160,7 @@ func (e *noProjectError) Is(target error) bool { return target == errNoProject }
 // Target resolves the organization, project and environment a command that
 // only reads runs against. An org with one reachable project has nothing to
 // choose, and no environment chosen is the organization's default, never an
-// error: when that default cannot be read it is production, said once on
+// error: when that default cannot be read it is development, said once on
 // stderr. When org or project is missing, the returned Target still carries
 // what was chosen: a project or environment that was asked for is not lost
 // because no org resolved.
@@ -173,7 +173,7 @@ func (a *App) Target(ctx context.Context) (Target, error) {
 }
 
 // TargetToChange is Target for a command that creates or changes something:
-// rather than act in a guessed production, it refuses and asks for
+// rather than act in a guessed development, it refuses and asks for
 // --environment.
 func (a *App) TargetToChange(ctx context.Context) (Target, error) {
 	t, guessed, err := a.resolveTarget(ctx)
