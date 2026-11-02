@@ -18,8 +18,8 @@ const (
 	laterLine      = "Billing starts when the trial ends on 2 Jan 2099."
 	earlierLine    = "Billing starts shortly."
 
-	appsPath      = "/api/v1/orgs/acme/projects/atlas/environments/production/apps"
-	instancesPath = "/api/v1/orgs/acme/projects/atlas/environments/production/services/postgresql/instances"
+	appsPath      = "/api/v1/orgs/acme/projects/atlas/environments/development/apps"
+	instancesPath = "/api/v1/orgs/acme/projects/atlas/environments/development/services/postgresql/instances"
 )
 
 // billingSession serves reply to the one request a tool makes, and fails the
@@ -126,7 +126,7 @@ func TestDeployReturnsBillingStartsAt(t *testing.T) {
 			cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{Deploy: true})
 			dir := t.TempDir()
 			writeFile(t, dir+"/go.mod", "module web\n")
-			got := result(t, call(t, cs, "goship_deploy", map[string]any{"path": dir, "app": "web", "environment": "production"}))
+			got := result(t, call(t, cs, "goship_deploy", map[string]any{"path": dir, "app": "web", "environment": "development"}))
 			if _, ok := got["billing_starts_at"]; ok != tc.starts || (tc.starts && got["billing_starts_at"] != billingLater) {
 				t.Errorf("result = %v, want billing_starts_at: %v", got, tc.starts)
 			}

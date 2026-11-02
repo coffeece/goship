@@ -6,7 +6,7 @@ your own clusters.
 ```sh
 $ goship deploy
 Deploying api · go
-Deploying to acme/web/production
+Deploying to acme/web/development
 
   ✓ Create        go, detected from go.mod, plan Free   0.4s
   ✓ Environment   3 variables                           0.2s
@@ -103,22 +103,28 @@ goship deploy --env-file .env
 ## Environments and clusters
 
 Every project exists in each of your organization's environments. An
-organization starts with three: `production` (the default), `staging` and
-`development`, and can add more. An environment is where its apps run — on
+organization starts with three: `development` (the default), `staging` and
+`production`, and can add more. Development is the usual place to deploy first;
+staging is opt-in and stays disabled until an organization admin enables it
+(`goship environment enable staging`, or Organization settings → Environments).
+A disabled environment refuses new apps, databases and volumes, and the CLI
+prints the API's refusal as is. An environment is where its apps run — on
 GoShip's shared cluster, or on a cluster of your own (a machine, or a Kubernetes
 cluster) — so staging can live on different hardware without becoming a second
 project.
 
 ```
 $ goship environments
-SLUG          NAME          CLUSTER    DEFAULT
-production    Production    goship     true
-staging       Staging       goship     false
-development   Development   goship     false
-qa            QA            acme-vps   false
+SLUG          NAME          CLUSTER    DEFAULT   ENABLED
+development   Development   goship     true      true
+staging       Staging       goship     false     false
+production    Production    goship     false     true
+qa            QA            acme-vps   false     true
 ```
 
 ```sh
+goship environment enable staging                      # opt in to staging (organization admin)
+goship environment disable staging                     # refused for the default or one in use
 goship environment create qa --cluster acme-vps        # every project of the organization gets it
 goship deploy --environment qa                         # deploy there once
 goship environment use qa                              # or make it this project's default
@@ -128,13 +134,13 @@ A command that acts on a project picks its environment, in order, from
 `--environment`, `environment:` in the `goship.yml` of the working directory
 (only when that file names no `org` or `project`, or the same ones as the
 command's), `GOSHIP_ENVIRONMENT`, what `goship environment use` saved for the
-project, and finally the organization's default (production unless changed).
+project, and finally the organization's default (development unless changed).
 `goship deploy` and `goship app create` say where they act before they create
 anything (`Deploying to acme/web/staging`, `Creating api in acme/web/staging`).
 If nothing chose an environment
 and the organization's default cannot be read, commands that create or change
 something stop and ask for `--environment`; listings and `goship app info` use
-production and say so on stderr. `goship init` writes `environment:` into
+development and say so on stderr. `goship init` writes `environment:` into
 `goship.yml` only when the one selected is not the organization's default.
 
 Plans come from the environment's cluster. On GoShip's shared cluster they
@@ -185,7 +191,7 @@ belong to the organization too: they take no project.
 | `goship db server list\|create\|tiers\|disk-limit\|retry\|delete` | PostgreSQL servers in your own Google Cloud project, shared by the organization's projects and unbilled by GoShip; `disk-limit` caps disk growth (`create --disk-limit`); `delete --force` forgets one GoShip can no longer reach |
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
 | `goship volume create\|info\|bind\|unbind\|rm` | persistent disks, on a cluster of your own |
-| `goship environments` / `goship environment use\|create\|rm <slug>` | list the organization's environments and the cluster each runs on / choose one for this project / add one for every project (`--cluster`, `--db-server`) / delete one nothing is left in |
+| `goship environments` / `goship environment use\|create\|enable\|disable\|rm <slug>` | list the organization's environments, the cluster each runs on and whether it is enabled / choose one for this project / add one for every project (`--cluster`, `--db-server`) / allow or stop new work in one (staging starts disabled) / delete one nothing is left in |
 | `goship clusters [-A]` | list the clusters the organization can use, its own and GoShip's shared one; `--all` spans every organization you belong to |
 | `goship cluster create\|info\|sizes\|resize\|rm` | your own machines and Kubernetes clusters: `create` provisions a machine on a connected cloud (`--cloud --region --size`), connects one over SSH (`--host --ssh-key`) or connects a Kubernetes cluster (`--kubeconfig`); `resize` changes the size of one GoShip created |
 | `goship cloud providers\|connect\|list\|regions\|sizes\|disconnect` | the cloud accounts your clusters and database servers run on, shared by the whole organization — AWS connects with `--role-arn` or `--access-keys-stdin`; `connect <provider> --account <id>` replaces the key of an API-key account in place |
@@ -225,7 +231,7 @@ own machines are managed as clusters that environments run on.
 - MCP tools: the project tools take `environment`; the node and placement tools
   and `goship_move_cloud_account` are gone, replaced by
   `goship_list_environments`, `goship_create_environment`,
-  `goship_delete_environment`, `goship_list_clusters`, `goship_get_cluster`,
+  `goship_enable_environment`, `goship_disable_environment`, `goship_delete_environment`, `goship_list_clusters`, `goship_get_cluster`,
   `goship_list_cluster_sizes`, `goship_create_cluster`,
   `goship_resize_cluster` and `goship_delete_cluster`. Update an installed
   Claude plugin to get the matching skill.

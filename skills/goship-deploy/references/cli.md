@@ -30,6 +30,7 @@
 | `goship_list_domains` / `goship_register_domain` / `goship_verify_domain` / `goship_delete_domain` | `goship domains` / `goship domain register\|verify\|rm` |
 | `goship_add_app_domain` / `goship_remove_app_domain` | `goship domain add\|rm <domain> -a <app>` |
 | `goship_list_environments` | `goship environments` |
+| `goship_enable_environment` / `goship_disable_environment` | `goship environment enable <slug>` / `goship environment disable <slug>` (staging starts disabled; refusals are printed as the API wrote them) |
 | `goship_create_environment` / `goship_delete_environment` | `goship environment create <slug> [--name n] [--cluster c] [--db-server s]` / `goship environment rm <slug>` |
 | `goship_list_clusters` / `goship_get_cluster` | `goship clusters` / `goship cluster info <cluster>` |
 | `goship_create_cluster` | `goship cluster create <name> --cloud a --region r --size s`, or `--host ip [--ssh-user u] [--port p] --ssh-key path`, or `--kubeconfig path` (the tool takes `ssh_key` and `kubeconfig` as contents: use the CLI for those) |

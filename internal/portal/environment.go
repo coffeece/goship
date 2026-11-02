@@ -2,10 +2,11 @@ package portal
 
 import (
 	"context"
+	"net/http"
 	"time"
 )
 
-// Environment is a stage of an organization (production, staging, ...). Every
+// Environment is a stage of an organization (development, staging, production, ...). Every
 // project exists in every environment; the environment says which cluster new
 // project environments land on and which database server new databases use.
 type Environment struct {
@@ -16,6 +17,7 @@ type Environment struct {
 	ClusterName string    `json:"cluster_name" table:"CLUSTER"`
 	DBServerID  string    `json:"db_server_id"`
 	IsDefault   bool      `json:"is_default" table:"DEFAULT"`
+	Enabled     bool      `json:"enabled" table:"ENABLED"`
 	Position    int       `json:"position"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -50,6 +52,16 @@ func (c *Client) Environments(ctx context.Context, org string) ([]Environment, e
 func (c *Client) CreateEnvironment(ctx context.Context, org string, req CreateEnvironmentRequest) (*Environment, error) {
 	var env Environment
 	return &env, c.post(ctx, orgPath(org, "/environments"), req, &env)
+}
+
+// UpdateEnvironment turns an environment on or off for new work. A refusal
+// (the default, one that still holds resources) comes back as the API wrote it.
+func (c *Client) UpdateEnvironment(ctx context.Context, org, slug string, enabled bool) (*Environment, error) {
+	var env Environment
+	body := struct {
+		Enabled bool `json:"enabled"`
+	}{enabled}
+	return &env, c.do(ctx, http.MethodPatch, orgPath(org, "/environments/"+esc(slug)), body, &env)
 }
 
 func (c *Client) DeleteEnvironment(ctx context.Context, org, slug string) error {

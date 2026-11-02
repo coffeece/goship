@@ -26,7 +26,7 @@ type OrgLister func(context.Context) ([]portal.Org, error)
 
 // FallbackEnvironment is the environment every organization starts with as
 // its default, used when the organization's own default cannot be read.
-const FallbackEnvironment = "production"
+const FallbackEnvironment = "development"
 
 // EnvironmentChoice is what may pick a target's environment, in the order it
 // is asked.

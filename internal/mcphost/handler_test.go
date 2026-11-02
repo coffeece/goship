@@ -43,7 +43,7 @@ func (f *fakeAPI) serve(t *testing.T) string {
 			w.Write([]byte(f.orgs))
 		case "/api/v1/orgs/acme/projects":
 			w.Write([]byte(f.projects))
-		case "/api/v1/orgs/acme/projects/atlas/environments/production/apps", "/api/v1/orgs/acme/projects/atlas/environments/staging/apps":
+		case "/api/v1/orgs/acme/projects/atlas/environments/development/apps", "/api/v1/orgs/acme/projects/atlas/environments/staging/apps":
 			w.Write([]byte(`[{"name":"api","status":"running"}]`))
 		default:
 			http.NotFound(w, r)
@@ -198,7 +198,7 @@ func TestHostedServerEndToEnd(t *testing.T) {
 	}
 	api.mu.Lock()
 	defer api.mu.Unlock()
-	if !slices.Contains(api.calls, "GET /api/v1/orgs/acme/projects/atlas/environments/production/apps") {
+	if !slices.Contains(api.calls, "GET /api/v1/orgs/acme/projects/atlas/environments/development/apps") {
 		t.Errorf("API calls %v", api.calls)
 	}
 	for _, a := range api.auth {

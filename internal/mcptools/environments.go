@@ -26,7 +26,7 @@ type EnvironmentArg struct {
 }
 
 func (r *registry) environments() {
-	orgTool(r, "goship_list_environments", "List the organization's environments (production, staging, ...) with the cluster each runs on; is_default marks the one a tool uses when neither the call nor the server selected an environment. Every project exists in every environment: pass a slug as environment to the project tools.", read,
+	orgTool(r, "goship_list_environments", "List the organization's environments (development, staging, production, ...) with the cluster each runs on and whether it is enabled (new work is refused in a disabled one); is_default marks the one a tool uses when neither the call nor the server selected an environment. Every project exists in every environment: pass a slug as environment to the project tools.", read,
 		func(ctx context.Context, c *portal.Client, org string, _ OrgArg) (EnvironmentList, error) {
 			envs, err := c.Environments(ctx, org)
 			return EnvironmentList{Environments: envs}, err
@@ -49,6 +49,14 @@ func (r *registry) environments() {
 				req.DBServerID = s.ID
 			}
 			return c.CreateEnvironment(ctx, org, req)
+		})
+	orgTool(r, "goship_enable_environment", "Enable an environment (staging is off until enabled) so projects can create apps, databases and volumes in it. Needs an organization admin.", write,
+		func(ctx context.Context, c *portal.Client, org string, in EnvironmentArg) (*portal.Environment, error) {
+			return c.UpdateEnvironment(ctx, org, in.Environment, true)
+		})
+	orgTool(r, "goship_disable_environment", "Disable an environment so no new apps, databases or volumes are created in it. Existing resources keep running. Refused for the default environment and while it still holds anything; the refusal says why.", write,
+		func(ctx context.Context, c *portal.Client, org string, in EnvironmentArg) (*portal.Environment, error) {
+			return c.UpdateEnvironment(ctx, org, in.Environment, false)
 		})
 	orgTool(r, "goship_delete_environment", "Delete an environment from every project of the organization. Refused while any project still holds apps, databases or volumes in it; the refusal names them.", destructive,
 		func(ctx context.Context, c *portal.Client, org string, in EnvironmentArg) (Message, error) {

@@ -232,7 +232,7 @@ func (o OrgArg) org() string { return o.Org }
 type ProjectArg struct {
 	OrgArg
 	Project     string `json:"project,omitempty" jsonschema:"project slug; defaults to the selected project (goship_list_projects)"`
-	Environment string `json:"environment,omitempty" jsonschema:"environment slug; defaults to the organization's default environment (production unless changed)"`
+	Environment string `json:"environment,omitempty" jsonschema:"environment slug; defaults to the organization's default environment (development unless changed)"`
 }
 
 func (p ProjectArg) project() string     { return p.Project }

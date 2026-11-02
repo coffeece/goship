@@ -33,11 +33,12 @@ func newEnvironmentsCmd(app *App) *cobra.Command {
 func newEnvironmentCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "environment",
-		Short: "Choose, create or remove the environments projects deploy to (production, staging, ...)",
+		Short: "Choose, create or remove the environments projects deploy to (development, staging, production, ...)",
 		Long: "Every project exists in each environment of its organization. Commands act\n" +
 			"in the environment chosen by --environment, the environment: of goship.yaml,\n" +
 			"GOSHIP_ENVIRONMENT or `goship environment use`, in that order, else in the\n" +
-			"organization's default (production unless changed).",
+			"organization's default (development unless changed). Staging is opt-in:\n" +
+			"`goship environment enable staging` turns it on.",
 	}
 
 	use := &cobra.Command{
@@ -139,6 +140,24 @@ func newEnvironmentCmd(app *App) *cobra.Command {
 		}),
 	}
 
-	cmd.AddCommand(use, create, remove)
+	toggle := func(verb, short string, enabled bool) *cobra.Command {
+		return &cobra.Command{
+			Use:   verb + " <slug>",
+			Short: short,
+			Args:  cobra.ExactArgs(1),
+			RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+				// A refusal (default, still in use, disabled) is printed as the API wrote it.
+				env, err := app.Portal().UpdateEnvironment(cmd.Context(), org, args[0], enabled)
+				if err != nil {
+					return err
+				}
+				return app.Renderer().Render(env)
+			}),
+		}
+	}
+	enable := toggle("enable", "Allow new apps, databases and volumes in an environment", true)
+	disable := toggle("disable", "Stop allowing new work in an environment (refused for the default or one in use)", false)
+
+	cmd.AddCommand(use, create, enable, disable, remove)
 	return cmd
 }
