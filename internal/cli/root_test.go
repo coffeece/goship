@@ -117,8 +117,8 @@ func orgsDown(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// A command that only reads may go on in production when the default cannot
-// be read, but says so, once.
+// A command that only reads may go on in development, the fallback, when the
+// default cannot be read, but says so, once.
 func TestTargetNotesTheGuessOnce(t *testing.T) {
 	app := target(t, orgsDown(t))
 	app.Global.Org, app.Global.Project = "acme", "atlas"

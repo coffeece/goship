@@ -1033,8 +1033,8 @@ func TestDeployWithAFileProjectAndNoOrgNeverUsesAnotherProject(t *testing.T) {
 	}
 }
 
-// The org list failing is no reason to deploy to production: nothing is
-// created or uploaded until an environment is known.
+// The org list failing is no reason to deploy to the fallback environment:
+// nothing is created or uploaded until an environment is known.
 func TestDeployRefusesWhenTheDefaultCannotBeRead(t *testing.T) {
 	var changed []string
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {

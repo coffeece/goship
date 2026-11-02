@@ -14,7 +14,7 @@ import (
 )
 
 const twoEnvironments = `[{"id":"e1","slug":"production","name":"Production","cluster_name":"goship","is_default":true,"enabled":true},
-                          {"id":"e2","slug":"staging","name":"Staging","cluster_id":"c-home","cluster_name":"vulcan","enabled":true}]`
+                          {"id":"e2","slug":"staging","name":"Staging","cluster_id":"c-home","cluster_name":"edge1","enabled":true}]`
 
 func TestEnvironmentsListsTheOrgsEnvironments(t *testing.T) {
 	var gotPath string
@@ -33,7 +33,7 @@ func TestEnvironmentsListsTheOrgsEnvironments(t *testing.T) {
 	if strings.Join(header, " ") != "SLUG NAME CLUSTER DEFAULT ENABLED" {
 		t.Errorf("header = %q", header)
 	}
-	if !strings.Contains(out, "staging") || !strings.Contains(out, "vulcan") {
+	if !strings.Contains(out, "staging") || !strings.Contains(out, "edge1") {
 		t.Errorf("output = %q", out)
 	}
 }
@@ -94,26 +94,26 @@ func TestEnvironmentCreateSendsClusterID(t *testing.T) {
 		calls = append(calls, r.Method+" "+r.URL.Path)
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/orgs/acme/clusters":
-			w.Write([]byte(`[{"id":"c-goship","name":"goship","shared":true},{"id":"c-home","name":"vulcan","type":"vps"}]`)) //nolint:errcheck
+			w.Write([]byte(`[{"id":"c-goship","name":"goship","shared":true},{"id":"c-home","name":"edge1","type":"vps"}]`)) //nolint:errcheck
 		case "GET /api/v1/orgs/acme/database-servers":
 			w.Write([]byte(`[{"id":"s-1","name":"pg-staging"}]`)) //nolint:errcheck
 		case "POST /api/v1/orgs/acme/environments":
 			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 			w.WriteHeader(http.StatusCreated)
-			w.Write([]byte(`{"id":"e2","slug":"staging","name":"Staging","cluster_id":"c-home","cluster_name":"vulcan"}`)) //nolint:errcheck
+			w.Write([]byte(`{"id":"e2","slug":"staging","name":"Staging","cluster_id":"c-home","cluster_name":"edge1"}`)) //nolint:errcheck
 		default:
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 	})
 
-	out, err := run(t, "", "environment", "create", "staging", "--name", "Staging", "--cluster", "vulcan", "--db-server", "pg-staging")
+	out, err := run(t, "", "environment", "create", "staging", "--name", "Staging", "--cluster", "edge1", "--db-server", "pg-staging")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if body["slug"] != "staging" || body["name"] != "Staging" || body["cluster_id"] != "c-home" || body["db_server_id"] != "s-1" {
 		t.Errorf("body = %v", body)
 	}
-	if !strings.Contains(out, "vulcan") {
+	if !strings.Contains(out, "edge1") {
 		t.Errorf("output = %q", out)
 	}
 

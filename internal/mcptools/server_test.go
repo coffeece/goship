@@ -470,7 +470,7 @@ func TestListProjectsNeedsNoProject(t *testing.T) {
 }
 
 // deployPaths drives goship_deploy in an org with two projects, each in
-// production and staging, and records the app paths it touches; holder is
+// development and staging, and records the app paths it touches; holder is
 // the "project/environment" that already has the app. The deploy itself is
 // refused, so the call ends there.
 func deployPaths(t *testing.T, fc fakeClients, dir string, args map[string]any, holder string) ([]string, *mcp.CallToolResult) {

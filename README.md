@@ -106,7 +106,8 @@ Every project exists in each of your organization's environments. An
 organization starts with three: `development` (the default), `staging` and
 `production`, and can add more. Development is the usual place to deploy first;
 staging is opt-in and stays disabled until an organization admin enables it
-(`goship environment enable staging`, or Organization settings → Environments).
+(`goship environment enable staging`, or Infrastructure → Environments in the
+dashboard).
 A disabled environment refuses new apps, databases and volumes, and the CLI
 prints the API's refusal as is. An environment is where its apps run — on
 GoShip's shared cluster, or on a cluster of your own (a machine, or a Kubernetes
@@ -204,6 +205,19 @@ belong to the organization too: they take no project.
 
 Run `goship <command> --help` for flags.
 
+## Upgrading to 0.16.0
+
+- With no environment chosen, the CLI falls back to `development`, the new
+  default environment.
+- `goship environments` shows an `ENABLED` column, and `goship environment
+  enable|disable <slug>` (MCP: `goship_enable_environment`,
+  `goship_disable_environment`) turns an environment on or off.
+- Staging is opt-in: enable it with `goship environment enable staging` before
+  creating anything there.
+- If your organization's apps moved to development, change or remove a saved
+  `production` selection: `environment:` in `goship.yml`,
+  `goship environment use`, or `GOSHIP_ENVIRONMENT`.
+
 ## Upgrading to 0.14.0
 
 Apps, databases and volumes now live in an environment of a project, and your
@@ -231,7 +245,6 @@ own machines are managed as clusters that environments run on.
 - MCP tools: the project tools take `environment`; the node and placement tools
   and `goship_move_cloud_account` are gone, replaced by
   `goship_list_environments`, `goship_create_environment`,
-  `goship_enable_environment`, `goship_disable_environment`,
   `goship_delete_environment`, `goship_list_clusters`, `goship_get_cluster`,
   `goship_list_cluster_sizes`, `goship_create_cluster`,
   `goship_resize_cluster` and `goship_delete_cluster`. Update an installed
