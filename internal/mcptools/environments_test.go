@@ -33,7 +33,7 @@ func TestEnvironmentArgReachesThePath(t *testing.T) {
 		{"goship_list_apps", map[string]any{"environment": "staging"}, "GET /api/v1/orgs/acme/projects/atlas/environments/staging/apps"},
 		{"goship_get_app", map[string]any{"app": "api", "environment": "staging"}, "GET /api/v1/orgs/acme/projects/atlas/environments/staging/apps/api"},
 		{"goship_get_database", map[string]any{"database": "db", "environment": "staging"}, "GET /api/v1/orgs/acme/projects/atlas/environments/staging/databases/db"},
-		{"goship_list_apps", nil, "GET /api/v1/orgs/acme/projects/atlas/environments/production/apps"},
+		{"goship_list_apps", nil, "GET /api/v1/orgs/acme/projects/atlas/environments/development/apps"},
 	} {
 		paths = nil
 		if res := call(t, cs, c.tool, c.args); res.IsError {
@@ -283,7 +283,7 @@ func TestEnvironmentDescriptionTellsTheTruthPerServer(t *testing.T) {
 	if local == hosted {
 		t.Errorf("both servers say %q", local)
 	}
-	if want := "production unless changed"; !strings.Contains(hosted, want) {
+	if want := "development unless changed"; !strings.Contains(hosted, want) {
 		t.Errorf("hosted server: %q lacks %q", hosted, want)
 	}
 
@@ -312,12 +312,45 @@ func TestDeleteToolsNameTheirTarget(t *testing.T) {
 		want string
 	}{
 		{"goship_delete_app", map[string]any{"app": "api", "environment": "staging"}, "App api deleted from acme/atlas/staging."},
-		{"goship_delete_database", map[string]any{"database": "main"}, "Database main deleted from acme/atlas/production."},
+		{"goship_delete_database", map[string]any{"database": "main"}, "Database main deleted from acme/atlas/development."},
 		{"goship_delete_volume", map[string]any{"volume": "uploads", "project": "globex", "environment": "qa"}, "Volume uploads deleted from acme/globex/qa."},
 	} {
 		res := call(t, cs, c.tool, c.args)
 		if res.IsError || !strings.Contains(text(res), c.want) {
 			t.Errorf("%s: isError=%v %q, want %q", c.tool, res.IsError, text(res), c.want)
 		}
+	}
+}
+
+func TestEnableAndDisableEnvironmentTools(t *testing.T) {
+	for tool, want := range map[string]bool{"goship_enable_environment": true, "goship_disable_environment": false} {
+		var method, path string
+		var body map[string]any
+		url := api(t, func(w http.ResponseWriter, r *http.Request) {
+			method, path = r.Method, r.URL.Path
+			json.NewDecoder(r.Body).Decode(&body)                                         //nolint:errcheck
+			json.NewEncoder(w).Encode(map[string]any{"slug": "staging", "enabled": want}) //nolint:errcheck
+		})
+		cs := session(t, fakeClients{url: url, token: "tok", org: "acme"}, Options{})
+		res := call(t, cs, tool, map[string]any{"environment": "staging"})
+		if res.IsError {
+			t.Fatalf("%s: %s", tool, text(res))
+		}
+		if method != http.MethodPatch || path != "/api/v1/orgs/acme/environments/staging" || body["enabled"] != want {
+			t.Errorf("%s: %s %s %v", tool, method, path, body)
+		}
+	}
+}
+
+func TestDisableEnvironmentReturnsTheRefusal(t *testing.T) {
+	const msg = "staging still holds apps; remove them first"
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme"}, Options{})
+	res := call(t, cs, "goship_disable_environment", map[string]any{"environment": "staging"})
+	if !res.IsError || text(res) != msg {
+		t.Errorf("isError=%v %q", res.IsError, text(res))
 	}
 }

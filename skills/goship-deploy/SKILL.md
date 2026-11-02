@@ -26,10 +26,10 @@ Find out, asking only for what is not already known:
 - **Project**: `goship_list_projects` shows the organization's; one project
   needs no choice. Pass `project` to the tools, or set `project:` in goship.yml.
 - **Environment**: every project exists in each of the organization's
-  environments (production, staging, ...) and an app lives in one of them.
+  environments (development, staging, production, ...) and an app lives in one of them.
   Call `goship_list_environments`: it lists them and marks the default, which
-  is where a deploy goes when nothing names one (production unless the
-  organization changed it). When the user names one ("deploy this to
+  is where a deploy goes when nothing names one (development unless the
+  organization changed it; staging is opt-in and starts disabled). When the user names one ("deploy this to
   staging"), check it is in that list and pass `environment: staging` to
   `goship_deploy` (CLI: `--environment staging`). Do not ask where it should
   run: the environment already decides that. If the name is not in the list,
@@ -219,7 +219,7 @@ the cause and deploy again rather than retrying blindly.
 ## 6. Verify
 
 Pass the `environment` the deploy reported to every call below, so a check
-cannot land on a same-named app in another environment (production, say).
+cannot land on a same-named app in another environment (another environment, say).
 
 1. `goship_get_app`: status `running`, units healthy, the address.
 2. Request the URL (or its health route) and confirm a 200. If `visibility`
@@ -250,7 +250,14 @@ rotate).
   server finishes; list again), `goship_disable_database_extension` turns it
   off while no table uses it. `vector` (pgvector) is always on. Enable them
   before running migrations that depend on them.
-- Environments: `goship_create_environment` adds one to every project of the
+- Environments: a new organization has development (the default), staging
+  and production; staging is disabled until enabled, and a disabled
+  environment refuses new apps, databases and volumes with a 409 that says so.
+  `goship_enable_environment` / `goship_disable_environment` (CLI
+  `goship environment enable|disable <slug>`) turn one on or off; they need an
+  organization admin and disable is refused for the default or an environment
+  that still holds something. Show the refusal text to the user as is.
+  `goship_create_environment` adds one to every project of the
   organization (`cluster` and `db_server` put it on the organization's own
   cluster and database server; omitted, GoShip's shared ones).
   `goship_delete_environment` is refused while any project still holds apps,

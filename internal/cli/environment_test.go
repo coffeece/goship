@@ -6,13 +6,14 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/coffeece/goship/internal/config"
 )
 
-const twoEnvironments = `[{"id":"e1","slug":"production","name":"Production","cluster_name":"goship","is_default":true},
+const twoEnvironments = `[{"id":"e1","slug":"production","name":"Production","cluster_name":"goship","is_default":true,"enabled":true},
                           {"id":"e2","slug":"staging","name":"Staging","cluster_id":"c-home","cluster_name":"vulcan"}]`
 
 func TestEnvironmentsListsTheOrgsEnvironments(t *testing.T) {
@@ -29,7 +30,7 @@ func TestEnvironmentsListsTheOrgsEnvironments(t *testing.T) {
 		t.Errorf("path = %q", gotPath)
 	}
 	header := strings.Fields(strings.SplitN(out, "\n", 2)[0])
-	if strings.Join(header, " ") != "SLUG NAME CLUSTER DEFAULT" {
+	if strings.Join(header, " ") != "SLUG NAME CLUSTER DEFAULT ENABLED" {
 		t.Errorf("header = %q", header)
 	}
 	if !strings.Contains(out, "staging") || !strings.Contains(out, "vulcan") {
@@ -218,6 +219,57 @@ func TestEnvironmentRmPrintsTheConflictBody(t *testing.T) {
 	})
 
 	_, _, err := runWithStderr(t, context.Background(), strings.NewReader(""), "environment", "rm", "staging", "--yes")
+	if err == nil || err.Error() != msg {
+		t.Fatalf("err = %v, want %q", err, msg)
+	}
+}
+
+func TestEnvironmentsShowsEnabledColumn(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[{"slug":"development","name":"Development","is_default":true,"enabled":true},{"slug":"staging","name":"Staging","enabled":false}]`)) //nolint:errcheck
+	})
+	out, err := run(t, "", "environments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 || !strings.HasSuffix(strings.TrimSpace(lines[1]), "true") || !strings.HasSuffix(strings.TrimSpace(lines[2]), "false") {
+		t.Errorf("output = %q", out)
+	}
+	if f := strings.Fields(lines[1]); f[0] != "development" || f[len(f)-2] != "true" || f[len(f)-1] != "true" {
+		t.Errorf("development row = %q", lines[1])
+	}
+}
+
+func TestEnvironmentEnableSendsEnabledTrue(t *testing.T) {
+	for verb, want := range map[string]bool{"enable": true, "disable": false} {
+		var method, path string
+		var body map[string]any
+		stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+			method, path = r.Method, r.URL.Path
+			json.NewDecoder(r.Body).Decode(&body)                                                             //nolint:errcheck
+			w.Write([]byte(`{"slug":"staging","name":"Staging","enabled":` + strconv.FormatBool(want) + `}`)) //nolint:errcheck
+		})
+		out, err := run(t, "", "environment", verb, "staging")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if method != http.MethodPatch || path != "/api/v1/orgs/acme/environments/staging" || body["enabled"] != want {
+			t.Errorf("%s: %s %s %v", verb, method, path, body)
+		}
+		if !strings.Contains(out, "staging") {
+			t.Errorf("%s: output = %q", verb, out)
+		}
+	}
+}
+
+func TestEnvironmentDisablePrintsTheAPIRefusal(t *testing.T) {
+	const msg = "development is the default environment; make another one the default first"
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"` + msg + `"}`)) //nolint:errcheck
+	})
+	_, err := run(t, "", "environment", "disable", "development")
 	if err == nil || err.Error() != msg {
 		t.Fatalf("err = %v, want %q", err, msg)
 	}

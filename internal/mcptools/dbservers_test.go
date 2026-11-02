@@ -36,7 +36,7 @@ func serversAPI(t *testing.T, record func(r *http.Request, body string)) string 
 func TestCreateDatabaseOnAServerSendsItsID(t *testing.T) {
 	var posted string
 	url := serversAPI(t, func(r *http.Request, body string) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/atlas/environments/production/services/postgresql/instances" {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/acme/projects/atlas/environments/development/services/postgresql/instances" {
 			posted = body
 		}
 	})
@@ -215,7 +215,7 @@ func TestDisableDatabaseExtensionDeletesIt(t *testing.T) {
 	})
 	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
 	res := call(t, cs, "goship_disable_database_extension", map[string]any{"database": "db", "extension": "postgis"})
-	if res.IsError || got != "DELETE /api/v1/orgs/acme/projects/atlas/environments/production/databases/db/extensions/postgis" {
+	if res.IsError || got != "DELETE /api/v1/orgs/acme/projects/atlas/environments/development/databases/db/extensions/postgis" {
 		t.Errorf("isError=%v %q called %s", res.IsError, text(res), got)
 	}
 }

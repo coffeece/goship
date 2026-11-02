@@ -69,7 +69,7 @@ func TestTargetEnvironmentResolution(t *testing.T) {
 // with. Only an org list that cannot answer says so, for a caller that must
 // not act on a guess; an org it does not carry, or carries without a
 // default, is answered by the call that follows.
-func TestResolveEnvironmentFallsBackToProduction(t *testing.T) {
+func TestResolveEnvironmentFallsBackToDevelopment(t *testing.T) {
 	acme := Target{Org: "acme", Project: "atlas"}
 	boom := errors.New("boom")
 	cases := []struct {
@@ -84,8 +84,8 @@ func TestResolveEnvironmentFallsBackToProduction(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ResolveEnvironment(context.Background(), acme, EnvironmentChoice{}, tc.orgs.list)
-			if got != "production" || !errors.Is(err, tc.guessed) || (tc.guessed == nil) != (err == nil) {
-				t.Errorf("got %q, %v; want production, %v", got, err, tc.guessed)
+			if got != "development" || !errors.Is(err, tc.guessed) || (tc.guessed == nil) != (err == nil) {
+				t.Errorf("got %q, %v; want development, %v", got, err, tc.guessed)
 			}
 		})
 	}

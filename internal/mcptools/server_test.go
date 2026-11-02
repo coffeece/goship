@@ -209,15 +209,17 @@ func toolsByName(t *testing.T, o Options) map[string]*mcp.Tool {
 func TestEnvironmentAndClusterToolsAreRegistered(t *testing.T) {
 	all := toolsByName(t, Options{Deploy: true})
 	for name, k := range map[string]kind{
-		"goship_list_environments":  read,
-		"goship_create_environment": write,
-		"goship_delete_environment": destructive,
-		"goship_list_clusters":      read,
-		"goship_get_cluster":        read,
-		"goship_list_cluster_sizes": read,
-		"goship_create_cluster":     write,
-		"goship_resize_cluster":     destructive,
-		"goship_delete_cluster":     destructive,
+		"goship_list_environments":   read,
+		"goship_create_environment":  write,
+		"goship_delete_environment":  destructive,
+		"goship_enable_environment":  write,
+		"goship_disable_environment": write,
+		"goship_list_clusters":       read,
+		"goship_get_cluster":         read,
+		"goship_list_cluster_sizes":  read,
+		"goship_create_cluster":      write,
+		"goship_resize_cluster":      destructive,
+		"goship_delete_cluster":      destructive,
 	} {
 		tl, ok := all[name]
 		if !ok {
@@ -253,7 +255,7 @@ func TestEnvironmentAndClusterToolsAreRegistered(t *testing.T) {
 func TestEveryProjectToolTakesAnEnvironment(t *testing.T) {
 	orgLevel := regexp.MustCompile(`_(environments?|clusters?|cluster_sizes|cloud_\w+|database_servers?|database_server_\w+)$`)
 	for _, o := range []Options{{Deploy: true}, {}} {
-		want := "environment slug; defaults to the organization's default environment (production unless changed)"
+		want := "environment slug; defaults to the organization's default environment (development unless changed)"
 		if o.Deploy {
 			want = localEnvironmentDesc
 		}
@@ -337,7 +339,7 @@ func TestListAppsReturnsStructuredApps(t *testing.T) {
 	if res.IsError {
 		t.Fatal(text(res))
 	}
-	if gotPath != "/api/v1/orgs/other/projects/comet/environments/production/apps" || gotAuth != "Bearer tok" {
+	if gotPath != "/api/v1/orgs/other/projects/comet/environments/development/apps" || gotAuth != "Bearer tok" {
 		t.Errorf("called %s with %q", gotPath, gotAuth)
 	}
 	var out AppList
@@ -367,7 +369,7 @@ func TestDeleteAppCallsDelete(t *testing.T) {
 	})
 	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
 	res := call(t, cs, "goship_delete_app", map[string]any{"app": "api"})
-	if res.IsError || method != http.MethodDelete || path != "/api/v1/orgs/acme/projects/atlas/environments/production/apps/api" {
+	if res.IsError || method != http.MethodDelete || path != "/api/v1/orgs/acme/projects/atlas/environments/development/apps/api" {
 		t.Errorf("%s %s: %q", method, path, text(res))
 	}
 }
@@ -478,11 +480,11 @@ func deployPaths(t *testing.T, fc fakeClients, dir string, args map[string]any, 
 	fc.url = api(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/orgs":
-			w.Write([]byte(`[{"slug":"acme","default_environment":"production"}]`)) //nolint:errcheck
+			w.Write([]byte(`[{"slug":"acme","default_environment":"development"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/acme/projects":
 			w.Write([]byte(`[{"slug":"atlas"},{"slug":"comet"}]`)) //nolint:errcheck
 		case r.URL.Path == "/api/v1/orgs/acme/environments":
-			w.Write([]byte(`[{"slug":"production"},{"slug":"staging"}]`)) //nolint:errcheck
+			w.Write([]byte(`[{"slug":"development"},{"slug":"staging"}]`)) //nolint:errcheck
 		case strings.Contains(r.URL.Path, "/apps"):
 			paths = append(paths, r.Method+" "+r.URL.Path)
 			switch {
@@ -519,8 +521,8 @@ func TestDeployReadsTheProjectFromGoshipYml(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir+"/go.mod", "module web\n")
 	writeFile(t, dir+"/goship.yml", "project: atlas\n")
-	paths, _ := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "atlas/production")
-	if !slices.Contains(paths, "POST /api/v1/orgs/acme/projects/atlas/environments/production/apps/web/deploys") {
+	paths, _ := deployPaths(t, fakeClients{org: "acme"}, dir, map[string]any{}, "atlas/development")
+	if !slices.Contains(paths, "POST /api/v1/orgs/acme/projects/atlas/environments/development/apps/web/deploys") {
 		t.Errorf("paths = %q, want the deploy to go to atlas", paths)
 	}
 }
@@ -564,7 +566,7 @@ func TestDeployUsesTheOrgGoshipYmlPins(t *testing.T) {
 	})
 	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{Deploy: true})
 	call(t, cs, "goship_deploy", map[string]any{"path": dir, "app": "web", "plan": "app-free"})
-	if !slices.Contains(paths, "POST /api/v1/orgs/other/projects/comet/environments/production/apps") {
+	if !slices.Contains(paths, "POST /api/v1/orgs/other/projects/comet/environments/development/apps") {
 		t.Errorf("paths = %q, want the app created in other/comet", paths)
 	}
 	for _, p := range paths {
@@ -575,7 +577,7 @@ func TestDeployUsesTheOrgGoshipYmlPins(t *testing.T) {
 }
 
 func TestPrivateAppTools(t *testing.T) {
-	base := "/api/v1/orgs/acme/projects/atlas/environments/production/apps/api"
+	base := "/api/v1/orgs/acme/projects/atlas/environments/development/apps/api"
 	cases := []struct {
 		tool, method, path, query, body string
 		args                            map[string]any

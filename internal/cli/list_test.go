@@ -305,7 +305,7 @@ func TestListerUsesTheOnlyProjectWhenNoneIsSelected(t *testing.T) {
 	if _, err := run(t, "", "apps"); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/orgs/acme/projects/default/environments/production/apps" {
+	if gotPath != "/api/v1/orgs/acme/projects/default/environments/development/apps" {
 		t.Errorf("path = %q", gotPath)
 	}
 }

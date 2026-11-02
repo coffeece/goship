@@ -126,12 +126,12 @@ func TestTargetNotesTheGuessOnce(t *testing.T) {
 	app.Err = &stderr
 	for range 2 {
 		tg, err := app.Target(context.Background())
-		if err != nil || tg != (Target{Org: "acme", Project: "atlas", Environment: "production"}) {
+		if err != nil || tg != (Target{Org: "acme", Project: "atlas", Environment: "development"}) {
 			t.Fatalf("Target = %+v, %v", tg, err)
 		}
 	}
 	got := stderr.String()
-	if !strings.HasPrefix(got, "using production: could not read the organization's default environment (") || strings.Count(got, "\n") != 1 {
+	if !strings.HasPrefix(got, "using development: could not read the organization's default environment (") || strings.Count(got, "\n") != 1 {
 		t.Errorf("stderr = %q, want the note once", got)
 	}
 }
@@ -308,7 +308,7 @@ func TestTargetForAppUsesTheSelectionWithoutSearching(t *testing.T) {
 	app := target(t, twoProjects(t, "atlas", "comet"))
 	app.Global.Org, app.Global.Project = "initech", "comet"
 	tg, err := app.TargetForApp(context.Background(), "web")
-	if err != nil || tg != (Target{Org: "initech", Project: "comet", Environment: "production"}) {
+	if err != nil || tg != (Target{Org: "initech", Project: "comet", Environment: "development"}) {
 		t.Fatalf("TargetForApp = %+v, %v", tg, err)
 	}
 }
