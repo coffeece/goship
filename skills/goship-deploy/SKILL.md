@@ -274,8 +274,10 @@ rotate).
   private key or kubeconfig into the conversation
   (`goship cluster create <name> --host <ip> --ssh-key <path>` or
   `--kubeconfig <path>`). Provisioning goes on in the background;
-  `goship_get_cluster` shows its stage. Then give an environment the cluster
-  with `goship_create_environment`.
+  `goship_get_cluster` shows its stage. Pass `environments` (slugs from
+  `goship_list_environments`) to point existing environments at the cluster,
+  so no second call is needed; they run on it once it is active. A new
+  environment gets the cluster with `goship_create_environment`.
 - A cluster that is too small: `goship_list_cluster_sizes` shows the options,
   `goship_resize_cluster` applies one. It restarts the machine, so every app on
   it is down for a few minutes; confirm with the user first. Apps keep their
