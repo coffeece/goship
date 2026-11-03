@@ -22,15 +22,16 @@ type ClusterArg struct {
 
 type CreateClusterArgs struct {
 	OrgArg
-	Name         string `json:"name" jsonschema:"cluster name"`
-	CloudAccount string `json:"cloud_account,omitempty" jsonschema:"provision a new machine on this connected cloud account: id, label or provider (goship_list_cloud_accounts); needs region and size"`
-	Region       string `json:"region,omitempty" jsonschema:"cloud region slug (goship_list_cloud_regions)"`
-	Size         string `json:"size,omitempty" jsonschema:"cloud machine size slug (goship_list_cloud_sizes)"`
-	Host         string `json:"host,omitempty" jsonschema:"connect a machine the customer already runs, over SSH: its hostname or IP; needs ssh_key"`
-	Port         int    `json:"port,omitempty" jsonschema:"SSH port, default 22"`
-	SSHUser      string `json:"ssh_user,omitempty" jsonschema:"SSH user, default root"`
-	SSHKey       string `json:"ssh_key,omitempty" jsonschema:"the private key itself (not a path) with access to the host"`
-	Kubeconfig   string `json:"kubeconfig,omitempty" jsonschema:"connect a Kubernetes cluster the customer already runs: the kubeconfig itself (not a path)"`
+	Name         string   `json:"name" jsonschema:"cluster name"`
+	CloudAccount string   `json:"cloud_account,omitempty" jsonschema:"provision a new machine on this connected cloud account: id, label or provider (goship_list_cloud_accounts); needs region and size"`
+	Region       string   `json:"region,omitempty" jsonschema:"cloud region slug (goship_list_cloud_regions)"`
+	Size         string   `json:"size,omitempty" jsonschema:"cloud machine size slug (goship_list_cloud_sizes)"`
+	Host         string   `json:"host,omitempty" jsonschema:"connect a machine the customer already runs, over SSH: its hostname or IP; needs ssh_key"`
+	Port         int      `json:"port,omitempty" jsonschema:"SSH port, default 22"`
+	SSHUser      string   `json:"ssh_user,omitempty" jsonschema:"SSH user, default root"`
+	SSHKey       string   `json:"ssh_key,omitempty" jsonschema:"the private key itself (not a path) with access to the host"`
+	Kubeconfig   string   `json:"kubeconfig,omitempty" jsonschema:"connect a Kubernetes cluster the customer already runs: the kubeconfig itself (not a path)"`
+	Environments []string `json:"environments,omitempty" jsonschema:"slugs of existing environments that will run on the new cluster once it is active (goship_list_environments)"`
 }
 
 type ClusterSizeList struct {
@@ -61,7 +62,7 @@ func (r *registry) clusters() {
 			}
 			return c.Cluster(ctx, org, id)
 		})
-	orgTool(r, "goship_create_cluster", "Create a cluster an environment can run on, in one of three ways: provision a new machine on a connected cloud account (cloud_account, region, size), connect a machine the customer already runs over SSH (host, ssh_key), or connect a Kubernetes cluster the customer already runs (kubeconfig). Pass exactly one. Provisioning continues in the background; goship_get_cluster shows its stage. Clusters are billed monthly. An environment runs on it once goship_create_environment names it.", write,
+	orgTool(r, "goship_create_cluster", "Create a cluster an environment can run on, in one of three ways: provision a new machine on a connected cloud account (cloud_account, region, size), connect a machine the customer already runs over SSH (host, ssh_key), or connect a Kubernetes cluster the customer already runs (kubeconfig). Pass exactly one. Provisioning continues in the background; goship_get_cluster shows its stage. Clusters are billed monthly. An environment runs on it once goship_create_environment names it, or pass environments to point existing ones at it.", write,
 		func(ctx context.Context, c *portal.Client, org string, in CreateClusterArgs) (*portal.Cluster, error) {
 			req, err := clusterRequest(in)
 			if err != nil {
@@ -117,7 +118,7 @@ func (r *registry) clusters() {
 // cluster create` builds it. An argument of another way is refused rather
 // than ignored. The cloud account is left for the caller to resolve.
 func clusterRequest(in CreateClusterArgs) (portal.CreateClusterRequest, error) {
-	req := portal.CreateClusterRequest{Name: in.Name}
+	req := portal.CreateClusterRequest{Name: in.Name, Environments: in.Environments}
 	type arg struct {
 		name string
 		set  bool

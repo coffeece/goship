@@ -104,6 +104,8 @@ func TestCreateClusterPaths(t *testing.T) {
 			`{"name":"edge","type":"vps","host":"203.0.113.7","port":22,"ssh_user":"root","ssh_key":"KEY"}`},
 		{"ssh host with port and user", map[string]any{"name": "edge", "host": "203.0.113.7", "port": 2222, "ssh_user": "ubuntu", "ssh_key": "KEY"},
 			`{"name":"edge","type":"vps","host":"203.0.113.7","port":2222,"ssh_user":"ubuntu","ssh_key":"KEY"}`},
+		{"environments", map[string]any{"name": "edge", "kubeconfig": "k", "environments": []string{"development", "production"}},
+			`{"name":"edge","type":"kubernetes","kubeconfig":"k","environments":["development","production"]}`},
 		{"kubeconfig", map[string]any{"name": "edge", "kubeconfig": "apiVersion: v1\n"},
 			`{"name":"edge","type":"kubernetes","kubeconfig":"apiVersion: v1\n"}`},
 	} {
