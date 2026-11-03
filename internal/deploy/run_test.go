@@ -35,6 +35,9 @@ type fakePortal struct {
 	orgsDown bool
 	// onlyAtlas leaves atlas as acme's one project.
 	onlyAtlas bool
+	// platformless makes an existing web answer with no platform, as an app
+	// deployed from an image does.
+	platformless bool
 }
 
 func (f *fakePortal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +73,10 @@ func (f *fakePortal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, h := range f.holders {
 		project, env, _ := strings.Cut(h, "/")
 		if r.Method == http.MethodGet && r.URL.Path == acme+project+"/environments/"+env+"/apps/web" {
+			if f.platformless {
+				w.Write([]byte(`{"name":"web","platform":""}`)) //nolint:errcheck
+				return
+			}
 			w.Write([]byte(`{"name":"web","platform":"go"}`)) //nolint:errcheck
 			return
 		}
@@ -88,6 +95,165 @@ func stubBuild(t *testing.T) *Target {
 	}
 	t.Cleanup(func() { Build = saved })
 	return &built
+}
+
+// stubDeployImage replaces the image deploy with one that records its args.
+func stubDeployImage(t *testing.T) *ImageArgs {
+	t.Helper()
+	var got ImageArgs
+	saved := DeployImage
+	DeployImage = func(_ context.Context, _ *portal.Client, a ImageArgs, _ Reporter) error {
+		got = a
+		return nil
+	}
+	t.Cleanup(func() { DeployImage = saved })
+	return &got
+}
+
+func imageOpts(dir string) Options {
+	return Options{Dir: dir, App: "web", Org: "acme", Project: "atlas", Environment: "production", Image: "ghcr.io/a/b:1"}
+}
+
+func TestRunImageCreatesWithoutPlatform(t *testing.T) {
+	fake := &fakePortal{}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	var buildCalled bool
+	savedBuild := Build
+	Build = func(context.Context, *portal.Client, BuildArgs, Reporter) error {
+		buildCalled = true
+		return nil
+	}
+	t.Cleanup(func() { Build = savedBuild })
+	got := stubDeployImage(t)
+
+	dir := t.TempDir()
+	writeFile(t, dir+"/go.mod", "module web\n")
+	h := &heard{}
+	opts := imageOpts(dir)
+	opts.Message = "m"
+	res, err := Run(context.Background(), portal.New(srv.URL, "t"), opts, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Created || fake.created.Platform != "" {
+		t.Errorf("created %v with platform %q, want a platformless app", res.Created, fake.created.Platform)
+	}
+	if got.Image != "ghcr.io/a/b:1" || got.Message != "m" || got.Name != "web" || got.Target.Environment != "production" {
+		t.Errorf("DeployImage got %+v", got)
+	}
+	if buildCalled {
+		t.Error("Build ran for an image deploy")
+	}
+	if !slices.Contains(h.lines, "header: Deploying web · image") {
+		t.Errorf("reported %q", h.lines)
+	}
+	if slices.Contains(h.lines, "begin: upload") {
+		t.Errorf("reported %q: an image deploy has no upload", h.lines)
+	}
+}
+
+func TestRunImageConflicts(t *testing.T) {
+	for _, opts := range []Options{{Platform: "go"}, {Dockerfile: "Dockerfile"}} {
+		fake := &fakePortal{}
+		srv := httptest.NewServer(fake)
+		stubDeployImage(t)
+		o := imageOpts(t.TempDir())
+		o.Platform, o.Dockerfile = opts.Platform, opts.Dockerfile
+		_, err := Run(context.Background(), portal.New(srv.URL, "t"), o, &heard{})
+		srv.Close()
+		if err == nil || err.Error() != "--image cannot be combined with --platform or --dockerfile" {
+			t.Errorf("error = %v", err)
+		}
+		if len(fake.asked) != 0 {
+			t.Errorf("asked %q before refusing", fake.asked)
+		}
+	}
+}
+
+func TestRunImageIgnoresTheFilesDockerfile(t *testing.T) {
+	srv := httptest.NewServer(&fakePortal{})
+	defer srv.Close()
+	got := stubDeployImage(t)
+	dir := t.TempDir()
+	writeFile(t, dir+"/goship.yaml", "dockerfile: Dockerfile\nplatform: go\n")
+
+	h := &heard{}
+	if _, err := Run(context.Background(), portal.New(srv.URL, "t"), imageOpts(dir), h); err != nil {
+		t.Fatal(err)
+	}
+	if got.Image == "" || !slices.Contains(h.lines, "header: Deploying web · image") {
+		t.Errorf("got %+v, reported %q", got, h.lines)
+	}
+}
+
+func TestRunImageWithoutDir(t *testing.T) {
+	srv := httptest.NewServer(&fakePortal{})
+	defer srv.Close()
+	got := stubDeployImage(t)
+
+	o := imageOpts("")
+	if _, err := Run(context.Background(), portal.New(srv.URL, "t"), o, &heard{}); err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "web" {
+		t.Errorf("got %+v", got)
+	}
+
+	o.App = ""
+	_, err := Run(context.Background(), portal.New(srv.URL, "t"), o, &heard{})
+	if err == nil || err.Error() != "an app name is required to deploy an image without a directory" {
+		t.Errorf("error = %v", err)
+	}
+}
+
+func TestRunImageNotesLocalPlatformKeys(t *testing.T) {
+	srv := httptest.NewServer(&fakePortal{})
+	defer srv.Close()
+	stubDeployImage(t)
+
+	dir := t.TempDir()
+	writeFile(t, dir+"/goship.yaml", "app: web\nhooks:\n  build: [make]\n")
+	h := &heard{}
+	if _, err := Run(context.Background(), portal.New(srv.URL, "t"), imageOpts(dir), h); err != nil {
+		t.Fatal(err)
+	}
+	want := "note: goship.yaml's hooks, healthcheck, processes and kubernetes settings are read from the image, not from this directory"
+	if countOf(h.lines, want) != 1 {
+		t.Errorf("reported %q, want one %q", h.lines, want)
+	}
+
+	// A file with none of those keys says nothing.
+	dir = t.TempDir()
+	writeFile(t, dir+"/goship.yaml", "app: web\n")
+	h = &heard{}
+	if _, err := Run(context.Background(), portal.New(srv.URL, "t"), imageOpts(dir), h); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range h.lines {
+		if strings.Contains(l, "read from the image") {
+			t.Errorf("noted without cause: %q", l)
+		}
+	}
+}
+
+func TestRunSourceOnAPlatformlessAppIsRefused(t *testing.T) {
+	fake := &fakePortal{holders: []string{"atlas/production"}, platformless: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	stubBuild(t)
+
+	dir := t.TempDir()
+	writeFile(t, dir+"/go.mod", "module web\n")
+	_, err := Run(context.Background(), portal.New(srv.URL, "t"), Options{
+		Dir: dir, App: "web", Org: "acme", Project: "atlas", Environment: "production",
+	}, &heard{})
+	if err == nil || !strings.Contains(err.Error(), "has no platform") {
+		t.Fatalf("error = %v", err)
+	}
+	if slices.ContainsFunc(fake.asked, func(s string) bool { return strings.HasSuffix(s, "/env") }) {
+		t.Errorf("asked %q: nothing should follow the refusal", fake.asked)
+	}
 }
 
 func TestRunPrintsTheTargetFirst(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/coffeece/goship/internal/archive"
 	"github.com/coffeece/goship/internal/portal"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // ErrNoOrg is returned when nothing selects an organization and the app
@@ -54,7 +55,11 @@ type Options struct {
 	Platform   string
 	Plan       string
 	Dockerfile string
-	Message    string
+	// Image is a container image to deploy instead of building Dir. It
+	// excludes Platform and Dockerfile, and Dir may then be empty: nothing is
+	// read from it.
+	Image   string
+	Message string
 	// Env is applied as private variables before the build, on top of the
 	// project file's.
 	Env map[string]string
@@ -92,18 +97,37 @@ type Result struct {
 // caller can tell a build that failed from a request that was refused.
 func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Result, error) {
 	began := time.Now()
-	if info, err := os.Stat(o.Dir); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("%s is not a directory to deploy from", o.Dir)
+	image := o.Image != ""
+	if image && (o.Platform != "" || o.Dockerfile != "") {
+		return nil, errors.New("--image cannot be combined with --platform or --dockerfile")
 	}
-	proj, projFile, err := LoadProject(o.Dir)
-	if err != nil {
-		return nil, err
+	proj, projFile := &Project{}, ""
+	if !image || o.Dir != "" {
+		if info, err := os.Stat(o.Dir); err != nil || !info.IsDir() {
+			return nil, fmt.Errorf("%s is not a directory to deploy from", o.Dir)
+		}
+		var err error
+		if proj, projFile, err = LoadProject(o.Dir); err != nil {
+			return nil, err
+		}
 	}
 
-	name := firstNonEmpty(o.App, proj.App, filepath.Base(mustAbs(o.Dir)))
+	var name string
+	if o.Dir == "" {
+		if o.App == "" {
+			return nil, errors.New("an app name is required to deploy an image without a directory")
+		}
+		name = o.App
+	} else {
+		name = firstNonEmpty(o.App, proj.App, filepath.Base(mustAbs(o.Dir)))
+	}
 	plan := firstNonEmpty(o.Plan, proj.Plan)
 	platform := o.Platform
 	dockerfile := firstNonEmpty(o.Dockerfile, proj.Dockerfile)
+	if image {
+		// The image is the whole build: the file's choices do not apply.
+		dockerfile = ""
+	}
 
 	// The file's project belongs to the org the file names, and its
 	// environment to that project.
@@ -138,6 +162,7 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 	// so: a wrong guess should be visible in the output, not discovered later.
 	var platformSource string
 	switch {
+	case image:
 	case platform != "":
 	case proj.Platform != "":
 		platform, platformSource = proj.Platform, "from "+projFile
@@ -149,7 +174,7 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 	}
 	// A container file is the fallback, not a competitor: it only decides
 	// the build when no platform does.
-	if platform == "" && dockerfile == "" {
+	if !image && platform == "" && dockerfile == "" {
 		if found := DetectDockerfile(o.Dir); found != "" {
 			dockerfile, platformSource = found, "detected from "+found
 		}
@@ -163,14 +188,25 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		return nil, lookupErr
 	}
 
+	// An app deployed from an image has no platform to build source with.
+	if !image && lookupErr == nil && existing.Platform == "" && dockerfile == "" {
+		return nil, fmt.Errorf("%q has no platform (it was deployed from an image): pass --dockerfile, or deploy an image with --image", name)
+	}
+
 	buildWith := firstNonEmpty(dockerfile, platform)
 	if lookupErr == nil {
 		buildWith = firstNonEmpty(dockerfile, existing.Platform, platform)
+	}
+	if image {
+		buildWith = "image"
 	}
 	if buildWith != "" {
 		r.Header("Deploying %s · %s", name, buildWith)
 	} else {
 		r.Header("Deploying %s", name)
+	}
+	if image && projFile != "" && hasImageOverriddenKeys(filepath.Join(o.Dir, projFile)) {
+		r.Note("%s's hooks, healthcheck, processes and kubernetes settings are read from the image, not from this directory", projFile)
 	}
 	res := &Result{App: name, Org: target.Org, Project: target.Project, Environment: target.Environment, Platform: platform, Plan: plan}
 	if lookupErr != nil {
@@ -180,14 +216,16 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		if portal.IsForbidden(lookupErr) {
 			return nil, lookupErr
 		}
-		if platform == "" && dockerfile == "" {
+		if !image && platform == "" && dockerfile == "" {
 			return nil, fmt.Errorf(
 				"cannot tell what %q is built with: none of %s or a Dockerfile found in %s.\nPass --platform (%s)",
 				name, SignalFiles(), o.Dir, KnownPlatforms())
 		}
 		// An app with no platform is built by its container file.
 		origin := platform
-		if origin == "" {
+		if image {
+			origin = "from image"
+		} else if origin == "" {
 			origin = "built from " + dockerfile
 		}
 		if platformSource != "" {
@@ -231,8 +269,14 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 	}
 
 	versions := &versionWatch{Reporter: r}
-	if err := Build(ctx, client, BuildArgs{Target: target, Name: name, Dir: o.Dir, Dockerfile: dockerfile, Message: o.Message}, versions); err != nil {
-		return res, err
+	var deployErr error
+	if image {
+		deployErr = DeployImage(ctx, client, ImageArgs{Target: target, Name: name, Image: o.Image, Message: o.Message}, versions)
+	} else {
+		deployErr = Build(ctx, client, BuildArgs{Target: target, Name: name, Dir: o.Dir, Dockerfile: dockerfile, Message: o.Message}, versions)
+	}
+	if deployErr != nil {
+		return res, deployErr
 	}
 	res.Version = versions.version
 	if deployed, err := client.App(ctx, target.Org, target.Project, target.Environment, name); err == nil {
@@ -342,6 +386,39 @@ var Build = func(ctx context.Context, client *portal.Client, a BuildArgs, r Repo
 	})
 	pr.CloseWithError(err) //nolint:errcheck
 	return err
+}
+
+// ImageArgs is what an image deploy needs.
+type ImageArgs struct {
+	Target               Target
+	Name, Image, Message string
+}
+
+// DeployImage asks GoShip to release a prebuilt image, reporting the release
+// to r as it runs. It is a package var, like Build, so a test can assert what
+// a deploy asks to be released.
+var DeployImage = func(ctx context.Context, client *portal.Client, a ImageArgs, r Reporter) error {
+	return client.DeployImage(ctx, a.Target.Org, a.Target.Project, a.Target.Environment, a.Name,
+		portal.ImageDeployRequest{Image: a.Image, Message: a.Message}, r.Event)
+}
+
+// hasImageOverriddenKeys reports whether the project file sets any of the
+// keys an image deploy takes from the image instead.
+func hasImageOverriddenKeys(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var top map[string]any
+	if yaml.Unmarshal(data, &top) != nil {
+		return false
+	}
+	for _, k := range []string{"hooks", "healthcheck", "startupcheck", "processes", "kubernetes"} {
+		if _, ok := top[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // countingWriter counts what passes through it; the upload's size is what

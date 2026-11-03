@@ -206,6 +206,18 @@ func (c *Client) Rollback(ctx context.Context, org, project, env, app, version s
 	return c.streamJSON(ctx, appPath(org, project, env, app)+"/deploys/rollback", map[string]string{"version": version}, releaseEvents(on))
 }
 
+// ImageDeployRequest deploys a prebuilt image from a public registry.
+type ImageDeployRequest struct {
+	Image   string `json:"image"`
+	Message string `json:"message,omitempty"`
+}
+
+// DeployImage releases a prebuilt image and hands each output line and step
+// to on.
+func (c *Client) DeployImage(ctx context.Context, org, project, env, app string, in ImageDeployRequest, on func(ReleaseEvent) error) error {
+	return c.streamJSON(ctx, appPath(org, project, env, app)+"/deploys/image", in, releaseEvents(on))
+}
+
 // Run runs a one-off command in the app's image.
 func (c *Client) Run(ctx context.Context, org, project, env, app, command string, once, isolated bool, out io.Writer) error {
 	body := map[string]any{"command": command, "once": once, "isolated": isolated}

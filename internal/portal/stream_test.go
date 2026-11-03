@@ -193,3 +193,28 @@ func TestShellDialsTheAppsPath(t *testing.T) {
 		t.Errorf("path = %q, query = %q", gotPath, gotQuery)
 	}
 }
+
+func TestDeployImagePostsJSON(t *testing.T) {
+	var body, ctype string
+	c := streamServer(t, blogPath+"/deploys/image", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		body, ctype = string(b), r.Header.Get("Content-Type")
+		fmt.Fprintln(w, `{"type":"step","step":"build","state":"done","detail":"image v2"}`)
+		fmt.Fprintln(w, `{"type":"result","ok":true}`)
+	})
+
+	var got []ReleaseEvent
+	err := c.DeployImage(context.Background(), "acme", "atlas", "staging", "blog", ImageDeployRequest{Image: "ghcr.io/a/b:1", Message: "m"}, func(ev ReleaseEvent) error {
+		got = append(got, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != `{"image":"ghcr.io/a/b:1","message":"m"}` || ctype != "application/json" {
+		t.Errorf("body %q (%s)", body, ctype)
+	}
+	if len(got) != 1 || got[0].Detail != "image v2" {
+		t.Errorf("events = %+v", got)
+	}
+}
