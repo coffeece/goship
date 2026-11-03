@@ -16,6 +16,19 @@ func ResizeReconnectHint(dashboard, org, clusterID string, err error) error {
 	if !errors.As(err, &apiErr) || apiErr.Code != "reconnect_required" {
 		return err
 	}
-	return fmt.Errorf("%s. Reconnect it from the dashboard: %s/orgs/%s/clusters/%s/resize",
-		strings.TrimRight(apiErr.Message, "."), dashboard, org, clusterID)
+	return &reconnectHint{
+		msg: fmt.Sprintf("%s. Reconnect it from the dashboard: %s/orgs/%s/clusters/%s/resize",
+			strings.TrimRight(apiErr.Message, "."), dashboard, org, clusterID),
+		api: apiErr,
+	}
 }
+
+// reconnectHint reads as the hint and keeps the API's answer in the chain,
+// so its code still reaches the caller.
+type reconnectHint struct {
+	msg string
+	api *portal.Error
+}
+
+func (e *reconnectHint) Error() string { return e.msg }
+func (e *reconnectHint) Unwrap() error { return e.api }
