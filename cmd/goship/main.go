@@ -25,6 +25,9 @@ func main() {
 			os.Exit(int(code))
 		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
+		if code := portal.ErrorCode(err); code != "" {
+			fmt.Fprintln(os.Stderr, "Code:", code)
+		}
 		if portal.IsUnauthorized(err) {
 			fmt.Fprintln(os.Stderr, "Your session has expired or is not valid. Run `goship login`.")
 		}
