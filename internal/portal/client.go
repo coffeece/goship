@@ -66,6 +66,21 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
+// ErrorCode is the API's code for err: the code of an *Error or an
+// *OperationError in its chain, or "" for a failure the API did not name
+// (one that never reached it, or an API from before codes).
+func ErrorCode(err error) string {
+	var apiErr *Error
+	if errors.As(err, &apiErr) {
+		return apiErr.Code
+	}
+	var opErr *OperationError
+	if errors.As(err, &opErr) {
+		return opErr.Code
+	}
+	return ""
+}
+
 func IsNotFound(err error) bool {
 	var apiErr *Error
 	return errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound

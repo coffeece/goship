@@ -22,7 +22,11 @@ var ErrStreamCut = errors.New("the connection dropped before the result arrived"
 
 // OperationError is an operation the API accepted, ran and saw fail: a build
 // that does not compile, a command that exits non-zero.
-type OperationError struct{ Message string }
+type OperationError struct {
+	Message string
+	// Code is the API's code for the failure, e.g. deploy_failed.
+	Code string
+}
 
 func (e *OperationError) Error() string { return e.Message }
 
@@ -32,6 +36,7 @@ type event struct {
 	Data   string `json:"data"`
 	OK     bool   `json:"ok"`
 	Error  string `json:"error"`
+	Code   string `json:"code"`
 	Step   string `json:"step"`
 	State  string `json:"state"`
 	Detail string `json:"detail"`
@@ -79,7 +84,7 @@ func (c *Client) stream(ctx context.Context, method, path, contentType string, b
 		case "ping":
 		case "result":
 			if !ev.OK {
-				return &OperationError{Message: ev.Error}
+				return &OperationError{Message: ev.Error, Code: ev.Code}
 			}
 			return nil
 		default:
