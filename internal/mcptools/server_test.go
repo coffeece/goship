@@ -668,3 +668,38 @@ func TestLocalDeployNeedsPathOrImage(t *testing.T) {
 		t.Errorf("got isError=%v %q", res.IsError, text(res))
 	}
 }
+
+// The hosted server never reads the path a caller names, even with an image.
+func TestHostedDeployIgnoresThePath(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir+"/goship.yml", "org: other\nproject: comet\n")
+	var paths []string
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		switch {
+		case r.URL.Path == "/api/v1/orgs":
+			w.Write([]byte(`[{"slug":"acme"},{"slug":"other"}]`)) //nolint:errcheck
+		case strings.HasSuffix(r.URL.Path, "/deploys/image"):
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"type":"result","ok":true}` + "\n")) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			w.Write([]byte(`{"name":"web"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
+	res := call(t, cs, "goship_deploy", map[string]any{"path": dir, "app": "web", "image": "ghcr.io/a/b:1", "plan": "app-free"})
+	if res.IsError {
+		t.Fatalf("isError: %s", text(res))
+	}
+	const want = "POST /api/v1/orgs/acme/projects/atlas/environments/development/apps/web/deploys/image"
+	if !slices.Contains(paths, want) {
+		t.Errorf("paths = %q, want %q", paths, want)
+	}
+	for _, p := range paths {
+		if strings.Contains(p, "/orgs/other") {
+			t.Errorf("read goship.yml from the path: %s", p)
+		}
+	}
+}

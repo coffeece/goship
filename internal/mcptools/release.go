@@ -39,6 +39,13 @@ func (d DeployArgs) org() string {
 	return ""
 }
 
+// hostedDeployArgs are the arguments of the hosted goship_deploy. They are
+// DeployArgs, but the path is never consulted: the hosted server must not read
+// its own filesystem on a caller's say-so.
+type hostedDeployArgs struct{ DeployArgs }
+
+func (d hostedDeployArgs) org() string { return d.Org }
+
 // DeployResult is a finished deploy, with the steps it went through.
 type DeployResult struct {
 	deploy.Result
@@ -117,7 +124,8 @@ func (r *registry) releases(withDeploy bool) {
 			})
 	} else {
 		orgTool(r, "goship_deploy", "Deploy a prebuilt container image with image (public registries only; app is required). Deploying a directory is not available on the hosted server because it cannot read a directory on your machine: run `goship deploy` or the local `goship mcp` server for that.", write,
-			func(ctx context.Context, c *portal.Client, org string, in DeployArgs) (*DeployResult, error) {
+			func(ctx context.Context, c *portal.Client, org string, h hostedDeployArgs) (*DeployResult, error) {
+				in := h.DeployArgs
 				if in.Image == "" {
 					return nil, errors.New("deploys need the project directory, which this hosted server cannot read: run `goship deploy <dir>` in a terminal, or add the local server with `goship mcp`")
 				}
