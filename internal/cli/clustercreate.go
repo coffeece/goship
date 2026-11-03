@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/coffeece/goship/internal/deploy"
@@ -39,6 +40,7 @@ var stdinIsTTY = func(cmd *cobra.Command) bool {
 func newClusterCreateCmd(app *App) *cobra.Command {
 	var cloudRef, region, size, host, sshUser, sshKeyFile, kubeconfig string
 	var port int
+	var environments []string
 	var noWait bool
 	var timeout time.Duration
 
@@ -53,7 +55,9 @@ func newClusterCreateCmd(app *App) *cobra.Command {
 			"interactively from the account's live catalog; piped in or scripted, both\n" +
 			"must be passed.\n\n" +
 			"A cluster belongs to the organization: an environment runs on it once\n" +
-			"`goship environment create --cluster` names it.",
+			"`goship environment create --cluster` names it. --environment points\n" +
+			"existing environments at the new cluster so they run on it once it is\n" +
+			"active (the dashboard's Environments page does the same).",
 		Args: cobra.ExactArgs(1),
 		RunE: orgRunE(app, func(cmd *cobra.Command, org string, args []string) error {
 			path, err := createPath(cmd)
@@ -72,7 +76,7 @@ func newClusterCreateCmd(app *App) *cobra.Command {
 			cmd.SetIn(bufio.NewReader(cmd.InOrStdin()))
 
 			name := args[0]
-			req := portal.CreateClusterRequest{Name: name}
+			req := portal.CreateClusterRequest{Name: name, Environments: environments}
 			var where string
 
 			switch path {
@@ -152,6 +156,9 @@ func newClusterCreateCmd(app *App) *cobra.Command {
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Creating cluster %s on %s\n", name, where)
+			if len(environments) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Environments %s run on it once it is active.\n", strings.Join(environments, ", "))
+			}
 			if noWait {
 				return app.Renderer().Message(
 					"Cluster %s requested; not waiting for it to come up (--no-wait). `goship clusters` shows its status.",
@@ -176,6 +183,7 @@ func newClusterCreateCmd(app *App) *cobra.Command {
 	f.StringVar(&sshUser, "ssh-user", "root", "SSH user")
 	f.StringVar(&sshKeyFile, "ssh-key", "", "path to a private key with access to the host")
 	f.StringVar(&kubeconfig, "kubeconfig", "", "path to the kubeconfig of a Kubernetes cluster you already have")
+	f.StringSliceVar(&environments, "environment", nil, "slug of an existing environment to run on the new cluster once it is active (repeatable or comma-separated)")
 	f.BoolVar(&noWait, "no-wait", false, "return once the cluster is requested, without following provisioning")
 	f.DurationVar(&timeout, "timeout", 30*time.Minute, "how long to follow provisioning before giving up; 0 follows until it ends (the cluster keeps provisioning either way)")
 
