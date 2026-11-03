@@ -248,7 +248,7 @@ func TestRunSourceOnAPlatformlessAppIsRefused(t *testing.T) {
 	_, err := Run(context.Background(), portal.New(srv.URL, "t"), Options{
 		Dir: dir, App: "web", Org: "acme", Project: "atlas", Environment: "production",
 	}, &heard{})
-	if err == nil || !strings.Contains(err.Error(), "has no platform") {
+	if err == nil || !strings.Contains(err.Error(), "has no platform (it is built from a Dockerfile or an image): pass --dockerfile <file>, or --image <ref>") {
 		t.Fatalf("error = %v", err)
 	}
 	if slices.ContainsFunc(fake.asked, func(s string) bool { return strings.HasSuffix(s, "/env") }) {

@@ -188,9 +188,10 @@ func Run(ctx context.Context, client *portal.Client, o Options, r Reporter) (*Re
 		return nil, lookupErr
 	}
 
-	// An app deployed from an image has no platform to build source with.
+	// An app with no platform (built from a Dockerfile, or deployed from an
+	// image) has nothing to build source with.
 	if !image && lookupErr == nil && existing.Platform == "" && dockerfile == "" {
-		return nil, fmt.Errorf("%q has no platform (it was deployed from an image): pass --dockerfile, or deploy an image with --image", name)
+		return nil, fmt.Errorf("%q has no platform (it is built from a Dockerfile or an image): pass --dockerfile <file>, or --image <ref>", name)
 	}
 
 	buildWith := firstNonEmpty(dockerfile, platform)

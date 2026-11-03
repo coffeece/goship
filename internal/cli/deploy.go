@@ -27,7 +27,8 @@ func newDeployCmd(app *App) *cobra.Command {
 			"named after the directory, its platform is inferred from the files present,\n" +
 			"and it is created on first deploy.\n\n" +
 			"A goship.yml (or goship.yaml) is an optional shortcut for the same values.\n" +
-			"Flags beat the file, the file beats what is inferred.",
+			"Flags beat the file, the file beats what is inferred.\n\n" +
+			"With --image, deploys a public container image instead of building the directory.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			if err := noJSON(app, cmd); err != nil {
