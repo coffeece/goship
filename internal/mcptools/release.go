@@ -191,7 +191,7 @@ func (r *recorder) explain(err error) error {
 	var opErr *portal.OperationError
 	switch {
 	case errors.As(err, &opErr):
-		err = fmt.Errorf("release failed: %s", strings.TrimPrefix(opErr.Message, "deploy failed: "))
+		err = &releaseFailed{op: opErr}
 	case errors.Is(err, portal.ErrStreamCut):
 		return fmt.Errorf("lost the connection during the release; it keeps running on GoShip — goship_list_releases shows how it ended")
 	default:
@@ -208,3 +208,13 @@ func (r *recorder) explain(err error) error {
 	}
 	return fmt.Errorf("%w\n\nlast %d log lines:\n%s", err, len(lines), strings.Join(lines, "\n"))
 }
+
+// releaseFailed reads a failed release as "release failed: <reason>" and keeps
+// the API's *portal.OperationError in the chain, code included.
+type releaseFailed struct{ op *portal.OperationError }
+
+func (e *releaseFailed) Error() string {
+	return "release failed: " + strings.TrimPrefix(e.op.Message, "deploy failed: ")
+}
+
+func (e *releaseFailed) Unwrap() error { return e.op }
