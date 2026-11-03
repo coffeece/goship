@@ -33,7 +33,7 @@
 | `goship_enable_environment` / `goship_disable_environment` | `goship environment enable <slug>` / `goship environment disable <slug>` (staging starts disabled; refusals are printed as the API wrote them) |
 | `goship_create_environment` / `goship_delete_environment` | `goship environment create <slug> [--name n] [--cluster c] [--db-server s]` / `goship environment rm <slug>` |
 | `goship_list_clusters` / `goship_get_cluster` | `goship clusters` / `goship cluster info <cluster>` |
-| `goship_create_cluster` | `goship cluster create <name> --cloud a --region r --size s`, or `--host ip [--ssh-user u] [--port p] --ssh-key path`, or `--kubeconfig path` (the tool takes `ssh_key` and `kubeconfig` as contents: use the CLI for those) |
+| `goship_create_cluster` | `goship cluster create <name> --cloud a --region r --size s`, or `--host ip [--ssh-user u] [--port p] --ssh-key path`, or `--kubeconfig path`, each with optional `[--environment slug]...` (the tool takes an `environments` array; it takes `ssh_key` and `kubeconfig` as contents: use the CLI for those) |
 | `goship_list_cluster_sizes` / `goship_resize_cluster` | `goship cluster sizes <cluster>` / `goship cluster resize <cluster> --size <slug>` (on `reconnect_required`, send the user to the dashboard link in the error) |
 | `goship_delete_cluster` | `goship cluster rm <cluster> [--destroy-server]` |
 | `goship_list_volumes` / `goship_get_volume` / `goship_create_volume` / `goship_bind_volume` / `goship_unbind_volume` / `goship_delete_volume` | `goship volumes` / `goship volume info\|create\|bind\|unbind\|rm` (volumes need an environment on a cluster of the organization's own) |

@@ -167,6 +167,7 @@ organization, and there are three ways to add one:
 goship cluster create acme-vps --cloud my-account --region <region> --size <size>   # a new machine on a connected cloud account
 goship cluster create acme-vps --host 203.0.113.7 --ssh-key ~/.ssh/id_ed25519       # a machine you already run, over SSH
 goship cluster create acme-k8s --kubeconfig ./kubeconfig                            # a Kubernetes cluster you already run
+goship cluster create acme-vps --cloud my-account --region <region> --size <size> --environment development,production   # and run those environments on it once it is active
 ```
 
 `goship clusters` lists them, and `goship cluster info|sizes|resize|rm` manage
@@ -194,7 +195,7 @@ belong to the organization too: they take no project.
 | `goship volume create\|info\|bind\|unbind\|rm` | persistent disks, on a cluster of your own |
 | `goship environments` / `goship environment use\|create\|enable\|disable\|rm <slug>` | list the organization's environments, the cluster each runs on and whether it is enabled / choose one for this project / add one for every project (`--cluster`, `--db-server`) / allow or stop new work in one (staging starts disabled) / delete one nothing is left in |
 | `goship clusters [-A]` | list the clusters the organization can use, its own and GoShip's shared one; `--all` spans every organization you belong to |
-| `goship cluster create\|info\|sizes\|resize\|rm` | your own machines and Kubernetes clusters: `create` provisions a machine on a connected cloud (`--cloud --region --size`), connects one over SSH (`--host --ssh-key`) or connects a Kubernetes cluster (`--kubeconfig`); `resize` changes the size of one GoShip created |
+| `goship cluster create\|info\|sizes\|resize\|rm` | your own machines and Kubernetes clusters: `create` provisions a machine on a connected cloud (`--cloud --region --size`), connects one over SSH (`--host --ssh-key`) or connects a Kubernetes cluster (`--kubeconfig`); `--environment <slug>` (repeatable) points existing environments at the new cluster; `resize` changes the size of one GoShip created |
 | `goship cloud providers\|connect\|list\|regions\|sizes\|disconnect` | the cloud accounts your clusters and database servers run on, shared by the whole organization — AWS connects with `--role-arn` or `--access-keys-stdin`; `connect <provider> --account <id>` replaces the key of an API-key account in place |
 | `goship plans [--kind app\|database]` | what you can choose in the environment: priced on GoShip's cluster, sizes on your own |
 | `goship releases` / `goship rollback` | deploy history |
@@ -226,7 +227,9 @@ own machines are managed as clusters that environments run on.
 - `goship node …` and `goship nodes` are now `goship cluster …` and
   `goship clusters`. The old names print a pointer to the new ones on stderr
   and exit with status 2. `cluster create` takes `--cloud` (with `--region` and
-  `--size`), `--host` (with `--ssh-key`) or `--kubeconfig`.
+  `--size`), `--host` (with `--ssh-key`) or `--kubeconfig`, plus an optional
+  repeatable `--environment <slug>` that points existing environments at the
+  new cluster.
 - `--node` is gone from every command, and so is `node:` in `goship.yml` (it is
   ignored, with a warning). The environment decides where an app runs: choose
   it with `--environment`, `environment:` in `goship.yml`, `GOSHIP_ENVIRONMENT`
