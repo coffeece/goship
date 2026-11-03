@@ -27,3 +27,14 @@ func TestResizeReconnectHint(t *testing.T) {
 		t.Errorf("nil changed: %v", got)
 	}
 }
+
+func TestResizeReconnectHintKeepsTheAPIError(t *testing.T) {
+	apiErr := &portal.Error{Status: 409, Message: "reconnect the DigitalOcean account to resize.", Code: "reconnect_required"}
+	err := ResizeReconnectHint("https://goship.sh", "acme", "c-home", apiErr)
+	if portal.ErrorCode(err) != "reconnect_required" {
+		t.Errorf("ErrorCode = %q, want reconnect_required", portal.ErrorCode(err))
+	}
+	if want := "reconnect the DigitalOcean account to resize. Reconnect it from the dashboard: https://goship.sh/orgs/acme/clusters/c-home/resize"; err.Error() != want {
+		t.Errorf("Error() = %q, want %q", err.Error(), want)
+	}
+}

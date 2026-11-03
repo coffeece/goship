@@ -169,3 +169,22 @@ func TestResizeClusterPointsAtTheDashboard(t *testing.T) {
 		t.Errorf("isError=%v %q", res.IsError, text(res))
 	}
 }
+
+// The hint keeps the API's answer in the chain, so the agent still gets the
+// code to branch on.
+func TestResizeClusterKeepsTheReconnectCode(t *testing.T) {
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/orgs/acme/clusters":
+			w.Write([]byte(`[{"id":"c-home","name":"vulcan"}]`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`{"error":"reconnect the DigitalOcean account to resize","code":"reconnect_required"}`)) //nolint:errcheck
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme"}, Options{})
+	res := call(t, cs, "goship_resize_cluster", map[string]any{"cluster": "vulcan", "size": "s-2vcpu-4gb"})
+	if got := lastLine(text(res)); !res.IsError || got != "code: reconnect_required" {
+		t.Errorf("isError=%v last line %q, want code: reconnect_required", res.IsError, got)
+	}
+}
