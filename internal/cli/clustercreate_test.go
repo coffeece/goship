@@ -500,3 +500,48 @@ func TestClusterCreateJSONSkipsFollow(t *testing.T) {
 		t.Errorf("output should be the created cluster's JSON: %q", out)
 	}
 }
+
+func TestClusterCreateSendsEnvironments(t *testing.T) {
+	var raw string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		raw = string(b)
+		w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
+	})
+
+	keyFile := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(keyFile, []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := run(t, "", "cluster", "create", "n1", "--host", "203.0.113.5", "--ssh-key", keyFile,
+		"--environment", "development", "--environment", "production", "--no-wait")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, `"environments":["development","production"]`) {
+		t.Errorf("body = %s", raw)
+	}
+	if !strings.Contains(out, "Environments development, production run on it once it is active.") {
+		t.Errorf("output = %q", out)
+	}
+}
+
+func TestClusterCreateOmitsEnvironmentsByDefault(t *testing.T) {
+	var raw string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		raw = string(b)
+		w.Write([]byte(`{"id":"n1","name":"n1","status":"provisioning"}`)) //nolint:errcheck
+	})
+
+	keyFile := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(keyFile, []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(t, "", "cluster", "create", "n1", "--host", "203.0.113.5", "--ssh-key", keyFile, "--no-wait"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw, "environments") {
+		t.Errorf("body = %s", raw)
+	}
+}

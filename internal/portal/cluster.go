@@ -57,6 +57,9 @@ type CreateClusterRequest struct {
 	// Kubeconfig connects a Kubernetes cluster you already run (Type
 	// "kubernetes").
 	Kubeconfig string `json:"kubeconfig,omitempty"`
+	// Environments are slugs of existing environments that will run on the
+	// cluster once it is active.
+	Environments []string `json:"environments,omitempty"`
 }
 
 func (c *Client) Clusters(ctx context.Context, org string) ([]Cluster, error) {
