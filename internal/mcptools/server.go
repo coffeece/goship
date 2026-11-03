@@ -143,25 +143,25 @@ func tool[In targetCarrier, Out any](r *registry, name, desc string, k kind, fn 
 			var zero Out
 			c, err := r.clients.Client(ctx)
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			org, err := r.clients.Org(ctx, in.org())
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			project, err := r.clients.Project(ctx, c, org, in.project())
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			// Never a guess: an environment nobody chose whose default cannot
 			// be read refuses the call, reads included.
 			env, err := r.clients.Environment(ctx, c, org, project, in.environment())
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			out, err := fn(ctx, c, deploy.Target{Org: org, Project: project, Environment: env}, in)
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			return nil, out, nil
 		})
@@ -178,15 +178,15 @@ func orgTool[In orgCarrier, Out any](r *registry, name, desc string, k kind, fn 
 			var zero Out
 			c, err := r.clients.Client(ctx)
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			org, err := r.clients.Org(ctx, in.org())
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			out, err := fn(ctx, c, org, in)
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			return nil, out, nil
 		})
@@ -202,11 +202,11 @@ func orgless[In any, Out any](r *registry, name, desc string, k kind, fn func(ct
 			var zero Out
 			c, err := r.clients.Client(ctx)
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			out, err := fn(ctx, c, in)
 			if err != nil {
-				return nil, zero, err
+				return nil, zero, withCode(err)
 			}
 			return nil, out, nil
 		})
