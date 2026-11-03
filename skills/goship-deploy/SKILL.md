@@ -134,6 +134,15 @@ One call creates the app on first deploy, applies env and follows the build:
   `env` / `dockerfile` when they differ from the file.
 - CLI: `goship deploy [dir] [--environment e] [--plan p] [--env-file .env] [-m msg]`.
 
+A prebuilt container image deploys instead of a directory: MCP `goship_deploy`
+with `image` (and `app`; no `path` needed, so the hosted server can do it) or
+CLI `goship deploy --image <ref> -a <app>`. Only public registries work for now
+(no registry credentials), the image must be `linux/amd64` and at most 2 GB
+(GoShip's shared cluster), and a digest reference (`name@sha256:...`) is better
+than a tag. `--image` cannot be combined with `--platform` or `--dockerfile`;
+`goship.yaml` is read from inside the image. In CI, authenticate with the
+`GOSHIP_TOKEN` environment variable.
+
 The deploy says where it goes (`Deploying to <org>/<project>/<environment>`)
 and its result carries `org`, `project` and `environment`: report them. The
 same app name can live in several environments of a project (each is its own

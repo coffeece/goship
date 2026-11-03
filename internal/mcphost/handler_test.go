@@ -171,8 +171,8 @@ func TestHostedServerEndToEnd(t *testing.T) {
 	var names []string
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
-		// A deploy reads a local directory; the hosted server only says so.
-		if tool.Name == "goship_deploy" && !strings.Contains(tool.Description, "Not available on the hosted server") {
+		// A directory deploy reads local files; the hosted server only deploys images.
+		if tool.Name == "goship_deploy" && !strings.Contains(tool.Description, "not available on the hosted server") {
 			t.Errorf("goship_deploy is the local one: %s", tool.Description)
 		}
 	}

@@ -15,7 +15,7 @@
 | `goship_list_app_access` / `goship_add_app_access` / `goship_reset_app_access` / `goship_remove_app_access` | `goship app access list\|add\|reset\|rm <name> [user]` |
 | `goship_get_app_access_token` (`reveal: true` for a usable token) / `goship_rotate_app_access_token` | `goship app access token <name> [--reveal\|--rotate]` |
 | `goship_get_env` / `goship_set_env` / `goship_unset_env` | `goship env list\|set\|unset -a <app> [--no-restart]` |
-| `goship_deploy` | `goship deploy [dir] [-a app] [--platform p] [--dockerfile f] [--plan p] [--env-file .env] [-m msg]` |
+| `goship_deploy` | `goship deploy [dir] [-a app] [--platform p] [--dockerfile f] [--image ref] [--plan p] [--env-file .env] [-m msg]` |
 | `goship_list_releases` / `goship_rollback` | `goship releases -a <app>` / `goship rollback <version> -a <app>` |
 | `goship_logs` | `goship logs -a <app> [-l N] [--source web]` |
 | `goship_run` | `goship run -a <app> [--once] [--isolated] -- <cmd>` |

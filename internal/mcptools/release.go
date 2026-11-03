@@ -14,7 +14,8 @@ import (
 
 type DeployArgs struct {
 	ProjectArg
-	Path       string            `json:"path" jsonschema:"directory to deploy, absolute or relative to the server's working directory"`
+	Path       string            `json:"path,omitempty" jsonschema:"directory to deploy, absolute or relative to the server's working directory; required unless image is given"`
+	Image      string            `json:"image,omitempty" jsonschema:"container image to deploy instead of building a directory (public registries only)"`
 	App        string            `json:"app,omitempty" jsonschema:"app name; defaults to goship.yml's app, then the directory name"`
 	Platform   string            `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; inferred from the files present when omitted"`
 	Plan       string            `json:"plan,omitempty" jsonschema:"plan slug for a new app; a free plan is picked only when the org has one"`
@@ -28,6 +29,9 @@ type DeployArgs struct {
 func (d DeployArgs) org() string {
 	if d.Org != "" {
 		return d.Org
+	}
+	if d.Path == "" {
+		return ""
 	}
 	if proj, _, err := deploy.LoadProject(d.Path); err == nil {
 		return proj.Org
@@ -68,38 +72,56 @@ type RollbackResult struct {
 	Steps           []Step  `json:"steps"`
 }
 
+// runDeploy is the deploy both servers share. withDir is false on the hosted
+// server, which has no directory to read: only an image can be deployed there.
+func (r *registry) runDeploy(ctx context.Context, c *portal.Client, org string, in DeployArgs, withDir bool) (*DeployResult, error) {
+	dir := in.Path
+	if !withDir {
+		dir = ""
+	}
+	// The project is chosen here only when the caller named it or one is
+	// selected; otherwise goship.yml, or the project that already holds the
+	// app, decides inside deploy.Run.
+	project := in.Project
+	if project == "" {
+		if dir == "" {
+			project, _ = r.clients.Project(ctx, c, org, "")
+		} else if proj, _, err := deploy.LoadProject(dir); err == nil && proj.ProjectSlug == "" {
+			project, _ = r.clients.Project(ctx, c, org, "")
+		}
+	}
+	selected, orgs := r.clients.DeploySelection(c)
+	rec := &recorder{}
+	res, err := deploy.Run(ctx, c, deploy.Options{
+		Dir: dir, App: in.App, Org: org, Project: project,
+		Environment: in.Environment, SelectedEnvironment: selected, Orgs: orgs,
+		Platform: in.Platform, Plan: in.Plan, Dockerfile: in.Dockerfile, Image: in.Image, Message: in.Message, Env: in.Env,
+	}, rec)
+	if errors.Is(err, deploy.ErrNoProject) {
+		return nil, errors.New(`no project selected: pass project, set project: in goship.yml, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`)
+	}
+	if err != nil {
+		return nil, rec.explain(err)
+	}
+	return &DeployResult{Result: *res, DurationSeconds: res.Duration.Seconds(), Steps: rec.steps()}, nil
+}
+
 func (r *registry) releases(withDeploy bool) {
 	if withDeploy {
-		// The project is chosen here only when the caller named it or one is
-		// selected; otherwise goship.yml, or the project that already holds the
-		// app, decides inside deploy.Run.
-		orgTool(r, "goship_deploy", "Deploy a directory: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback), applies env, uploads the source and follows the build and release. The environment is the environment argument, else environment: in the deployed directory's goship.yml, else the server's selection (--environment, the server directory's goship.yml, GOSHIP_ENVIRONMENT, `goship environment use`), else the organization's default. With no project named, the project and environment already holding the app decide. Returns the version and public URL, and billing_starts_at while an invited trial holds the app unbilled (tell the user that date). Can take minutes.", write,
+		orgTool(r, "goship_deploy", "Deploy a directory, or a prebuilt container image with image: creates the app on first deploy (platform inferred from go.mod, pyproject.toml, requirements.txt, package.json or index.html; a Dockerfile is the fallback; an image deploy has no platform), applies env, uploads the source and follows the build and release. An image must be on a public registry, built for linux/amd64, at most 2 GB; prefer a digest reference (name@sha256:...). The environment is the environment argument, else environment: in the deployed directory's goship.yml, else the server's selection (--environment, the server directory's goship.yml, GOSHIP_ENVIRONMENT, `goship environment use`), else the organization's default. With no project named, the project and environment already holding the app decide. Returns the version and public URL, and billing_starts_at while an invited trial holds the app unbilled (tell the user that date). Can take minutes.", write,
 			func(ctx context.Context, c *portal.Client, org string, in DeployArgs) (*DeployResult, error) {
-				project := in.Project
-				if project == "" {
-					if proj, _, err := deploy.LoadProject(in.Path); err == nil && proj.ProjectSlug == "" {
-						project, _ = r.clients.Project(ctx, c, org, "")
-					}
+				if in.Path == "" && in.Image == "" {
+					return nil, errors.New("pass path (the directory to deploy) or image (a container image to deploy)")
 				}
-				selected, orgs := r.clients.DeploySelection(c)
-				rec := &recorder{}
-				res, err := deploy.Run(ctx, c, deploy.Options{
-					Dir: in.Path, App: in.App, Org: org, Project: project,
-					Environment: in.Environment, SelectedEnvironment: selected, Orgs: orgs,
-					Platform: in.Platform, Plan: in.Plan, Dockerfile: in.Dockerfile, Message: in.Message, Env: in.Env,
-				}, rec)
-				if errors.Is(err, deploy.ErrNoProject) {
-					return nil, errors.New(`no project selected: pass project, set project: in goship.yml, or ask the user to run "goship project use <slug>"; goship_list_projects shows them`)
-				}
-				if err != nil {
-					return nil, rec.explain(err)
-				}
-				return &DeployResult{Result: *res, DurationSeconds: res.Duration.Seconds(), Steps: rec.steps()}, nil
+				return r.runDeploy(ctx, c, org, in, true)
 			})
 	} else {
-		orgTool(r, "goship_deploy", "Not available on the hosted server: a deploy reads a directory on your machine. Run `goship deploy` or the local `goship mcp` server instead.", read,
-			func(context.Context, *portal.Client, string, DeployArgs) (Message, error) {
-				return Message{}, errors.New("deploys need the project directory, which this hosted server cannot read: run `goship deploy <dir>` in a terminal, or add the local server with `goship mcp`")
+		orgTool(r, "goship_deploy", "Deploy a prebuilt container image with image (public registries only; app is required). Deploying a directory is not available on the hosted server because it cannot read a directory on your machine: run `goship deploy` or the local `goship mcp` server for that.", write,
+			func(ctx context.Context, c *portal.Client, org string, in DeployArgs) (*DeployResult, error) {
+				if in.Image == "" {
+					return nil, errors.New("deploys need the project directory, which this hosted server cannot read: run `goship deploy <dir>` in a terminal, or add the local server with `goship mcp`")
+				}
+				return r.runDeploy(ctx, c, org, in, false)
 			})
 	}
 	tool(r, "goship_list_releases", "List an app's releases, newest first, with who deployed and whether it can be rolled back to.", read,
