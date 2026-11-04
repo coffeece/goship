@@ -18,7 +18,7 @@ import (
 var projectFiles = []string{"goship.yaml", "goship.yml", ".goship.yaml", ".goship.yml"}
 
 func newDeployCmd(app *App) *cobra.Command {
-	var appName, platform, plan, envFile, message, dockerfile string
+	var appName, platform, plan, envFile, message, dockerfile, image string
 
 	cmd := &cobra.Command{
 		Use:   "deploy [dir]",
@@ -27,7 +27,8 @@ func newDeployCmd(app *App) *cobra.Command {
 			"named after the directory, its platform is inferred from the files present,\n" +
 			"and it is created on first deploy.\n\n" +
 			"A goship.yml (or goship.yaml) is an optional shortcut for the same values.\n" +
-			"Flags beat the file, the file beats what is inferred.",
+			"Flags beat the file, the file beats what is inferred.\n\n" +
+			"With --image, deploys a public container image instead of building the directory.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			if err := noJSON(app, cmd); err != nil {
@@ -85,6 +86,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				Platform:            platform,
 				Plan:                plan,
 				Dockerfile:          dockerfile,
+				Image:               image,
 				Message:             message,
 				Env:                 env,
 			}, p)
@@ -118,6 +120,7 @@ func newDeployCmd(app *App) *cobra.Command {
 	f.StringVarP(&appName, "app", "a", "", "app name (default: the directory name)")
 	f.StringVar(&platform, "platform", "", "platform for a new app (default: inferred from the files present)")
 	f.StringVar(&dockerfile, "dockerfile", "", "build from this container file instead of a platform")
+	f.StringVar(&image, "image", "", "deploy this container image (public registries) instead of building the directory")
 	f.StringVar(&plan, "plan", "", "plan, used when creating the app")
 	f.StringVar(&envFile, "env-file", "", "dotenv file applied as private variables")
 	f.StringVarP(&message, "message", "m", "", "deploy message")

@@ -3,6 +3,7 @@ package cli
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -406,7 +407,7 @@ func TestDeployPicksTheOrgThatOwnsTheApp(t *testing.T) {
 			w.Write([]byte(`[{"slug":"production"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/beta/projects/default/environments/production/apps/widget":
 			deployedOrg = "beta"
-			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
+			w.Write([]byte(`{"name":"widget","platform":"go","tsuru_name":"acme-widget"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -648,7 +649,7 @@ func TestDeployReadsTheEnvironmentFromConfig(t *testing.T) {
 			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/apps"):
 			created = r.URL.Path
-			w.Write([]byte(`{"name":"quake"}`)) //nolint:errcheck
+			w.Write([]byte(`{"name":"quake","platform":"go"}`)) //nolint:errcheck
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -755,7 +756,7 @@ func TestDeployReportsAFailedBuild(t *testing.T) {
 			io.Copy(io.Discard, r.Body)                                                                                                                                   //nolint:errcheck
 			w.Write([]byte(`{"type":"output","data":"main.go:3: undefined: x\n"}` + "\n" + `{"type":"result","ok":false,"error":"deploy failed: exit status 1"}` + "\n")) //nolint:errcheck
 		case r.Method == http.MethodGet:
-			w.Write([]byte(`{"name":"quake"}`)) //nolint:errcheck
+			w.Write([]byte(`{"name":"quake","platform":"go"}`)) //nolint:errcheck
 		}
 	})
 
@@ -1081,5 +1082,41 @@ func TestDeployReadsOnlyTheDeployDirectorysFile(t *testing.T) {
 	run(t, "", "deploy", quakeDir(t)) //nolint:errcheck
 	if !slices.Contains(touched, "POST /api/v1/orgs/acme/projects/atlas/environments/production/apps/quake/deploys") {
 		t.Errorf("touched %q, want acme/atlas/production", touched)
+	}
+}
+
+func TestDeployImageFlag(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/available-plans"):
+			w.Write([]byte(freePlanCatalog)) //nolint:errcheck
+		case r.Method == http.MethodPost:
+			w.Write([]byte(`{"name":"widget","tsuru_name":"acme-widget"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	var got deploy.ImageArgs
+	saved := deploy.DeployImage
+	deploy.DeployImage = func(_ context.Context, _ *portal.Client, a deploy.ImageArgs, _ deploy.Reporter) error {
+		got = a
+		return nil
+	}
+	t.Cleanup(func() { deploy.DeployImage = saved })
+
+	dir := filepath.Join(t.TempDir(), "widget")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(t, "", "deploy", "--image", "ghcr.io/a/b:1", dir); err != nil {
+		t.Fatal(err)
+	}
+	if got.Image != "ghcr.io/a/b:1" || got.Name != "widget" {
+		t.Errorf("DeployImage got %+v", got)
+	}
+
+	_, err := run(t, "", "deploy", "--image", "ghcr.io/a/b:1", "--dockerfile", "Dockerfile", dir)
+	if err == nil || !strings.Contains(err.Error(), "--image cannot be combined with --platform or --dockerfile") {
+		t.Errorf("error = %v", err)
 	}
 }
