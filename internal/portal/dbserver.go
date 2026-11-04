@@ -31,8 +31,14 @@ func (b ByteCount) String() string {
 }
 
 type DatabaseServer struct {
-	ID                string    `json:"id" table:"ID"`
-	Name              string    `json:"name" table:"NAME"`
+	ID   string `json:"id" table:"ID"`
+	Name string `json:"name" table:"NAME"`
+	// Environment is the slug of the environment the server was created for
+	// and defaults; empty for a server any environment may use. Protected is
+	// a production server, whose instance has deletion protection.
+	Environment       string    `json:"environment,omitempty" table:"ENVIRONMENT"`
+	EnvironmentID     string    `json:"environment_id,omitempty"`
+	Protected         bool      `json:"protected"`
 	Provider          string    `json:"provider" table:"PROVIDER"`
 	Region            string    `json:"region" table:"REGION"`
 	Tier              string    `json:"tier" table:"SIZE"`
@@ -70,7 +76,9 @@ type CreateDatabaseServerRequest struct {
 	Name           string `json:"name"`
 	Region         string `json:"region"`
 	Tier           string `json:"tier"`
-	DiskLimitGB    *int   `json:"disk_limit_gb,omitempty"`
+	// Environment is the slug of the environment the server is for.
+	Environment string `json:"environment,omitempty"`
+	DiskLimitGB *int   `json:"disk_limit_gb,omitempty"`
 }
 
 func databaseServersPath(org string) string { return orgPath(org, "/database-servers") }

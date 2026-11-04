@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"regexp"
@@ -267,22 +268,25 @@ func newDBServerCmd(app *App) *cobra.Command {
 		Use:   "server",
 		Short: "Run PostgreSQL servers in your own cloud",
 		Long: "Run PostgreSQL servers in your own cloud.\n\n" +
-			"A server is a managed PostgreSQL instance GoShip creates in a connected Google Cloud project. Databases on it are not billed by GoShip.",
+			"A server is a managed PostgreSQL instance GoShip creates in a connected Google Cloud project, for one\n" +
+			"environment: once ready it is where that environment's new databases go. The production server is\n" +
+			"protected against deletion. Databases on a server are not billed by GoShip.",
 	}
 
 	list := newOrgListCmd(app, "list", "List the database servers of the current organization, or --all of them", (*portal.Client).DatabaseServers, skipForbiddenPlaces)
 	list.RunE = refuseProjectFlag(list.RunE)
 
 	create := &cobra.Command{
-		Use:   "create --account <account> --region <region> [--tier <tier>] [--name <name>]",
-		Short: "Create a PostgreSQL server in a connected cloud account",
+		Use:   "create --account <account> --region <region> [--environment <slug>] [--tier <tier>] [--name <name>]",
+		Short: "Create a PostgreSQL server in a connected cloud account, for an environment",
 		Args:  cobra.NoArgs,
 	}
-	var account, region, tier, name, diskLimit string
+	var account, region, environment, tier, name, diskLimit string
 	create.Flags().StringVar(&account, "account", "", "cloud account (id, label or provider) (required)")
 	create.Flags().StringVar(&region, "region", "", "cloud region (required); see `goship cloud regions <account>`")
+	create.Flags().StringVar(&environment, "environment", "", "environment the server is for (see `goship environments`); it becomes that environment's default server. Omit for a server any environment may use")
 	create.Flags().StringVar(&tier, "tier", "db-f1-micro", "machine size; see `goship db server tiers`")
-	create.Flags().StringVar(&name, "name", "", "server name (default pg-<account label>)")
+	create.Flags().StringVar(&name, "name", "", "server name (default pg-<environment>, or pg-<account label> without --environment)")
 	create.Flags().StringVar(&diskLimit, "disk-limit", "", "most the disk may grow to, in GB, or none (default 100)")
 	_ = create.MarkFlagRequired("account")
 	_ = create.MarkFlagRequired("region")
@@ -300,10 +304,10 @@ func newDBServerCmd(app *App) *cobra.Command {
 			return err
 		}
 		if name == "" {
-			name = "pg-" + slugify(acc.Label)
+			name = "pg-" + slugify(cmp.Or(environment, acc.Label))
 		}
 		s, err := app.Portal().CreateDatabaseServer(cmd.Context(), org, portal.CreateDatabaseServerRequest{
-			CloudAccountID: acc.ID, Name: name, Region: region, Tier: tier, DiskLimitGB: diskCap,
+			CloudAccountID: acc.ID, Name: name, Region: region, Tier: tier, Environment: environment, DiskLimitGB: diskCap,
 		})
 		if err != nil {
 			return err

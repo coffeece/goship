@@ -27,8 +27,9 @@ type CreateDBServerArgs struct {
 	OrgArg
 	CloudAccount string `json:"cloud_account" jsonschema:"connected Google Cloud account: id, label or provider (goship_list_cloud_accounts)"`
 	Region       string `json:"region" jsonschema:"cloud region slug (goship_list_cloud_regions)"`
+	Environment  string `json:"environment,omitempty" jsonschema:"environment slug the server is for (goship_list_environments); once ready it becomes that environment's default server, and a production server gets deletion protection. Omit for a server any environment may use"`
 	Tier         string `json:"tier,omitempty" jsonschema:"machine size slug (goship_list_database_server_tiers); default db-f1-micro"`
-	Name         string `json:"name,omitempty" jsonschema:"server name; default pg-<account label>"`
+	Name         string `json:"name,omitempty" jsonschema:"server name; default pg-<environment>, or pg-<account label> without an environment"`
 	DiskLimitGB  *int   `json:"disk_limit_gb,omitempty" jsonschema:"cap in GB on how far the server's disk may auto-grow (minimum 10); 0 means no cap; default 100"`
 }
 
@@ -53,13 +54,16 @@ func (r *registry) dbservers() {
 			tiers, err := c.DatabaseServerTiers(ctx, org)
 			return DBServerTierList{Tiers: tiers}, err
 		})
-	orgTool(r, "goship_create_database_server", "Create a PostgreSQL server (a Cloud SQL instance) in a connected Google Cloud account. The cloud provider bills the instance; GoShip bills nothing for it or the databases on it. Provisioning takes about ten minutes in the background: goship_list_database_servers shows the stage, and databases created on it meanwhile are queued until it is ready. The disk auto-grows up to disk_limit_gb (default 100 GB). One server per cloud account.", write,
+	orgTool(r, "goship_create_database_server", "Create a PostgreSQL server (a Cloud SQL instance) in a connected Google Cloud account. The cloud provider bills the instance; GoShip bills nothing for it or the databases on it. Provisioning takes about ten minutes in the background: goship_list_database_servers shows the stage, and databases created on it meanwhile are queued until it is ready. The disk auto-grows up to disk_limit_gb (default 100 GB). One server per environment; a cloud account may hold several.", write,
 		func(ctx context.Context, c *portal.Client, org string, in CreateDBServerArgs) (*portal.DatabaseServer, error) {
 			acc, err := deploy.ResolveCloudAccount(ctx, c, org, in.CloudAccount)
 			if err != nil {
 				return nil, err
 			}
 			name, tier := in.Name, in.Tier
+			if name == "" && in.Environment != "" {
+				name = "pg-" + slugify(in.Environment)
+			}
 			if name == "" {
 				name = "pg-" + slugify(acc.Label)
 			}
@@ -67,7 +71,7 @@ func (r *registry) dbservers() {
 				tier = "db-f1-micro"
 			}
 			return c.CreateDatabaseServer(ctx, org, portal.CreateDatabaseServerRequest{
-				CloudAccountID: acc.ID, Name: name, Region: in.Region, Tier: tier, DiskLimitGB: in.DiskLimitGB,
+				CloudAccountID: acc.ID, Name: name, Region: in.Region, Tier: tier, Environment: in.Environment, DiskLimitGB: in.DiskLimitGB,
 			})
 		})
 	orgTool(r, "goship_set_database_server_disk_limit", "Set or remove the disk cap of a database server: how far its disk may auto-grow (0 removes the cap). The cap must be at least 10 GB and not below the disk's current size; the cloud bill grows with the disk, so it is the customer's spending ceiling.", write,

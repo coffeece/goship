@@ -170,16 +170,19 @@ Google Cloud account connected (`goship_list_cloud_accounts`, provider
 `gcp`; `goship cloud connect gcp` connects one in a terminal), the database
 can live on a *database server*: a Cloud SQL instance GoShip creates in that
 account, paid to Google by the customer, on which GoShip bills nothing. Only
-Google Cloud hosts database servers, one per cloud account. Cloud accounts
-and database servers belong to the organization, not to a project or an
-environment: any project can use them, and an environment can make a server
-the default for its new databases.
+Google Cloud hosts database servers. A server is created for one
+environment (`environment`), one per environment, and once ready it is where
+that environment's new databases go; the production server gets deletion
+protection. A cloud account may hold several servers; a server created with
+no environment may be used by any environment. Cloud accounts and database
+servers belong to the organization, not to a project.
 
 1. `goship_list_database_servers`: a server with status `ready` is reused.
    Otherwise `goship_create_database_server` with `cloud_account` (id, label
-   or `gcp`) and `region` (`goship_list_cloud_regions`); `tier` comes from
+   or `gcp`), `region` (`goship_list_cloud_regions`) and `environment` (the
+   environment the database is for); `tier` comes from
    `goship_list_database_server_tiers`, default `db-f1-micro`; `name`
-   defaults to `pg-<account label>`. Provisioning runs for about ten
+   defaults to `pg-<environment>`. Provisioning runs for about ten
    minutes in the background; do not wait for it.
 2. `goship_create_database` with `server` set to the server's name. There
    is no plan on an own server (any `plan` is ignored); an optional
@@ -188,7 +191,7 @@ the default for its new databases.
    the server is ready; `goship_get_database` shows `status` and `detail`.
 3. `goship_bind_database` once the database is `ready`.
 
-CLI: `goship db server create --account gcp --region southamerica-east1`,
+CLI: `goship db server create --account gcp --region southamerica-east1 --environment production`,
 then `goship db create <app>-db --server pg-gcp [--size-limit 2GB]`.
 
 The instance has a public IP and accepts TLS only, so apps on GoShip's
