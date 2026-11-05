@@ -92,34 +92,45 @@ func (r *registry) databases() {
 		})
 	tool(r, "goship_create_database", "Create a managed PostgreSQL database. On GoShip's server (server goship, or no server when the environment uses it) a plan is required and billed. On one of the customer's own database servers (server) there is no plan and GoShip bills nothing: the server's disk and connections are the limits, and an optional size_limit_mb caps this database. A server still provisioning queues the database until it is ready (status pending, then ready). billing_starts_at is set while an invited trial holds the database unbilled: tell the user that date.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateDBArgs) (BilledMessage, error) {
-			onGoShip := in.Server == "" || in.Server == deploy.GoShipDatabaseServer
+			// No server is the environment's database server, which may be
+			// one of the customer's own: then there is no plan either.
+			// With a plan and no server the API places it, and ignores the plan
+			// on a server of the customer's.
+			var srv *portal.DatabaseServer
+			var fromEnv bool
+			if in.Server != "" || in.Plan == "" {
+				var err error
+				if srv, fromEnv, err = deploy.DatabasePlacement(ctx, c, t, in.Server); err != nil {
+					return BilledMessage{}, err
+				}
+			}
+			onGoShip := srv == nil
 			if onGoShip && in.Plan == "" {
-				return BilledMessage{}, errors.New("plan is required unless the database goes on the customer's own server (server)")
+				return BilledMessage{}, errors.New("plan is required: the database goes on GoShip's PostgreSQL (pass server to use one of the customer's own)")
 			}
 			if onGoShip && in.SizeLimitMB != nil {
-				return BilledMessage{}, errors.New("size_limit_mb is only for databases on the customer's own server (server)")
+				return BilledMessage{}, errors.New("size_limit_mb is only for databases on the customer's own server")
 			}
 			if in.SizeLimitMB != nil {
 				if err := checkSizeLimitMB(*in.SizeLimitMB); err != nil {
 					return BilledMessage{}, err
 				}
 			}
-			var serverID string
-			if in.Server == deploy.GoShipDatabaseServer {
-				serverID = in.Server
-			} else if in.Server != "" {
-				s, err := deploy.ResolveDatabaseServer(ctx, c, t, in.Server)
-				if err != nil {
-					return BilledMessage{}, err
-				}
-				serverID = s.ID
+			var serverID, plan string
+			switch {
+			case in.Server == deploy.GoShipDatabaseServer:
+				serverID, plan = in.Server, in.Plan
+			case srv == nil:
+				plan = in.Plan
+			case !fromEnv:
+				serverID = srv.ID
 			}
-			ch, err := c.CreateDatabase(ctx, t.Org, t.Project, t.Environment, in.Name, in.Plan, in.Description, serverID, in.SizeLimitMB)
+			ch, err := c.CreateDatabase(ctx, t.Org, t.Project, t.Environment, in.Name, plan, in.Description, serverID, in.SizeLimitMB)
 			if err != nil {
 				return BilledMessage{}, err
 			}
 			if !onGoShip {
-				return billedf(ch, "Database %s is being created on server %s; it is queued while the server is still provisioning.", in.Name, in.Server)
+				return billedf(ch, "Database %s is being created on server %s; it is queued while the server is still provisioning.", in.Name, srv.Name)
 			}
 			return billedf(ch, "Database %s is being created.", in.Name)
 		})

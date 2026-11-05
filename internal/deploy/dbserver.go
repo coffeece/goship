@@ -42,4 +42,39 @@ func ResolveDatabaseServer(ctx context.Context, client *portal.Client, t Target,
 	return nil, fmt.Errorf("no database server %q in %s; `goship db server list` (goship_list_database_servers) shows them", ref, scope(t))
 }
 
+// DatabasePlacement says where a new database goes when the person named ref
+// as its server: nil for GoShip's PostgreSQL, else the organization's server.
+// "goship" is GoShip's by name. An empty ref is the environment's default
+// server, which may be one of the organization's own; fromEnvironment
+// reports that the answer came from there, in which case the API is sent no
+// server and resolves the same default itself.
+func DatabasePlacement(ctx context.Context, client *portal.Client, t Target, ref string) (server *portal.DatabaseServer, fromEnvironment bool, err error) {
+	switch ref {
+	case GoShipDatabaseServer:
+		return nil, false, nil
+	case "":
+	default:
+		s, err := ResolveDatabaseServer(ctx, client, t, ref)
+		return s, false, err
+	}
+	envs, err := client.Environments(ctx, t.Org)
+	if err != nil {
+		return nil, true, fmt.Errorf("reading environment %s's database server: %w", t.Environment, err)
+	}
+	for _, e := range envs {
+		if e.Slug != t.Environment {
+			continue
+		}
+		if e.DBServerID == "" {
+			return nil, true, nil
+		}
+		s, err := ResolveDatabaseServer(ctx, client, t, e.DBServerID)
+		if err != nil {
+			return nil, true, fmt.Errorf("environment %s's database server: %w", t.Environment, err)
+		}
+		return s, true, nil
+	}
+	return nil, true, fmt.Errorf("no environment %q in %s", t.Environment, scope(t))
+}
+
 func scope(t Target) string { return fmt.Sprintf("org %q", t.Org) }

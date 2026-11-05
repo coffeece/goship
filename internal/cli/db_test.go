@@ -177,6 +177,8 @@ func stubServerCreate(t *testing.T, body *map[string]any) {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/orgs/acme/database-servers":
 			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/environments":
+			w.Write([]byte(`[{"id":"e1","slug":"production","name":"Production"}]`)) //nolint:errcheck
 		case "POST /api/v1/orgs/acme/projects/atlas/environments/production/services/postgresql/instances":
 			json.NewDecoder(r.Body).Decode(body) //nolint:errcheck
 			w.WriteHeader(http.StatusCreated)
@@ -593,5 +595,38 @@ func TestDBServerCreateHelpHasReadablePlaceholders(t *testing.T) {
 		if !strings.Contains(out, flag) {
 			t.Errorf("help lacks %q: %s", flag, out)
 		}
+	}
+}
+
+// An environment whose database server is one of yours takes a database
+// without --plan and without --server: the API is sent neither and places it.
+func TestDBCreateUsesTheEnvironmentsOwnServer(t *testing.T) {
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/environments":
+			w.Write([]byte(`[{"id":"e1","slug":"production","name":"Production","db_server_id":"s1"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg-production","status":"active"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/projects/atlas/environments/production/services/postgresql/instances":
+			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"status":"created"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	out, err := run(t, "", "db", "create", "shop", "--size-limit", "2GB")
+	if err != nil || !strings.Contains(out, "Database shop requested on server pg-production.") {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	if _, sent := body["plan"]; sent {
+		t.Fatalf("no plan on your own server: %v", body)
+	}
+	if _, sent := body["server_id"]; sent {
+		t.Fatalf("the environment's default is the API's to apply: %v", body)
+	}
+	if body["size_limit_mb"] != float64(2048) {
+		t.Fatalf("size limit = %v", body["size_limit_mb"])
 	}
 }

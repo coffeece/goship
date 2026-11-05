@@ -23,6 +23,8 @@ func serversAPI(t *testing.T, record func(r *http.Request, body string)) string 
 			}
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"id":"srv-new","name":"pg-gcp","status":"provisioning"}`)) //nolint:errcheck
+		case "/api/v1/orgs/acme/environments":
+			w.Write([]byte(`[{"id":"e-dev","slug":"development","name":"Development"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/acme/cloud-accounts":
 			w.Write([]byte(`[{"id":"acc-gcp","provider":"gcp","label":"gcp"},{"id":"acc-aws","provider":"aws","label":"aws"}]`)) //nolint:errcheck
 		case "/api/v1/orgs/acme/cloud-accounts/acc-gcp/regions", "/api/v1/orgs/acme/cloud-accounts/acc-gcp/sizes", "/api/v1/orgs/acme/database-server-tiers":
@@ -374,5 +376,34 @@ func TestEnablePITRPostsForTheResolvedServer(t *testing.T) {
 	}
 	if path != "/api/v1/orgs/acme/database-servers/srv-staging/point-in-time-recovery" {
 		t.Errorf("posted to %s", path)
+	}
+}
+
+// No server and no plan: the environment's database server is one of the
+// customer's, so the tool creates it there, sending neither.
+func TestCreateDatabaseUsesTheEnvironmentsOwnServer(t *testing.T) {
+	var posted string
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/environments":
+			w.Write([]byte(`[{"id":"e-dev","slug":"development","name":"Development","db_server_id":"srv-staging"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"srv-staging","name":"pg-staging","status":"active"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/projects/atlas/environments/development/services/postgresql/instances":
+			b, _ := io.ReadAll(r.Body)
+			posted = string(b)
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"status":"created"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
+	res := call(t, cs, "goship_create_database", map[string]any{"name": "db"})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	if strings.Contains(posted, "server_id") || strings.Contains(posted, `"plan"`) || !strings.Contains(text(res), "pg-staging") {
+		t.Errorf("posted %s, said %q", posted, text(res))
 	}
 }
