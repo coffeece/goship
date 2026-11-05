@@ -1,4 +1,4 @@
-package mcphost
+package mcpserver
 
 import (
 	"context"
