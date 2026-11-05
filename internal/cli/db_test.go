@@ -630,3 +630,67 @@ func TestDBCreateUsesTheEnvironmentsOwnServer(t *testing.T) {
 		t.Fatalf("size limit = %v", body["size_limit_mb"])
 	}
 }
+
+func stubResizeAPI(t *testing.T, posted *map[string]any, calls *[]string) {
+	t.Helper()
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		*calls = append(*calls, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg-mova","status":"active","tier":"db-g1-small"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/database-servers/s1/resize-options":
+			w.Write([]byte(`{"current":{"slug":"db-g1-small","memory_mb":1740,"max_connections":50},"connections":30,"price_calculator":"https://cloud.google.com/products/calculator",
+				"options":[{"slug":"db-f1-micro","memory_mb":614,"max_connections":25},{"slug":"db-g1-small","memory_mb":1740,"max_connections":50},{"slug":"db-n1-standard-2","cpus":2,"memory_mb":7680,"max_connections":400}]}`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/database-servers/s1/resize":
+			json.NewDecoder(r.Body).Decode(posted) //nolint:errcheck
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"id":"s1","name":"pg-mova","status":"resizing","resize_tier":"db-n1-standard-2"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+}
+
+func TestDBServerSizesAndResize(t *testing.T) {
+	var posted map[string]any
+	var calls []string
+	stubResizeAPI(t, &posted, &calls)
+	out, err := run(t, "", "db", "server", "sizes", "pg-mova")
+	if err != nil || !strings.Contains(out, "db-n1-standard-2") || !strings.Contains(out, "30 connections open") || !strings.Contains(out, "calculator") {
+		t.Fatalf("sizes = %q, %v", out, err)
+	}
+	out, err = run(t, "", "db", "server", "resize", "pg-mova", "--tier", "db-n1-standard-2", "--yes")
+	if err != nil || posted["tier"] != "db-n1-standard-2" || !strings.Contains(out, "resizing to db-n1-standard-2") {
+		t.Fatalf("resize = %q, %v, posted %v", out, err, posted)
+	}
+	if _, err := run(t, "", "db", "server", "resize", "pg-mova", "--tier", "db-perf-optimized-N-2", "--yes"); err == nil || !strings.Contains(err.Error(), "goship db server sizes") {
+		t.Fatalf("unknown size = %v", err)
+	}
+}
+
+// Shrinking below the open connections is allowed, after a warning that
+// names both numbers; declining sends nothing.
+func TestDBServerResizeWarnsAboutConnections(t *testing.T) {
+	var posted map[string]any
+	var calls []string
+	stubResizeAPI(t, &posted, &calls)
+	_, err := run(t, "n\n", "db", "server", "resize", "pg-mova", "--tier", "db-f1-micro")
+	if err == nil || posted != nil {
+		t.Fatalf("declined: err %v, posted %v", err, posted)
+	}
+	var prompt strings.Builder
+	root := NewRoot("test")
+	root.SetArgs([]string{"db", "server", "resize", "pg-mova", "--tier", "db-f1-micro"})
+	root.SetOut(&strings.Builder{})
+	root.SetErr(&prompt)
+	root.SetIn(strings.NewReader("y\n"))
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt.String(), "db-f1-micro allows 25 connections; 30 are open now") || !strings.Contains(prompt.String(), "lose their database for a few minutes") {
+		t.Fatalf("warning = %q", prompt.String())
+	}
+	if posted["tier"] != "db-f1-micro" {
+		t.Fatalf("posted %v", posted)
+	}
+}
