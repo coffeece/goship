@@ -33,6 +33,11 @@ type CreateDBServerArgs struct {
 	DiskLimitGB  *int   `json:"disk_limit_gb,omitempty" jsonschema:"cap in GB on how far the server's disk may auto-grow (minimum 10); 0 means no cap; default 100"`
 }
 
+type ResizeDBServerArgs struct {
+	DBServerArg
+	Tier string `json:"tier" jsonschema:"new machine size slug (goship_list_database_server_sizes)"`
+}
+
 type BindDBServerArgs struct {
 	DBServerArg
 	Environment string `json:"environment" jsonschema:"environment slug the server joins (goship_list_environments)"`
@@ -106,6 +111,22 @@ func (r *registry) dbservers() {
 				return Message{}, err
 			}
 			return msgf("Retrying server %s.", s.Name)
+		})
+	orgTool(r, "goship_list_database_server_sizes", "List the machine sizes a database server can be resized to (its edition's sizes Google offers in its region), its current size, the connections open on it now, and Google's price calculator link (GoShip shows no prices).", read,
+		func(ctx context.Context, c *portal.Client, org string, in DBServerArg) (*portal.DatabaseServerResizeOptions, error) {
+			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
+			if err != nil {
+				return nil, err
+			}
+			return c.DatabaseServerResizeOptions(ctx, org, s.ID)
+		})
+	orgTool(r, "goship_resize_database_server", "Change a database server's machine size, larger or smaller, to one listed by goship_list_database_server_sizes. Google restarts the instance: its apps lose their database for a few minutes. If the new size allows fewer connections than are open now, apps may fail to connect after the restart: tell the user both numbers. It runs in the background; goship_list_database_servers shows status resizing until done.", destructive,
+		func(ctx context.Context, c *portal.Client, org string, in ResizeDBServerArgs) (*portal.DatabaseServer, error) {
+			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
+			if err != nil {
+				return nil, err
+			}
+			return c.ResizeDatabaseServer(ctx, org, s.ID, in.Tier)
 		})
 	orgTool(r, "goship_bind_database_server", "Give a database server created for no environment to an environment, in place: its databases stay where they are and new databases in that environment go on it. Binding to production turns deletion protection on without a restart. Refused while other environments use the server or keep databases on it.", write,
 		func(ctx context.Context, c *portal.Client, org string, in BindDBServerArgs) (*portal.DatabaseServer, error) {

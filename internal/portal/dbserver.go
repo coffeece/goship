@@ -40,6 +40,7 @@ type DatabaseServer struct {
 	EnvironmentID       string    `json:"environment_id,omitempty"`
 	Protected           bool      `json:"protected"`
 	PointInTimeRecovery bool      `json:"point_in_time_recovery"`
+	ResizeTier          string    `json:"resize_tier,omitempty"`
 	Provider            string    `json:"provider" table:"PROVIDER"`
 	Region              string    `json:"region" table:"REGION"`
 	Tier                string    `json:"tier" table:"SIZE"`
@@ -125,6 +126,34 @@ func (c *Client) DeleteDatabaseServer(ctx context.Context, org, id string) error
 // cloud; the instance, if it still exists, stays in the customer's project.
 func (c *Client) ForgetDatabaseServer(ctx context.Context, org, id string) error {
 	return c.delete(ctx, databaseServersPath(org)+"/"+esc(id)+"?force=true", nil)
+}
+
+// MachineTier is a machine size a server can have; CPUs is 0 for a shared core.
+type MachineTier struct {
+	Slug           string `json:"slug" table:"SIZE"`
+	CPUs           int    `json:"cpus" table:"VCPU"`
+	MemoryMB       int    `json:"memory_mb" table:"MEMORY (MB)"`
+	MaxConnections int    `json:"max_connections" table:"CONNECTIONS"`
+}
+
+// DatabaseServerResizeOptions is what a server can be resized to.
+type DatabaseServerResizeOptions struct {
+	Current         MachineTier   `json:"current"`
+	Options         []MachineTier `json:"options"`
+	Connections     int           `json:"connections"`
+	PriceCalculator string        `json:"price_calculator"`
+}
+
+func (c *Client) DatabaseServerResizeOptions(ctx context.Context, org, id string) (*DatabaseServerResizeOptions, error) {
+	var out DatabaseServerResizeOptions
+	return &out, c.get(ctx, databaseServersPath(org)+"/"+esc(id)+"/resize-options", &out)
+}
+
+// ResizeDatabaseServer starts moving the server to another machine size;
+// Cloud SQL restarts the instance for it.
+func (c *Client) ResizeDatabaseServer(ctx context.Context, org, id, tier string) (*DatabaseServer, error) {
+	var out DatabaseServer
+	return &out, c.post(ctx, databaseServersPath(org)+"/"+esc(id)+"/resize", map[string]string{"tier": tier}, &out)
 }
 
 func (c *Client) DatabaseServerTiers(ctx context.Context, org string) ([]DatabaseServerTier, error) {

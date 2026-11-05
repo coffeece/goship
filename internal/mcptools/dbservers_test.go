@@ -407,3 +407,31 @@ func TestCreateDatabaseUsesTheEnvironmentsOwnServer(t *testing.T) {
 		t.Errorf("posted %s, said %q", posted, text(res))
 	}
 }
+
+func TestResizeDatabaseServerTools(t *testing.T) {
+	var path, posted string
+	url := api(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"srv-prod","name":"pg-prod","status":"active"}]`)) //nolint:errcheck
+		case "GET /api/v1/orgs/acme/database-servers/srv-prod/resize-options":
+			w.Write([]byte(`{"current":{"slug":"db-f1-micro","max_connections":25},"connections":21,"options":[{"slug":"db-g1-small","max_connections":50}]}`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/database-servers/srv-prod/resize":
+			b, _ := io.ReadAll(r.Body)
+			path, posted = r.URL.Path, string(b)
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"id":"srv-prod","name":"pg-prod","status":"resizing","resize_tier":"db-g1-small"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
+	res := call(t, cs, "goship_list_database_server_sizes", map[string]any{"server": "pg-prod"})
+	if res.IsError || !strings.Contains(text(res), "db-g1-small") {
+		t.Fatalf("sizes: %q", text(res))
+	}
+	res = call(t, cs, "goship_resize_database_server", map[string]any{"server": "pg-prod", "tier": "db-g1-small"})
+	if res.IsError || path != "/api/v1/orgs/acme/database-servers/srv-prod/resize" || !strings.Contains(posted, `"tier":"db-g1-small"`) {
+		t.Fatalf("resize: %q posted %s to %s", text(res), posted, path)
+	}
+}

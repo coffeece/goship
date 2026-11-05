@@ -177,7 +177,9 @@ protection. A cloud account may hold several servers; a server created with
 no environment may be used by any environment; `goship_bind_database_server`
 gives such a server to one environment in place (no data moves). Point-in-time
 recovery on an existing server is `goship_enable_database_server_pitr`, which
-restarts the instance once: ask the user first. Cloud accounts and database
+restarts the instance once: ask the user first. A server out of connections or
+memory is resized with `goship_resize_database_server` to a size from
+`goship_list_database_server_sizes`; that also restarts it for a few minutes. Cloud accounts and database
 servers belong to the organization, not to a project.
 
 1. `goship_list_database_servers`: a server with status `ready` is reused.

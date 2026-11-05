@@ -346,6 +346,73 @@ func newDBServerCmd(app *App) *cobra.Command {
 		}),
 	}
 
+	sizes := &cobra.Command{
+		Use:   "sizes <server>",
+		Short: "List the machine sizes a server can be resized to",
+		Args:  cobra.ExactArgs(1),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), Target{Org: org}, args[0])
+			if err != nil {
+				return err
+			}
+			opts, err := app.Portal().DatabaseServerResizeOptions(cmd.Context(), org, s.ID)
+			if err != nil {
+				return err
+			}
+			if app.Global.Output == render.JSON {
+				return app.Renderer().Render(opts)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Server %s is %s, with %d connections open. Prices: %s\n\n", s.Name, opts.Current.Slug, opts.Connections, opts.PriceCalculator)
+			return app.Renderer().Render(opts.Options)
+		}),
+	}
+
+	var resizeTier string
+	resize := &cobra.Command{
+		Use:   "resize <server> --tier <size>",
+		Short: "Change a server's machine size (Google restarts the instance)",
+		Long: "Moves the server to another machine size of its edition, larger or smaller; see `goship db server\n" +
+			"sizes <server>`. Google restarts the instance: its apps lose their database for a few minutes.\n" +
+			"New databases asked for meanwhile wait for it. The disk, databases, users and address stay the same.",
+		Args: cobra.ExactArgs(1),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), Target{Org: org}, args[0])
+			if err != nil {
+				return err
+			}
+			opts, err := app.Portal().DatabaseServerResizeOptions(cmd.Context(), org, s.ID)
+			if err != nil {
+				return err
+			}
+			var target *portal.MachineTier
+			for i := range opts.Options {
+				if opts.Options[i].Slug == resizeTier {
+					target = &opts.Options[i]
+				}
+			}
+			if target == nil {
+				return fmt.Errorf("%q is not a size server %s can have; see `goship db server sizes %s`", resizeTier, s.Name, s.Name)
+			}
+			warn := fmt.Sprintf("Resize server %s from %s to %s? Google restarts the instance and its apps lose their database for a few minutes.", s.Name, opts.Current.Slug, target.Slug)
+			if target.MaxConnections > 0 && opts.Connections > target.MaxConnections {
+				warn += fmt.Sprintf(" %s allows %d connections; %d are open now, so apps may fail to connect after the restart.", target.Slug, target.MaxConnections, opts.Connections)
+			}
+			if err := confirm(cmd, app.Global.Yes, "%s", warn); err != nil {
+				return err
+			}
+			out, err := app.Portal().ResizeDatabaseServer(cmd.Context(), org, s.ID, target.Slug)
+			if err != nil {
+				return err
+			}
+			if app.Global.Output == render.JSON {
+				return app.Renderer().Render(out)
+			}
+			return app.Renderer().Message("Server %s is resizing to %s; watch it with `goship db server list`.", s.Name, target.Slug)
+		}),
+	}
+	resize.Flags().StringVar(&resizeTier, "tier", "", "new machine size (required); see: goship db server sizes <server>")
+	_ = resize.MarkFlagRequired("tier")
+
 	diskLimitCmd := &cobra.Command{
 		Use:   "disk-limit <server> <GB|none>",
 		Short: "Set how far a server's disk may grow (none removes the cap)",
@@ -482,7 +549,7 @@ keeps running and billing in your project until you delete it there.`,
 	}
 	del.Flags().BoolVar(&force, "force", false, "drop the server from GoShip without touching the cloud (the instance stays in your project)")
 
-	cmd.AddCommand(list, create, tiers, diskLimitCmd, retry, bind, pitr, del)
+	cmd.AddCommand(list, create, tiers, sizes, resize, diskLimitCmd, retry, bind, pitr, del)
 	return cmd
 }
 
