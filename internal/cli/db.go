@@ -283,9 +283,9 @@ func newDBServerCmd(app *App) *cobra.Command {
 	}
 	var account, region, environment, tier, name, diskLimit string
 	create.Flags().StringVar(&account, "account", "", "cloud account (id, label or provider) (required)")
-	create.Flags().StringVar(&region, "region", "", "cloud region (required); see `goship cloud regions <account>`")
-	create.Flags().StringVar(&environment, "environment", "", "environment the server is for (see `goship environments`); it becomes that environment's default server. Omit for a server any environment may use")
-	create.Flags().StringVar(&tier, "tier", "db-f1-micro", "machine size; see `goship db server tiers`")
+	create.Flags().StringVar(&region, "region", "", "cloud region (required); see: goship cloud regions <account>")
+	create.Flags().StringVar(&environment, "environment", "", "environment the server is for (see: goship environments); it becomes that environment's default server. Omit for a server any environment may use")
+	create.Flags().StringVar(&tier, "tier", "db-f1-micro", "machine size; see: goship db server tiers")
 	create.Flags().StringVar(&name, "name", "", "server name (default pg-<environment>, or pg-<account label> without --environment)")
 	create.Flags().StringVar(&diskLimit, "disk-limit", "", "most the disk may grow to, in GB, or none (default 100)")
 	_ = create.MarkFlagRequired("account")
@@ -370,6 +370,59 @@ func newDBServerCmd(app *App) *cobra.Command {
 		}),
 	}
 
+	var bindEnv string
+	bind := &cobra.Command{
+		Use:   "bind <server> --environment <slug>",
+		Short: "Give a server created for no environment to an environment, in place",
+		Long: "Gives a server created for no environment to an environment. Its databases stay where they are;\n" +
+			"new databases in that environment go on it. Binding to production turns deletion protection on,\n" +
+			"without a restart. Refused while other environments use the server or keep databases on it.",
+		Args: cobra.ExactArgs(1),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), Target{Org: org}, args[0])
+			if err != nil {
+				return err
+			}
+			out, err := app.Portal().BindDatabaseServer(cmd.Context(), org, s.ID, bindEnv)
+			if err != nil {
+				return err
+			}
+			if app.Global.Output == render.JSON {
+				return app.Renderer().Render(out)
+			}
+			if out.Protected {
+				return app.Renderer().Message("Server %s joined %s and is protected against deletion.", s.Name, bindEnv)
+			}
+			return app.Renderer().Message("Server %s joined %s.", s.Name, bindEnv)
+		}),
+	}
+	bind.Flags().StringVar(&bindEnv, "environment", "", "environment the server joins (required); see: goship environments")
+	_ = bind.MarkFlagRequired("environment")
+
+	pitr := &cobra.Command{
+		Use:   "pitr <server>",
+		Short: "Turn on point-in-time recovery (Google restarts the instance once)",
+		Long: "Turns on point-in-time recovery, keeping seven days of transaction logs. Google restarts the\n" +
+			"instance to turn it on: connections drop for about a minute. Nothing happens when it is on already.",
+		Args: cobra.ExactArgs(1),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), Target{Org: org}, args[0])
+			if err != nil {
+				return err
+			}
+			if s.PointInTimeRecovery {
+				return app.Renderer().Message("Point-in-time recovery is on already for server %s.", s.Name)
+			}
+			if err := confirm(cmd, app.Global.Yes, "Google restarts server %s's instance to turn on point-in-time recovery; connections drop for about a minute. Continue?", s.Name); err != nil {
+				return err
+			}
+			if _, err := app.Portal().EnableDatabaseServerPITR(cmd.Context(), org, s.ID); err != nil {
+				return err
+			}
+			return app.Renderer().Message("Point-in-time recovery is being turned on for server %s; the instance restarts once.", s.Name)
+		}),
+	}
+
 	var force bool
 	del := &cobra.Command{
 		Use:   "delete <server>",
@@ -414,7 +467,7 @@ keeps running and billing in your project until you delete it there.`,
 	}
 	del.Flags().BoolVar(&force, "force", false, "drop the server from GoShip without touching the cloud (the instance stays in your project)")
 
-	cmd.AddCommand(list, create, tiers, diskLimitCmd, retry, del)
+	cmd.AddCommand(list, create, tiers, diskLimitCmd, retry, bind, pitr, del)
 	return cmd
 }
 

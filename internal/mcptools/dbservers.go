@@ -33,6 +33,11 @@ type CreateDBServerArgs struct {
 	DiskLimitGB  *int   `json:"disk_limit_gb,omitempty" jsonschema:"cap in GB on how far the server's disk may auto-grow (minimum 10); 0 means no cap; default 100"`
 }
 
+type BindDBServerArgs struct {
+	DBServerArg
+	Environment string `json:"environment" jsonschema:"environment slug the server joins (goship_list_environments)"`
+}
+
 type SetDBServerDiskLimitArgs struct {
 	DBServerArg
 	DiskLimitGB int `json:"disk_limit_gb" jsonschema:"cap in GB on how far the server's disk may auto-grow (minimum 10, not below its current size); 0 removes the cap"`
@@ -101,6 +106,25 @@ func (r *registry) dbservers() {
 				return Message{}, err
 			}
 			return msgf("Retrying server %s.", s.Name)
+		})
+	orgTool(r, "goship_bind_database_server", "Give a database server created for no environment to an environment, in place: its databases stay where they are and new databases in that environment go on it. Binding to production turns deletion protection on without a restart. Refused while other environments use the server or keep databases on it.", write,
+		func(ctx context.Context, c *portal.Client, org string, in BindDBServerArgs) (*portal.DatabaseServer, error) {
+			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
+			if err != nil {
+				return nil, err
+			}
+			return c.BindDatabaseServer(ctx, org, s.ID, in.Environment)
+		})
+	orgTool(r, "goship_enable_database_server_pitr", "Turn on point-in-time recovery for a database server (seven days of transaction logs). Google restarts the instance to turn it on: its connections drop for about a minute. Does nothing when it is on already (point_in_time_recovery in goship_list_database_servers).", destructive,
+		func(ctx context.Context, c *portal.Client, org string, in DBServerArg) (*portal.DatabaseServer, error) {
+			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
+			if err != nil {
+				return nil, err
+			}
+			if s.PointInTimeRecovery {
+				return s, nil
+			}
+			return c.EnableDatabaseServerPITR(ctx, org, s.ID)
 		})
 	orgTool(r, "goship_delete_database_server", "Delete a database server: its databases must be deleted first, then GoShip removes the Cloud SQL instance from the customer's project. With force, GoShip only forgets the server and the instance stays.", destructive,
 		func(ctx context.Context, c *portal.Client, org string, in DeleteDBServerArgs) (Message, error) {

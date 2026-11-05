@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -528,5 +529,69 @@ func TestDBServerCreateForAnEnvironmentDefaultsItsName(t *testing.T) {
 	}
 	if body["environment"] != "production" || body["name"] != "pg-production" || body["tier"] != "db-g1-small" {
 		t.Fatalf("body %v", body)
+	}
+}
+
+func TestDBServerBindAndPITR(t *testing.T) {
+	var calls []string
+	var body map[string]any
+	pitrOn := false
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/database-servers":
+			fmt.Fprintf(w, `[{"id":"s1","name":"pg-legacy","status":"active","point_in_time_recovery":%v}]`, pitrOn) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/database-servers/s1/environment":
+			json.NewDecoder(r.Body).Decode(&body)                                                                           //nolint:errcheck
+			w.Write([]byte(`{"id":"s1","name":"pg-legacy","status":"active","environment":"production","protected":true}`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/database-servers/s1/point-in-time-recovery":
+			w.Write([]byte(`{"id":"s1","name":"pg-legacy","status":"active","point_in_time_recovery":true}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	out, err := run(t, "", "db", "server", "bind", "pg-legacy", "--environment", "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["environment"] != "production" || !strings.Contains(out, "protected against deletion") {
+		t.Fatalf("body %v out %q", body, out)
+	}
+	if _, err := run(t, "", "db", "server", "bind", "pg-legacy"); err == nil {
+		t.Fatal("bind without --environment must fail")
+	}
+
+	calls = nil
+	if _, err := run(t, "n\n", "db", "server", "pitr", "pg-legacy"); err == nil {
+		t.Fatal("declining the restart must abort")
+	}
+	for _, c := range calls {
+		if strings.HasSuffix(c, "/point-in-time-recovery") {
+			t.Fatalf("declined, yet called %v", calls)
+		}
+	}
+	if out, err := run(t, "", "db", "server", "pitr", "pg-legacy", "--yes"); err != nil || !strings.Contains(out, "restarts once") {
+		t.Fatalf("pitr --yes = %q, %v", out, err)
+	}
+	pitrOn, calls = true, nil
+	if out, err := run(t, "", "db", "server", "pitr", "pg-legacy"); err != nil || !strings.Contains(out, "on already") {
+		t.Fatalf("pitr when on = %q, %v", out, err)
+	}
+	for _, c := range calls {
+		if strings.HasSuffix(c, "/point-in-time-recovery") {
+			t.Fatalf("on already, yet called %v", calls)
+		}
+	}
+}
+
+func TestDBServerCreateHelpHasReadablePlaceholders(t *testing.T) {
+	out, err := run(t, "", "db", "server", "create", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{"--region string", "--tier string", "--environment string"} {
+		if !strings.Contains(out, flag) {
+			t.Errorf("help lacks %q: %s", flag, out)
+		}
 	}
 }
