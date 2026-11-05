@@ -349,11 +349,8 @@ or ask for `org` and `project`, and the environment is the one you pass as
 Deploying a directory reads files on your machine, so `goship_deploy` only
 works with the local `goship mcp`; everything else works the same.
 
-The server is `cmd/goship-mcp`, deployed on GoShip itself; the `Procfile` at
-the repository root is its. It holds no credential: it checks each request's token against
-`https://goship.sh/.well-known/jwks.json` and calls the API with it.
-`PORT`, `GOSHIP_API_URL`, `GOSHIP_MCP_URL` and `GOSHIP_ISSUER` override the
-production defaults.
+GoShip runs that server; it builds its tools with the `mcpserver` package,
+the same tools `goship mcp` serves.
 
 ## Configuration
 

@@ -11,7 +11,8 @@ cmd/goship/          wiring only: build the tree, map legacy names, print the er
 internal/cli/        the cobra tree, declared explicitly — one file per noun
 internal/portal/     client for the GoShip API: JSON calls, event streams, the shell
 internal/deploy/     the decisions a deploy makes (target, platform, plan), shared by the CLI and the MCP tools
-internal/mcptools/   the MCP tools, one per command; internal/mcphost serves them over HTTP
+internal/mcptools/   the MCP tools, one per command; `goship mcp` serves them over stdio
+mcpserver/           the same tools for a host serving many people, each call with its caller's token
 internal/render/     table | json — the only place command results are formatted
 internal/config/     the config file, and the GOSHIP_* variables that override it
 internal/archive/    the project directory as the gzipped tarball a deploy uploads
