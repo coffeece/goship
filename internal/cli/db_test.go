@@ -508,3 +508,25 @@ func TestDBExtensionAddReportsAFailedInstall(t *testing.T) {
 		t.Fatalf("must not claim it is still enabling: %q", out)
 	}
 }
+
+func TestDBServerCreateForAnEnvironmentDefaultsItsName(t *testing.T) {
+	var body map[string]any
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/cloud-accounts":
+			w.Write([]byte(`[{"id":"acc-1","provider":"gcp","label":"Prod","status":"active"}]`)) //nolint:errcheck
+		case "POST /api/v1/orgs/acme/database-servers":
+			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"id":"s1","name":"pg-production","status":"creating","stage":"creating_instance","environment":"production","protected":true}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	if _, err := run(t, "", "db", "server", "create", "--account", "gcp", "--region", "southamerica-east1", "--environment", "production", "--tier", "db-g1-small"); err != nil {
+		t.Fatal(err)
+	}
+	if body["environment"] != "production" || body["name"] != "pg-production" || body["tier"] != "db-g1-small" {
+		t.Fatalf("body %v", body)
+	}
+}

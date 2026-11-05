@@ -324,3 +324,21 @@ func TestCreateDatabaseServerSendsDiskLimit(t *testing.T) {
 		t.Errorf("posted %s", posted)
 	}
 }
+
+func TestCreateDatabaseServerSendsTheEnvironment(t *testing.T) {
+	var posted string
+	url := serversAPI(t, func(r *http.Request, body string) {
+		if r.Method == http.MethodPost {
+			posted = body
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
+	res := call(t, cs, "goship_create_database_server", map[string]any{"cloud_account": "gcp", "region": "southamerica-east1", "environment": "production"})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	var body map[string]string
+	if err := json.Unmarshal([]byte(posted), &body); err != nil || body["environment"] != "production" || body["name"] != "pg-production" {
+		t.Errorf("posted %s: %v", posted, err)
+	}
+}
