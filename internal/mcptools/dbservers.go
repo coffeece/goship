@@ -115,7 +115,7 @@ func (r *registry) dbservers() {
 			}
 			return c.BindDatabaseServer(ctx, org, s.ID, in.Environment)
 		})
-	orgTool(r, "goship_enable_database_server_pitr", "Turn on point-in-time recovery for a database server (seven days of transaction logs). Google restarts the instance to turn it on: its connections drop for about a minute, so confirm with the user first. Does nothing when it is on already (point_in_time_recovery in goship_list_database_servers).", write,
+	orgTool(r, "goship_enable_database_server_pitr", "Turn on point-in-time recovery for a database server (seven days of transaction logs). Google restarts the instance to turn it on: its connections drop for about a minute. Does nothing when it is on already (point_in_time_recovery in goship_list_database_servers).", destructive,
 		func(ctx context.Context, c *portal.Client, org string, in DBServerArg) (*portal.DatabaseServer, error) {
 			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
 			if err != nil {
