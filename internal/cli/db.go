@@ -33,17 +33,32 @@ func newDBCmd(app *App) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 	}
 	var plan, description, server, sizeLimit string
-	create.Flags().StringVar(&plan, "plan", "", "database plan (required unless --server is set)")
+	create.Flags().StringVar(&plan, "plan", "", "database plan (required when the database goes on GoShip's PostgreSQL)")
 	create.Flags().StringVar(&description, "description", "", "human description")
 	create.Flags().StringVar(&server, "server", "", "place the database on one of your own database servers (name or id), or \"goship\" for GoShip's PostgreSQL; default: the environment's database server")
 	create.Flags().StringVar(&sizeLimit, "size-limit", "", "size limit for a database on your own server, like 500MB or 2GB (default: none)")
 	create.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
-		onGoShip := server == "" || server == deploy.GoShipDatabaseServer
+		// Without --server the database goes on the environment's database
+		// server, which may be one of yours: then it has no plan either. With
+		// neither --server nor --plan that is looked up; with a plan the API
+		// places it, and ignores the plan on a server of yours.
+		var srv *portal.DatabaseServer
+		var fromEnv bool
+		if server != "" || plan == "" {
+			var err error
+			if srv, fromEnv, err = deploy.DatabasePlacement(cmd.Context(), app.Portal(), t, server); err != nil {
+				return err
+			}
+		}
+		onGoShip := srv == nil
 		if onGoShip && plan == "" {
-			return errors.New("--plan is required unless the database goes on your own server (--server)")
+			if server == "" {
+				return fmt.Errorf("--plan is required: new databases in %s go on GoShip's PostgreSQL (or pass --server to use one of yours)", t.Environment)
+			}
+			return errors.New("--plan is required on GoShip's PostgreSQL")
 		}
 		if onGoShip && sizeLimit != "" {
-			return errors.New("--size-limit is only for databases on your own server (--server)")
+			return errors.New("--size-limit is only for databases on your own server")
 		}
 		var limit *int
 		if sizeLimit != "" {
@@ -53,14 +68,14 @@ func newDBCmd(app *App) *cobra.Command {
 			}
 		}
 		var serverID, serverName string
-		if server == deploy.GoShipDatabaseServer {
+		switch {
+		case server == deploy.GoShipDatabaseServer:
 			serverID = server
-		} else if server != "" {
-			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), t, server)
-			if err != nil {
-				return err
+		case srv != nil:
+			serverName = srv.Name
+			if !fromEnv {
+				serverID = srv.ID
 			}
-			serverID, serverName = s.ID, s.Name
 			if plan != "" {
 				fmt.Fprintln(cmd.ErrOrStderr(), "note: databases on your own server have no plan; --plan ignored")
 				plan = ""
