@@ -36,27 +36,28 @@ type DatabaseServer struct {
 	// Environment is the slug of the environment the server was created for
 	// and defaults; empty for a server any environment may use. Protected is
 	// a production server, whose instance has deletion protection.
-	Environment       string    `json:"environment,omitempty" table:"ENVIRONMENT"`
-	EnvironmentID     string    `json:"environment_id,omitempty"`
-	Protected         bool      `json:"protected"`
-	Provider          string    `json:"provider" table:"PROVIDER"`
-	Region            string    `json:"region" table:"REGION"`
-	Tier              string    `json:"tier" table:"SIZE"`
-	Status            string    `json:"status" table:"STATUS"`
-	Stage             string    `json:"stage,omitempty"`
-	Host              string    `json:"host,omitempty" table:"HOST"`
-	DatabaseCount     int       `json:"database_count" table:"DATABASES"`
-	DiskSizeGB        int       `json:"disk_size_gb" table:"DISK (GB)"`
-	DiskLimitGB       DiskCap   `json:"disk_limit_gb" table:"CAP (GB)"`
-	DiskUsedBytes     ByteCount `json:"disk_used_bytes" table:"USED"`
-	DiskWarnedPct     int       `json:"disk_warned_pct"`
-	Connections       int       `json:"connections"`
-	MaxConnections    int       `json:"max_connections"`
-	CloudInstanceName string    `json:"cloud_instance_name,omitempty"`
-	ErrorMessage      string    `json:"error_message,omitempty"`
-	Scope             string    `json:"scope"`
-	CloudAccountID    string    `json:"cloud_account_id"`
-	CloudAccount      *struct {
+	Environment         string    `json:"environment,omitempty" table:"ENVIRONMENT"`
+	EnvironmentID       string    `json:"environment_id,omitempty"`
+	Protected           bool      `json:"protected"`
+	PointInTimeRecovery bool      `json:"point_in_time_recovery"`
+	Provider            string    `json:"provider" table:"PROVIDER"`
+	Region              string    `json:"region" table:"REGION"`
+	Tier                string    `json:"tier" table:"SIZE"`
+	Status              string    `json:"status" table:"STATUS"`
+	Stage               string    `json:"stage,omitempty"`
+	Host                string    `json:"host,omitempty" table:"HOST"`
+	DatabaseCount       int       `json:"database_count" table:"DATABASES"`
+	DiskSizeGB          int       `json:"disk_size_gb" table:"DISK (GB)"`
+	DiskLimitGB         DiskCap   `json:"disk_limit_gb" table:"CAP (GB)"`
+	DiskUsedBytes       ByteCount `json:"disk_used_bytes" table:"USED"`
+	DiskWarnedPct       int       `json:"disk_warned_pct"`
+	Connections         int       `json:"connections"`
+	MaxConnections      int       `json:"max_connections"`
+	CloudInstanceName   string    `json:"cloud_instance_name,omitempty"`
+	ErrorMessage        string    `json:"error_message,omitempty"`
+	Scope               string    `json:"scope"`
+	CloudAccountID      string    `json:"cloud_account_id"`
+	CloudAccount        *struct {
 		Label string `json:"label"`
 	} `json:"cloud_account,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
@@ -101,6 +102,19 @@ func (c *Client) SetDatabaseServerDiskLimit(ctx context.Context, org, id string,
 
 func (c *Client) RetryDatabaseServer(ctx context.Context, org, id string) error {
 	return c.post(ctx, databaseServersPath(org)+"/"+esc(id)+"/retry", nil, nil)
+}
+
+// BindDatabaseServer gives a server created for no environment to one.
+func (c *Client) BindDatabaseServer(ctx context.Context, org, id, env string) (*DatabaseServer, error) {
+	var out DatabaseServer
+	return &out, c.post(ctx, databaseServersPath(org)+"/"+esc(id)+"/environment", map[string]string{"environment": env}, &out)
+}
+
+// EnableDatabaseServerPITR turns point-in-time recovery on; Cloud SQL
+// restarts the instance for it.
+func (c *Client) EnableDatabaseServerPITR(ctx context.Context, org, id string) (*DatabaseServer, error) {
+	var out DatabaseServer
+	return &out, c.post(ctx, databaseServersPath(org)+"/"+esc(id)+"/point-in-time-recovery", nil, &out)
 }
 
 func (c *Client) DeleteDatabaseServer(ctx context.Context, org, id string) error {

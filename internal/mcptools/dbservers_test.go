@@ -342,3 +342,37 @@ func TestCreateDatabaseServerSendsTheEnvironment(t *testing.T) {
 		t.Errorf("posted %s: %v", posted, err)
 	}
 }
+
+func TestBindDatabaseServerResolvesTheNameAndSendsTheEnvironment(t *testing.T) {
+	var posted, path string
+	url := serversAPI(t, func(r *http.Request, body string) {
+		if r.Method == http.MethodPost {
+			posted, path = body, r.URL.Path
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
+	res := call(t, cs, "goship_bind_database_server", map[string]any{"server": "pg-prod", "environment": "production"})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	if path != "/api/v1/orgs/acme/database-servers/srv-prod/environment" || !strings.Contains(posted, `"environment":"production"`) {
+		t.Errorf("posted %s to %s", posted, path)
+	}
+}
+
+func TestEnablePITRPostsForTheResolvedServer(t *testing.T) {
+	var path string
+	url := serversAPI(t, func(r *http.Request, _ string) {
+		if r.Method == http.MethodPost {
+			path = r.URL.Path
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
+	res := call(t, cs, "goship_enable_database_server_pitr", map[string]any{"server": "pg-staging"})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	if path != "/api/v1/orgs/acme/database-servers/srv-staging/point-in-time-recovery" {
+		t.Errorf("posted to %s", path)
+	}
+}
