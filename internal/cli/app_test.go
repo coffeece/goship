@@ -9,6 +9,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/coffeece/goship/internal/portal"
 )
 
 // Commands resolve the org from config, so tests that exercise them need one.
@@ -460,6 +463,7 @@ func TestAppInfoShowsTheAccessCheckOfPrivateApps(t *testing.T) {
 	}{
 		{"ok", `{"name":"api","visibility":"private","access_check":{"checked_at":"2026-10-20T10:00:00Z","ok":true}}`, "Access check: protected (checked 2026-10-20T10:00:00Z)"},
 		{"failed", `{"name":"api","visibility":"private","access_check":{"checked_at":"2026-10-20T10:00:00Z","ok":false,"host":"api.example.com"}}`, "Access check: NOT confirmed on api.example.com"},
+		{"login check unreachable", `{"name":"api","visibility":"private","access_check":{"checked_at":"2026-10-20T10:00:00Z","ok":false,"host":"api.example.com","reason":"login_check_unreachable"}}`, "Access check: REFUSING visitors on api.example.com: the server can't reach GoShip's login check on port 8443; allow outbound TCP 8443 to api.goship.sh (checked 2026-10-20T10:00:00Z)"},
 		{"pending", `{"name":"api","visibility":"private"}`, "Access check: pending"},
 		{"public", `{"name":"api","visibility":"public"}`, ""},
 	}
@@ -482,5 +486,17 @@ func TestAppInfoShowsTheAccessCheckOfPrivateApps(t *testing.T) {
 				t.Errorf("output = %q, want %q", out, tc.want)
 			}
 		})
+	}
+}
+
+func TestAccessCheckTextLoginCheckUnreachable(t *testing.T) {
+	got := accessCheckText(&portal.AccessCheck{
+		Host:      "api.example.com",
+		Reason:    portal.AccessCheckLoginCheckUnreachable,
+		CheckedAt: time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC),
+	})
+	want := "REFUSING visitors on api.example.com: the server can't reach GoShip's login check on port 8443; allow outbound TCP 8443 to api.goship.sh (checked 2026-10-20T10:00:00Z)"
+	if got != want {
+		t.Errorf("accessCheckText = %q, want %q", got, want)
 	}
 }
