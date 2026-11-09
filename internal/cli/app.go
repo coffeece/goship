@@ -117,6 +117,8 @@ func accessCheckText(c *portal.AccessCheck) string {
 		return "pending"
 	case c.OK:
 		return fmt.Sprintf("protected (checked %s)", c.CheckedAt.Format(time.RFC3339))
+	case c.Reason == portal.AccessCheckLoginCheckUnreachable:
+		return fmt.Sprintf("REFUSING visitors on %s: the server can't reach GoShip's login check on port 8443; allow outbound TCP 8443 to api.goship.sh (checked %s)", c.Host, c.CheckedAt.Format(time.RFC3339))
 	default:
 		return fmt.Sprintf("NOT confirmed on %s (checked %s) — the app may be open", c.Host, c.CheckedAt.Format(time.RFC3339))
 	}

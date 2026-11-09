@@ -43,10 +43,15 @@ type App struct {
 	BillingStartsAt *time.Time `json:"billing_starts_at,omitempty"`
 }
 
+// AccessCheckLoginCheckUnreachable is the AccessCheck.Reason set when the
+// app's host answered 5xx: the node cannot reach GoShip's login check.
+const AccessCheckLoginCheckUnreachable = "login_check_unreachable"
+
 type AccessCheck struct {
 	CheckedAt time.Time `json:"checked_at"`
 	OK        bool      `json:"ok"`
 	Host      string    `json:"host,omitempty"`
+	Reason    string    `json:"reason,omitempty"`
 }
 
 type AppUnit struct {

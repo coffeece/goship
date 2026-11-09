@@ -460,6 +460,7 @@ func TestAppInfoShowsTheAccessCheckOfPrivateApps(t *testing.T) {
 	}{
 		{"ok", `{"name":"api","visibility":"private","access_check":{"checked_at":"2026-10-20T10:00:00Z","ok":true}}`, "Access check: protected (checked 2026-10-20T10:00:00Z)"},
 		{"failed", `{"name":"api","visibility":"private","access_check":{"checked_at":"2026-10-20T10:00:00Z","ok":false,"host":"api.example.com"}}`, "Access check: NOT confirmed on api.example.com"},
+		{"login check unreachable", `{"name":"api","visibility":"private","access_check":{"checked_at":"2026-10-20T10:00:00Z","ok":false,"host":"api.example.com","reason":"login_check_unreachable"}}`, "Access check: REFUSING visitors on api.example.com: the server can't reach GoShip's login check on port 8443; allow outbound TCP 8443 to api.goship.sh (checked 2026-10-20T10:00:00Z)"},
 		{"pending", `{"name":"api","visibility":"private"}`, "Access check: pending"},
 		{"public", `{"name":"api","visibility":"public"}`, ""},
 	}
