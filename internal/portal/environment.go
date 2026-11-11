@@ -2,7 +2,6 @@ package portal
 
 import (
 	"context"
-	"net/http"
 	"time"
 )
 
@@ -62,7 +61,7 @@ func (c *Client) UpdateEnvironment(ctx context.Context, org, slug string, enable
 	body := struct {
 		Enabled bool `json:"enabled"`
 	}{enabled}
-	return &env, c.do(ctx, http.MethodPatch, orgPath(org, "/environments/"+esc(slug)), body, &env)
+	return &env, c.patch(ctx, orgPath(org, "/environments/"+esc(slug)), body, &env)
 }
 
 func (c *Client) DeleteEnvironment(ctx context.Context, org, slug string) error {

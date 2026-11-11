@@ -207,6 +207,12 @@ carries `sslmode=require`. A server that fails to come up carries
 account, and an organization policy blocking public IP on Cloud SQL must be
 disabled by the customer. Fix the cause, then `goship_retry_database_server`.
 
+A server's name is GoShip's label for it: `goship_rename_database_server`
+(`goship db server rename <server> <new-name>`) changes it in any status and
+touches neither the Cloud SQL instance nor the databases on it. Whatever
+still passes the old name (`--server`, a `server` argument, a script) stops
+finding the server, so tell the customer before renaming.
+
 Limits on an own server are the server's, never a plan: its disk (starts at
 10 GB, grows on its own up to a cap, 100 GB by default; `disk_limit_gb` on
 `goship_create_database_server`, 0 means no cap) and its connections. The

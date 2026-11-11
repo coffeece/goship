@@ -122,6 +122,7 @@ func TestCloudToolsAreOrgLevel(t *testing.T) {
 		{"goship_list_database_server_tiers", nil},
 		{"goship_create_database_server", map[string]any{"cloud_account": "gcp", "region": "r"}},
 		{"goship_set_database_server_disk_limit", map[string]any{"server": "pg-prod", "disk_limit_gb": 50}},
+		{"goship_rename_database_server", map[string]any{"server": "pg-prod", "name": "pg-main"}},
 		{"goship_retry_database_server", map[string]any{"server": "pg-prod"}},
 		{"goship_delete_database_server", map[string]any{"server": "pg-prod"}},
 	} {
@@ -433,5 +434,29 @@ func TestResizeDatabaseServerTools(t *testing.T) {
 	res = call(t, cs, "goship_resize_database_server", map[string]any{"server": "pg-prod", "tier": "db-g1-small"})
 	if res.IsError || path != "/api/v1/orgs/acme/database-servers/srv-prod/resize" || !strings.Contains(posted, `"tier":"db-g1-small"`) {
 		t.Fatalf("resize: %q posted %s to %s", text(res), posted, path)
+	}
+}
+
+func TestRenameDatabaseServerResolvesTheName(t *testing.T) {
+	var calls []string
+	url := serversAPI(t, func(r *http.Request, body string) {
+		if r.Method == http.MethodPatch {
+			calls = append(calls, r.URL.Path+" "+body)
+		}
+	})
+	cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
+	res := call(t, cs, "goship_rename_database_server", map[string]any{"server": "pg-prod", "name": "pg-main"})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	if len(calls) != 1 || calls[0] != `/api/v1/orgs/acme/database-servers/srv-prod {"name":"pg-main"}` {
+		t.Errorf("called %v", calls)
+	}
+	if res = call(t, cs, "goship_rename_database_server", map[string]any{"server": "pg-prod"}); !res.IsError {
+		t.Error("a rename without the new name must be refused")
+	}
+	res = call(t, cs, "goship_rename_database_server", map[string]any{"server": "nope", "name": "pg-main"})
+	if !res.IsError || !strings.Contains(text(res), "goship_list_database_servers") {
+		t.Errorf("unknown server: %q", text(res))
 	}
 }

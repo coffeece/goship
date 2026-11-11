@@ -95,6 +95,13 @@ func (c *Client) CreateDatabaseServer(ctx context.Context, org string, req Creat
 	return &out, c.post(ctx, databaseServersPath(org), req, &out)
 }
 
+// RenameDatabaseServer changes the name GoShip shows for a server; the cloud
+// instance keeps its own.
+func (c *Client) RenameDatabaseServer(ctx context.Context, org, id, name string) (*DatabaseServer, error) {
+	var out DatabaseServer
+	return &out, c.patch(ctx, databaseServersPath(org)+"/"+esc(id), map[string]string{"name": name}, &out)
+}
+
 // SetDatabaseServerDiskLimit caps how far the server's disk may grow; 0 removes
 // the cap.
 func (c *Client) SetDatabaseServerDiskLimit(ctx context.Context, org, id string, gb int) error {
