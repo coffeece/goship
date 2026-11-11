@@ -148,6 +148,10 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.SetDatabaseSizeLimit(ctx, "acme", "atlas", "staging", "shop", nil)
 			return err
 		}},
+		{"rename database server", "PATCH", "/api/v1/orgs/acme/database-servers/s1", `{"name":"pg-new"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.RenameDatabaseServer(ctx, "acme", "s1", "pg-new")
+			return err
+		}},
 		{"set database server disk limit", "PUT", "/api/v1/orgs/acme/database-servers/s1/disk-limit", `{"disk_limit_gb":200}`, func(ctx context.Context, c *Client) error {
 			return c.SetDatabaseServerDiskLimit(ctx, "acme", "s1", 200)
 		}},
