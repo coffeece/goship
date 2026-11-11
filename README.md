@@ -201,7 +201,8 @@ belong to the organization too: they take no project.
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
 | `goship projects` (or `project list`) / `goship project use\|create <slug>` | list the org's projects / choose one / create one |
-| `goship tokens` / `goship token create\|rm` | list / manage API tokens for CI |
+| `goship tokens` / `goship token create\|rm` | list / manage your personal API tokens |
+| `goship tokens --deploy` / `goship token create\|rm --deploy [--project] [--environment]` | list / manage the org's deploy tokens: credentials for CI that can only deploy, within one project or environment |
 | `goship mcp` | serve all of the above to an AI agent over MCP (see below) |
 
 Run `goship <command> --help` for flags.
