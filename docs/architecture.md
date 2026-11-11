@@ -165,7 +165,12 @@ token named after the machine: it appears in the dashboard, and
 `goship logout` revokes it. `--email` signs in with a password where there is
 no browser.
 
-For CI, `goship token create` mints a token to put in `GOSHIP_TOKEN`.
+For CI, `goship token create <name> --deploy --project <slug> --environment
+<slug>` mints a deploy token to put in `GOSHIP_TOKEN`. It belongs to the
+organization rather than to whoever created it, and can only read apps,
+deploy, roll back, restart, manage env vars and run commands inside the
+project and environment it names. Without `--deploy` the token is personal
+and acts as its user everywhere.
 
 ## Compatibility
 

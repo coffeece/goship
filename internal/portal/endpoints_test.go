@@ -300,6 +300,16 @@ func TestEndpoints(t *testing.T) {
 		{"api tokens", "GET", "/api/v1/auth/tokens", "", func(ctx context.Context, c *Client) error { _, err := c.APITokens(ctx); return err }},
 		{"create api token", "POST", "/api/v1/auth/tokens", `{"expires_in_days":90,"name":"ci"}`, func(ctx context.Context, c *Client) error { _, err := c.CreateAPIToken(ctx, "ci", 90); return err }},
 		{"revoke api token", "DELETE", "/api/v1/auth/tokens/t1", "", func(ctx context.Context, c *Client) error { return c.RevokeAPIToken(ctx, "t1") }},
+		{"deploy tokens", "GET", "/api/v1/orgs/acme/tokens", "", func(ctx context.Context, c *Client) error { _, err := c.DeployTokens(ctx, "acme", ""); return err }},
+		{"create deploy token", "POST", "/api/v1/orgs/acme/tokens", `{"environment":"staging","expires_in_days":90,"name":"ci","project":"atlas"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateDeployToken(ctx, "acme", "ci", "atlas", "staging", 90)
+			return err
+		}},
+		{"create unconfined deploy token", "POST", "/api/v1/orgs/acme/tokens", `{"expires_in_days":0,"name":"ci"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateDeployToken(ctx, "acme", "ci", "", "", 0)
+			return err
+		}},
+		{"revoke deploy token", "DELETE", "/api/v1/orgs/acme/tokens/t1", "", func(ctx context.Context, c *Client) error { return c.RevokeDeployToken(ctx, "acme", "t1") }},
 		{"me", "GET", "/api/v1/auth/me", "", func(ctx context.Context, c *Client) error { _, err := c.Me(ctx); return err }},
 		{"deploys", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/apps/api/deploys", "", func(ctx context.Context, c *Client) error {
 			_, err := c.Deploys(ctx, "acme", "atlas", "staging", "api", 0)
