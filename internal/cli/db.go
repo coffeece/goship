@@ -413,6 +413,23 @@ func newDBServerCmd(app *App) *cobra.Command {
 	resize.Flags().StringVar(&resizeTier, "tier", "", "new machine size (required); see: goship db server sizes <server>")
 	_ = resize.MarkFlagRequired("tier")
 
+	rename := &cobra.Command{
+		Use:   "rename <server> <new-name>",
+		Short: "Change the name GoShip shows for a server (the Cloud SQL instance keeps its own)",
+		Args:  cobra.ExactArgs(2),
+		RunE: cloudRunE(app, func(cmd *cobra.Command, org string, args []string) error {
+			s, err := deploy.ResolveDatabaseServer(cmd.Context(), app.Portal(), Target{Org: org}, args[0])
+			if err != nil {
+				return err
+			}
+			renamed, err := app.Portal().RenameDatabaseServer(cmd.Context(), org, s.ID, args[1])
+			if err != nil {
+				return err
+			}
+			return app.Renderer().Message("Server %s is now %s.", s.Name, renamed.Name)
+		}),
+	}
+
 	diskLimitCmd := &cobra.Command{
 		Use:   "disk-limit <server> <GB|none>",
 		Short: "Set how far a server's disk may grow (none removes the cap)",
@@ -549,7 +566,7 @@ keeps running and billing in your project until you delete it there.`,
 	}
 	del.Flags().BoolVar(&force, "force", false, "drop the server from GoShip without touching the cloud (the instance stays in your project)")
 
-	cmd.AddCommand(list, create, tiers, sizes, resize, diskLimitCmd, retry, bind, pitr, del)
+	cmd.AddCommand(list, create, tiers, sizes, resize, rename, diskLimitCmd, retry, bind, pitr, del)
 	return cmd
 }
 

@@ -694,3 +694,32 @@ func TestDBServerResizeWarnsAboutConnections(t *testing.T) {
 		t.Fatalf("posted %v", posted)
 	}
 }
+
+func TestDBServerRename(t *testing.T) {
+	var raw string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/orgs/acme/database-servers":
+			w.Write([]byte(`[{"id":"s1","name":"pg","status":"active"},{"id":"s2","name":"pg-prod","status":"active"}]`)) //nolint:errcheck
+		case "PATCH /api/v1/orgs/acme/database-servers/s1":
+			b, _ := io.ReadAll(r.Body)
+			raw = strings.TrimSpace(string(b))
+			w.Write([]byte(`{"id":"s1","name":"pg-dev"}`)) //nolint:errcheck
+		case "PATCH /api/v1/orgs/acme/database-servers/s2":
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`{"error":"data conflict: a server named \"pg\" already exists"}`)) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	out, err := run(t, "", "db", "server", "rename", "pg", "pg-dev")
+	if err != nil || raw != `{"name":"pg-dev"}` || !strings.Contains(out, "Server pg is now pg-dev.") {
+		t.Fatalf("out = %q, err = %v, body = %s", out, err, raw)
+	}
+	if _, err := run(t, "", "db", "server", "rename", "pg-prod", "pg"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("taken name: err = %v", err)
+	}
+	if _, err := run(t, "", "db", "server", "rename", "pg"); err == nil {
+		t.Fatal("a rename needs the new name")
+	}
+}
