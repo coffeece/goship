@@ -43,6 +43,11 @@ type BindDBServerArgs struct {
 	Environment string `json:"environment" jsonschema:"environment slug the server joins (goship_list_environments)"`
 }
 
+type RenameDBServerArgs struct {
+	DBServerArg
+	Name string `json:"name" jsonschema:"the new name: 3-40 lowercase letters, digits and hyphens, unique in the organization"`
+}
+
 type SetDBServerDiskLimitArgs struct {
 	DBServerArg
 	DiskLimitGB int `json:"disk_limit_gb" jsonschema:"cap in GB on how far the server's disk may auto-grow (minimum 10, not below its current size); 0 removes the cap"`
@@ -83,6 +88,21 @@ func (r *registry) dbservers() {
 			return c.CreateDatabaseServer(ctx, org, portal.CreateDatabaseServerRequest{
 				CloudAccountID: acc.ID, Name: name, Region: in.Region, Tier: tier, Environment: in.Environment, DiskLimitGB: in.DiskLimitGB,
 			})
+		})
+	orgTool(r, "goship_rename_database_server", "Rename a database server: the name GoShip shows and that `server` arguments take. Nothing changes in the cloud (the Cloud SQL instance keeps its own name) or for the databases on it; anything that still passes the old name stops finding the server.", write,
+		func(ctx context.Context, c *portal.Client, org string, in RenameDBServerArgs) (Message, error) {
+			if in.Name == "" {
+				return Message{}, errors.New("name is required: the server's new name")
+			}
+			s, err := deploy.ResolveDatabaseServer(ctx, c, deploy.Target{Org: org}, in.Server)
+			if err != nil {
+				return Message{}, err
+			}
+			renamed, err := c.RenameDatabaseServer(ctx, org, s.ID, in.Name)
+			if err != nil {
+				return Message{}, err
+			}
+			return msgf("Server %s is now %s.", s.Name, renamed.Name)
 		})
 	orgTool(r, "goship_set_database_server_disk_limit", "Set or remove the disk cap of a database server: how far its disk may auto-grow (0 removes the cap). The cap must be at least 10 GB and not below the disk's current size; the cloud bill grows with the disk, so it is the customer's spending ceiling.", write,
 		func(ctx context.Context, c *portal.Client, org string, in SetDBServerDiskLimitArgs) (Message, error) {
