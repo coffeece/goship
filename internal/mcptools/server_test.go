@@ -143,7 +143,7 @@ func TestEveryToolIsPrefixedAndAnnotated(t *testing.T) {
 			t.Errorf("%s: ReadOnlyHint = %v", tl.Name, tl.Annotations.ReadOnlyHint)
 		}
 		destructiveish := strings.HasPrefix(tl.Name, "goship_delete_") || tl.Name == "goship_revoke_api_token" || tl.Name == "goship_resize_cluster" ||
-			tl.Name == "goship_enable_database_server_pitr" || tl.Name == "goship_resize_database_server"
+			tl.Name == "goship_remove_project_domain" || tl.Name == "goship_enable_database_server_pitr" || tl.Name == "goship_resize_database_server"
 		if destructiveish {
 			if tl.Annotations.DestructiveHint != nil && !*tl.Annotations.DestructiveHint {
 				t.Errorf("%s is marked non-destructive", tl.Name)
@@ -264,6 +264,8 @@ func TestEveryProjectToolTakesAnEnvironment(t *testing.T) {
 			props := properties(t, tl)
 			_, hasProject := props["project"]
 			switch {
+			case strings.Contains(name, "_project_domain"):
+				// Acts on the project as a whole; a rule names its environment itself.
 			case orgLevel.MatchString(name):
 				if hasProject {
 					t.Errorf("%s belongs to the organization but takes a project", name)

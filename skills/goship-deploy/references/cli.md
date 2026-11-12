@@ -6,7 +6,7 @@
 | `goship_list_orgs` | `goship orgs` |
 | `goship_list_projects` | `goship projects` |
 | `goship_list_apps` / `goship_get_app` | `goship apps` / `goship app info <name>` |
-| `goship_create_app` | `goship app create <name> --platform go [--plan p] [--private]` |
+| `goship_create_app` | `goship app create <name> --platform go [--plan p] [--private] [--no-domain]` |
 | `goship_delete_app` | `goship app rm <name>` |
 | `goship_start_app` / `_stop_app` / `_restart_app` | `goship app start\|stop\|restart <name>` |
 | `goship_scale_app` | `goship app scale <name> --units N` |
@@ -32,6 +32,9 @@
 | `goship_list_database_extensions` / `goship_enable_database_extension` / `goship_disable_database_extension` | `goship db extensions <name>` / `goship db extension-add <name> <ext>` / `goship db extension-rm <name> <ext>` |
 | `goship_list_domains` / `goship_register_domain` / `goship_verify_domain` / `goship_delete_domain` | `goship domains` / `goship domain register\|verify\|rm` |
 | `goship_add_app_domain` / `goship_remove_app_domain` | `goship domain add\|rm <domain> -a <app>` |
+| `goship_list_project_domains` / `goship_add_project_domain` / `goship_remove_project_domain` | `goship project domain list\|add\|rm [<domain>]` |
+| `goship_set_project_domain_environment` / `goship_unset_project_domain_environment` | `goship project domain set <domain> --environment e [--subdomain s]` / `goship project domain unset <domain> --environment e` |
+| `goship_apply_project_domain` | `goship project domain apply <domain> --environment e` |
 | `goship_list_environments` | `goship environments` |
 | `goship_enable_environment` / `goship_disable_environment` | `goship environment enable <slug>` / `goship environment disable <slug>` (staging starts disabled; refusals are printed as the API wrote them) |
 | `goship_create_environment` / `goship_delete_environment` | `goship environment create <slug> [--name n] [--cluster c] [--db-server s]` / `goship environment rm <slug>` |
@@ -54,7 +57,9 @@ Scope. Tools that act on an app, a database or a volume (also plans,
 releases, logs, env and `goship_add_app_domain`) act in one environment and
 take `org`, `project` and `environment`; the CLI takes `--org`, `--project`
 and `--environment`. Environments, clusters, cloud accounts, database servers
-and registered domains belong to the organization and take `org` only.
+and registered domains belong to the organization and take `org` only. The
+project domain tools act on the project: they take `org` and `project`, and the
+rule tools an `environment` that is never defaulted.
 `goship apps\|dbs\|volumes -A` lists every environment of every project (no
 tool does that: call the list tool once per environment from
 `goship_list_environments`).
