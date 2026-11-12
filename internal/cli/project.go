@@ -85,6 +85,6 @@ func newProjectCmd(app *App) *cobra.Command {
 	list := newProjectsCmd(app)
 	list.Use = "list"
 
-	cmd.AddCommand(list, use, create)
+	cmd.AddCommand(list, use, create, newProjectDomainCmd(app))
 	return cmd
 }

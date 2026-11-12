@@ -201,6 +201,7 @@ belong to the organization too: they take no project.
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
 | `goship projects` (or `project list`) / `goship project use\|create <slug>` | list the org's projects / choose one / create one |
+| `goship project domain list\|add\|rm\|set\|unset\|apply` | attach domains to the project and choose, per environment (`--environment`), whether new apps get `<app>[.<subdomain>].<domain>` (`set <domain> --subdomain stg`); each rule needs one wildcard DNS record, which `list` and `set` print; `apply` attaches the host to the apps that already exist; `goship app create --no-domain` skips it for one app |
 | `goship tokens` / `goship token create\|rm` | list / manage API tokens for CI |
 | `goship mcp` | serve all of the above to an AI agent over MCP (see below) |
 

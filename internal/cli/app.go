@@ -67,6 +67,7 @@ func appCreateCmd(app *App) *cobra.Command {
 	f.StringVar(&req.Plan, "plan", "", "plan slug (`goship plans`); required on GoShip's shared cluster, the cluster's default on one of your own when omitted")
 	f.StringVar(&req.Description, "description", "", "human description")
 	f.BoolVar(&req.Private, "private", false, "put a GoShip login page in front of the app from its first deploy")
+	f.BoolVar(&req.NoDomain, "no-domain", false, "do not give the app the host the environment's project domain rules would")
 	_ = cmd.MarkFlagRequired("platform")
 
 	return cmd
