@@ -2,6 +2,7 @@ package mcptools
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -49,12 +50,9 @@ type ProjectDomainResult struct {
 }
 
 type ProjectDomainApplyResult struct {
-	Message  string   `json:"message"`
-	Attached []string `json:"attached"`
-	Failed   []struct {
-		App    string `json:"app"`
-		Reason string `json:"reason"`
-	} `json:"failed"`
+	Message  string                             `json:"message"`
+	Attached []string                           `json:"attached"`
+	Failed   []portal.ProjectDomainApplyFailure `json:"failed"`
 }
 
 // projectTool registers a typed tool that acts on a project but not on one
@@ -111,8 +109,11 @@ func (r *registry) projectDomains() {
 			}
 			return msgf("Detached %s from project %s.", d.Domain, t.Project)
 		})
-	projectTool(r, "goship_set_project_domain_environment", "Give the new apps of an environment a host under a project domain, <app>[.<subdomain>].<domain>.", write,
+	projectTool(r, "goship_set_project_domain_environment", "Give the new apps of an environment a host under a project domain, <app>[.<subdomain>].<domain>. The result names the wildcard DNS record the domain owner must create.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in SetProjectDomainArgs) (ProjectDomainResult, error) {
+			if err := requireRuleEnvironment(in.Environment); err != nil {
+				return ProjectDomainResult{}, err
+			}
 			d, err := deploy.ResolveProjectDomain(ctx, c, t, in.Domain)
 			if err != nil {
 				return ProjectDomainResult{}, err
@@ -121,27 +122,33 @@ func (r *registry) projectDomains() {
 			if err != nil {
 				return ProjectDomainResult{}, err
 			}
-			var lines []string
+			lines := []string{"Saved."}
 			for _, rule := range updated.Environments {
 				if rule.Environment != in.Environment {
 					continue
 				}
-				lines = append(lines, "New apps in "+in.Environment+" get "+rule.ExampleHost+".")
-				if rule.RecordValue != "" {
-					lines = append(lines, "The customer must create this DNS record: "+rule.RecordName+" CNAME "+rule.RecordValue)
+				lines = []string{"New apps in " + in.Environment + " get " + rule.ExampleHost + "."}
+				switch {
+				case rule.RecordValue != "":
+					lines = append(lines, "Create this DNS record at the domain's DNS provider: "+rule.RecordName+" CNAME "+rule.RecordValue)
+				case rule.RecordName != "":
+					lines = append(lines, "The DNS record "+rule.RecordName+" gets its value once the first app exists in "+in.Environment+". List the project's domains again then.")
 				}
 				if rule.MissingApps > 0 {
 					verb := "do"
 					if rule.MissingApps == 1 {
 						verb = "does"
 					}
-					lines = append(lines, plural(rule.MissingApps, "existing app")+" "+verb+" not have it yet: goship_apply_project_domain attaches it.")
+					lines = append(lines, plural(rule.MissingApps, "existing app")+" "+verb+" not have it yet; ask before calling goship_apply_project_domain.")
 				}
 			}
 			return ProjectDomainResult{Message: strings.Join(lines, "\n"), Domain: updated}, nil
 		})
 	projectTool(r, "goship_unset_project_domain_environment", "Stop giving the new apps of an environment a host under a project domain.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in ProjectDomainRuleArg) (Message, error) {
+			if err := requireRuleEnvironment(in.Environment); err != nil {
+				return Message{}, err
+			}
 			d, err := deploy.ResolveProjectDomain(ctx, c, t, in.Domain)
 			if err != nil {
 				return Message{}, err
@@ -151,8 +158,11 @@ func (r *registry) projectDomains() {
 			}
 			return msgf("New apps in %s no longer get a host under %s.", in.Environment, d.Domain)
 		})
-	projectTool(r, "goship_apply_project_domain", "Attach the rule's host to every app already in the environment that does not have one.", write,
+	projectTool(r, "goship_apply_project_domain", "Attach <app>.<suffix> to every app in the environment that has no host under the rule's suffix, including apps created with no_domain on purpose; ask the user first.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in ProjectDomainRuleArg) (ProjectDomainApplyResult, error) {
+			if err := requireRuleEnvironment(in.Environment); err != nil {
+				return ProjectDomainApplyResult{}, err
+			}
 			d, err := deploy.ResolveProjectDomain(ctx, c, t, in.Domain)
 			if err != nil {
 				return ProjectDomainApplyResult{}, err
@@ -164,6 +174,9 @@ func (r *registry) projectDomains() {
 			out := ProjectDomainApplyResult{Attached: res.Attached, Failed: res.Failed}
 			if out.Attached == nil {
 				out.Attached = []string{}
+			}
+			if out.Failed == nil {
+				out.Failed = []portal.ProjectDomainApplyFailure{}
 			}
 			lines := []string{"Attached to " + plural(len(res.Attached), "app") + "."}
 			for _, f := range res.Failed {
@@ -179,4 +192,11 @@ func plural(n int, noun string) string {
 		return "1 " + noun
 	}
 	return strconv.Itoa(n) + " " + noun + "s"
+}
+
+func requireRuleEnvironment(env string) error {
+	if strings.TrimSpace(env) == "" {
+		return errors.New("environment is required")
+	}
+	return nil
 }

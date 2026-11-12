@@ -28,11 +28,14 @@ type ProjectDomainRule struct {
 // ProjectDomainApply is the outcome of attaching a rule's host to the
 // environment's existing apps.
 type ProjectDomainApply struct {
-	Attached []string `json:"attached"`
-	Failed   []struct {
-		App    string `json:"app"`
-		Reason string `json:"reason"`
-	} `json:"failed"`
+	Attached []string                    `json:"attached"`
+	Failed   []ProjectDomainApplyFailure `json:"failed"`
+}
+
+// ProjectDomainApplyFailure is an app a rule's host could not be attached to.
+type ProjectDomainApplyFailure struct {
+	App    string `json:"app"`
+	Reason string `json:"reason"`
 }
 
 func projectDomainPath(org, project, id, rest string) string {

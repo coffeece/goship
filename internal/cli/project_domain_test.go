@@ -97,11 +97,14 @@ func TestProjectDomainSingularWording(t *testing.T) {
 			w.Write([]byte(`{"attached":[],"failed":[{"app":"c","reason":"no"}]}`)) //nolint:errcheck
 		}
 	})
-	out, _ := run(t, "", "project", "domain", "set", "example.com", "--environment", "staging")
+	out, err := run(t, "", "project", "domain", "set", "example.com", "--environment", "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(out, "1 existing app does not have it yet: ") {
 		t.Errorf("set output:\n%s", out)
 	}
-	_, err := run(t, "", "project", "domain", "apply", "example.com", "--environment", "staging")
+	_, err = run(t, "", "project", "domain", "apply", "example.com", "--environment", "staging")
 	if err == nil || err.Error() != "1 app could not be attached" {
 		t.Errorf("err = %v", err)
 	}
@@ -232,5 +235,38 @@ func TestAppCreateNoDomain(t *testing.T) {
 	}
 	if body["no_domain"] != true {
 		t.Errorf("body = %v", body)
+	}
+}
+
+func TestProjectDomainSetExplainsAnEmptyRecordValue(t *testing.T) {
+	for _, c := range []struct{ name, put, want string }{
+		{"empty value", `{"id":"d1","domain":"example.com","environments":[{"environment":"staging","example_host":"<app>.stg.example.com","record_name":"*.stg.example.com","record_value":"","dns":"unavailable"}]}`,
+			"New apps in staging get <app>.stg.example.com.\nThe DNS record *.stg.example.com gets its value once the first app exists in staging. List the project's domains again then.\n"},
+		{"no rule", `{"id":"d1","domain":"example.com","environments":[]}`, "Saved.\n"},
+	} {
+		stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPut {
+				w.Write([]byte(c.put)) //nolint:errcheck
+				return
+			}
+			w.Write([]byte(domainsJSON)) //nolint:errcheck
+		})
+		out, err := run(t, "", "project", "domain", "set", "example.com", "--environment", "staging")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out != c.want {
+			t.Errorf("%s: output:\n%s\nwant:\n%s", c.name, out, c.want)
+		}
+	}
+}
+
+func TestProjectDomainApplyHelpSaysWhatItReaches(t *testing.T) {
+	out, err := run(t, "", "project", "domain", "apply", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no host under the rule's suffix") {
+		t.Errorf("help:\n%s", out)
 	}
 }

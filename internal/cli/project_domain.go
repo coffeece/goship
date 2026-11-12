@@ -151,8 +151,13 @@ func newProjectDomainCmd(app *App) *cobra.Command {
 				if err := r.Message("New apps in %s get %s.", env, rule.ExampleHost); err != nil {
 					return err
 				}
-				if rule.RecordValue != "" {
+				switch {
+				case rule.RecordValue != "":
 					if err := r.Message("Create this DNS record: %s CNAME %s", rule.RecordName, rule.RecordValue); err != nil {
+						return err
+					}
+				case rule.RecordName != "":
+					if err := r.Message("The DNS record %s gets its value once the first app exists in %s. List the project's domains again then.", rule.RecordName, env); err != nil {
 						return err
 					}
 				}
@@ -163,8 +168,9 @@ func newProjectDomainCmd(app *App) *cobra.Command {
 					}
 					return r.Message("%s %s not have it yet: goship project domain apply %s --environment %s", appCount(rule.MissingApps, "existing "), verb, updated.Domain, env)
 				}
+				return nil
 			}
-			return nil
+			return r.Message("Saved.")
 		}),
 	}
 	set.Flags().StringVar(&subdomain, "subdomain", "", "label between the app name and the domain (<app>.<label>.<domain>); none when omitted")
@@ -191,8 +197,10 @@ func newProjectDomainCmd(app *App) *cobra.Command {
 
 	apply := &cobra.Command{
 		Use:   "apply <domain> --environment <slug>",
-		Short: "Attach the rule's host to the environment's existing apps",
-		Args:  cobra.ExactArgs(1),
+		Short: "Attach the rule's host to the environment's apps that have no host under its suffix",
+		Long: "Attach <app>.<suffix> to every app in the environment that has no host under the rule's suffix,\n" +
+			"including apps created with --no-domain on purpose.",
+		Args: cobra.ExactArgs(1),
 		RunE: projectRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
 			env, err := requireEnvironment(app)
 			if err != nil {

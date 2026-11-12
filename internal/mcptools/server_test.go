@@ -253,6 +253,15 @@ func TestEnvironmentAndClusterToolsAreRegistered(t *testing.T) {
 // Every tool that takes a project takes an environment beside it, and the
 // tools of the organization (clusters, environments, cloud accounts,
 // database servers) take neither.
+var projectDomainTools = map[string]bool{
+	"goship_list_project_domains":             true,
+	"goship_add_project_domain":               true,
+	"goship_remove_project_domain":            true,
+	"goship_set_project_domain_environment":   true,
+	"goship_unset_project_domain_environment": true,
+	"goship_apply_project_domain":             true,
+}
+
 func TestEveryProjectToolTakesAnEnvironment(t *testing.T) {
 	orgLevel := regexp.MustCompile(`_(environments?|clusters?|cluster_sizes|cloud_\w+|database_servers?|database_server_\w+)$`)
 	for _, o := range []Options{{Deploy: true}, {}} {
@@ -264,7 +273,7 @@ func TestEveryProjectToolTakesAnEnvironment(t *testing.T) {
 			props := properties(t, tl)
 			_, hasProject := props["project"]
 			switch {
-			case strings.Contains(name, "_project_domain"):
+			case projectDomainTools[name]:
 				// Acts on the project as a whole; a rule names its environment itself.
 			case orgLevel.MatchString(name):
 				if hasProject {

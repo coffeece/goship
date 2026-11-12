@@ -67,7 +67,8 @@ type CreateAppRequest struct {
 	Plan        string `json:"plan,omitempty"`
 	Description string `json:"description,omitempty"`
 	Private     bool   `json:"private,omitempty"`
-	// NoDomain skips the project domain rules the environment would apply.
+	// NoDomain attaches no custom domain at all, even when the project or
+	// organization has a default.
 	NoDomain bool `json:"no_domain,omitempty"`
 }
 
