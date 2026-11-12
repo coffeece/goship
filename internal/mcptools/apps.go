@@ -23,6 +23,7 @@ type CreateAppArgs struct {
 	Platform string `json:"platform,omitempty" jsonschema:"go, python, nodejs or static; omit for an app built from a Dockerfile"`
 	Plan     string `json:"plan,omitempty" jsonschema:"plan slug from goship_list_plans; omitted, a free plan of the environment is picked when there is one"`
 	Private  bool   `json:"private,omitempty" jsonschema:"true puts a GoShip login page in front of the app from its first deploy"`
+	NoDomain bool   `json:"no_domain,omitempty" jsonschema:"attach no custom domain, even when the project or organization has a default"`
 }
 
 type ScaleArgs struct {
@@ -47,7 +48,7 @@ func (r *registry) apps() {
 		})
 	tool(r, "goship_create_app", "Create an app without deploying it. goship_deploy creates the app itself when it is missing, so this is only for creating ahead of a deploy. billing_starts_at is set while an invited trial holds the app unbilled: tell the user that date.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in CreateAppArgs) (*portal.App, error) {
-			req := portal.CreateAppRequest{Name: in.Name, Platform: in.Platform, Plan: in.Plan, Private: in.Private}
+			req := portal.CreateAppRequest{Name: in.Name, Platform: in.Platform, Plan: in.Plan, Private: in.Private, NoDomain: in.NoDomain}
 			if in.Plan == "" {
 				chosen, err := deploy.ChoosePlan(ctx, c, t)
 				if err != nil {

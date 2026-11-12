@@ -69,6 +69,7 @@ func Register(s *mcp.Server, c Clients, o Options) {
 	r.databases()
 	r.dbservers()
 	r.domains()
+	r.projectDomains()
 	r.volumes()
 	r.plans()
 	r.cloud()

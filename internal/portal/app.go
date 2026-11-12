@@ -67,6 +67,9 @@ type CreateAppRequest struct {
 	Plan        string `json:"plan,omitempty"`
 	Description string `json:"description,omitempty"`
 	Private     bool   `json:"private,omitempty"`
+	// NoDomain attaches no custom domain at all, even when the project or
+	// organization has a default.
+	NoDomain bool `json:"no_domain,omitempty"`
 }
 
 func (c *Client) Apps(ctx context.Context, org, project, env string) ([]App, error) {

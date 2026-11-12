@@ -265,6 +265,21 @@ rotate).
 - More units: `goship_scale_app`.
 - Custom domain: `goship_register_domain` → publish the TXT → `goship_verify_domain`
   → `goship_add_app_domain`, then CNAME the hostname to the app's address.
+- Project domains (every new app of an environment gets `<app>[.<subdomain>].<domain>`
+  by itself): `goship_add_project_domain` (the domain must be a domain the
+  organization has verified, or a subdomain of one), then `goship_set_project_domain_environment` with the
+  `environment` and, say, `subdomain: stg` for `<app>.stg.example.com`.
+  The rule needs one wildcard DNS record at the customer's DNS provider, their
+  one manual step: read it from `goship_list_project_domains` (`record_name`
+  CNAME `record_value`, with `dns` saying whether it resolves yet) and quote it
+  to them; the set result repeats it. On a cluster of the customer's own the
+  value may be empty until the first app exists there: list again after the
+  deploy. A rule reaches only apps created after it; `goship_apply_project_domain`
+  gives the host to every app already in the environment that has no host under the rule's suffix,
+  including apps created with `no_domain: true` on purpose, so ask before
+  applying and relay each app it lists as failed. `goship_create_app` takes
+  `no_domain: true` to skip the rule for one app; `goship_unset_project_domain_environment`
+  stops it for new apps.
 - Hide a work-in-progress app: `goship_set_app_visibility` private, then `goship_add_app_access` per person (up to 25; the password is returned once; 5 wrong passwords in a row lock a username for 10 minutes) and hand them the username and password. For your own checks call `goship_get_app_access_token` with `reveal: true` (the default is masked and no header accepts it) and send it as `X-GoShip-Access`. `goship_deploy` creates public apps, so for private from the first deploy call `goship_create_app` with `private: true`, then deploy. Custom domains are covered too. Apps on connected Kubernetes clusters cannot be private yet.
 - Roll back: `goship_rollback` with a version from `goship_list_releases`.
 - One-off commands (migrations): `goship_run`.
