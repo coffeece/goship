@@ -201,7 +201,7 @@ belong to the organization too: they take no project.
 | `goship releases` / `goship rollback` | deploy history |
 | `goship orgs` / `goship org use <slug>` | list orgs / choose one |
 | `goship projects` (or `project list`) / `goship project use\|create <slug>` | list the org's projects / choose one / create one |
-| `goship project domain list\|add\|rm\|set\|unset\|apply` | attach domains to the project and choose, per environment (`--environment`), whether new apps get `<app>[.<subdomain>].<domain>` (`set <domain> --subdomain stg`); each rule needs one wildcard DNS record, which `list` and `set` print; `apply` attaches the host to the apps that already exist; `goship app create --no-domain` skips it for one app (MCP: `goship_list_project_domains`, `goship_add_project_domain`, `goship_remove_project_domain`, `goship_set_project_domain_environment`, `goship_unset_project_domain_environment`, `goship_apply_project_domain`) |
+| `goship project domain list\|add\|rm\|set\|unset\|apply` | attach domains to the project and choose, per environment (`--environment`), whether new apps get `<app>[.<subdomain>].<domain>` (`set <domain> --subdomain stg`); each rule needs one wildcard DNS record, which `list` and `set` print; `apply` attaches the host to every app of the environment that has no host under the rule's suffix; `goship app create --no-domain` attaches no custom domain at all, even when the project or organization has a default (MCP: `goship_list_project_domains`, `goship_add_project_domain`, `goship_remove_project_domain`, `goship_set_project_domain_environment`, `goship_unset_project_domain_environment`, `goship_apply_project_domain`) |
 | `goship tokens` / `goship token create\|rm` | list / manage API tokens for CI |
 | `goship mcp` | serve all of the above to an AI agent over MCP (see below) |
 
@@ -320,7 +320,9 @@ Every tool that acts on an app, database or volume takes `org`, `project` and
 `goship mcp --environment <slug>`, the `goship.yml` of its directory,
 `GOSHIP_ENVIRONMENT` or `goship environment use` — and then the organization's
 default; `goship_deploy` reads `environment:` from the directory it deploys
-before any of those. Environments, clusters, cloud accounts and database servers
+before any of those. The project domain tools
+(`goship_list_project_domains`…) take `org` and `project`, and name the
+environment of a rule themselves. Environments, clusters, cloud accounts and database servers
 belong to the organization (`goship_list_environments`, `goship_list_clusters`,
 `goship_create_cluster`…) and take `org` only. A tool that deletes something
 should be given `environment` explicitly. `goship_create_cluster` takes SSH keys

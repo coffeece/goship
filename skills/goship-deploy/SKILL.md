@@ -266,8 +266,8 @@ rotate).
 - Custom domain: `goship_register_domain` → publish the TXT → `goship_verify_domain`
   → `goship_add_app_domain`, then CNAME the hostname to the app's address.
 - Project domains (every new app of an environment gets `<app>[.<subdomain>].<domain>`
-  by itself): `goship_add_project_domain` (the domain must be registered and
-  verified), then `goship_set_project_domain_environment` with the
+  by itself): `goship_add_project_domain` (the domain must be a domain the
+  organization has verified, or a subdomain of one), then `goship_set_project_domain_environment` with the
   `environment` and, say, `subdomain: stg` for `<app>.stg.example.com`.
   The rule needs one wildcard DNS record at the customer's DNS provider, their
   one manual step: read it from `goship_list_project_domains` (`record_name`
@@ -275,7 +275,7 @@ rotate).
   to them; the set result repeats it. On a cluster of the customer's own the
   value may be empty until the first app exists there: list again after the
   deploy. A rule reaches only apps created after it; `goship_apply_project_domain`
-  gives the host to every app already in the environment that has none,
+  gives the host to every app already in the environment that has no host under the rule's suffix,
   including apps created with `no_domain: true` on purpose, so ask before
   applying and relay each app it lists as failed. `goship_create_app` takes
   `no_domain: true` to skip the rule for one app; `goship_unset_project_domain_environment`
