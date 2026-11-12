@@ -179,6 +179,33 @@ func TestEndpoints(t *testing.T) {
 			return c.RemoveAppDomain(ctx, "acme", "atlas", "staging", "api", "api.acme.dev")
 		}},
 
+		{"project domains", "GET", "/api/v1/orgs/acme/projects/atlas/domains", "", func(ctx context.Context, c *Client) error {
+			_, err := c.ProjectDomains(ctx, "acme", "atlas")
+			return err
+		}},
+		{"attach project domain", "POST", "/api/v1/orgs/acme/projects/atlas/domains", `{"domain":"example.com"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.AttachProjectDomain(ctx, "acme", "atlas", "example.com")
+			return err
+		}},
+		{"detach project domain", "DELETE", "/api/v1/orgs/acme/projects/atlas/domains/d%201", "", func(ctx context.Context, c *Client) error {
+			return c.DetachProjectDomain(ctx, "acme", "atlas", "d 1")
+		}},
+		{"set project domain rule", "PUT", "/api/v1/orgs/acme/projects/atlas/domains/d1/environments/staging", `{"subdomain":"stg"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.SetProjectDomainRule(ctx, "acme", "atlas", "d1", "staging", "stg")
+			return err
+		}},
+		{"remove project domain rule", "DELETE", "/api/v1/orgs/acme/projects/atlas/domains/d1/environments/staging", "", func(ctx context.Context, c *Client) error {
+			return c.RemoveProjectDomainRule(ctx, "acme", "atlas", "d1", "staging")
+		}},
+		{"apply project domain rule", "POST", "/api/v1/orgs/acme/projects/atlas/domains/d1/environments/staging/apply", "", func(ctx context.Context, c *Client) error {
+			_, err := c.ApplyProjectDomainRule(ctx, "acme", "atlas", "d1", "staging")
+			return err
+		}},
+		{"create app without a domain", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/apps", `{"name":"api","platform":"go","no_domain":true}`, func(ctx context.Context, c *Client) error {
+			_, err := c.CreateApp(ctx, "acme", "atlas", "staging", CreateAppRequest{Name: "api", Platform: "go", NoDomain: true})
+			return err
+		}},
+
 		{"environments", "GET", "/api/v1/orgs/acme/environments", "", func(ctx context.Context, c *Client) error { _, err := c.Environments(ctx, "acme"); return err }},
 		{"create environment", "POST", "/api/v1/orgs/acme/environments", `{"name":"Staging","slug":"staging","cluster_id":"c1","db_server_id":"s1"}`, func(ctx context.Context, c *Client) error {
 			_, err := c.CreateEnvironment(ctx, "acme", CreateEnvironmentRequest{Name: "Staging", Slug: "staging", ClusterID: "c1", DBServerID: "s1"})

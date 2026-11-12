@@ -67,6 +67,8 @@ type CreateAppRequest struct {
 	Plan        string `json:"plan,omitempty"`
 	Description string `json:"description,omitempty"`
 	Private     bool   `json:"private,omitempty"`
+	// NoDomain skips the project domain rules the environment would apply.
+	NoDomain bool `json:"no_domain,omitempty"`
 }
 
 func (c *Client) Apps(ctx context.Context, org, project, env string) ([]App, error) {
