@@ -60,6 +60,14 @@ func requireEnvironment(app *App) (string, error) {
 	return app.Global.Environment, nil
 }
 
+// appCount is "1 app" or "3 apps"; adjective goes before the noun.
+func appCount(n int, adjective string) string {
+	if n == 1 {
+		return "1 " + adjective + "app"
+	}
+	return fmt.Sprintf("%d %sapps", n, adjective)
+}
+
 func newProjectDomainCmd(app *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "domain",
@@ -149,7 +157,11 @@ func newProjectDomainCmd(app *App) *cobra.Command {
 					}
 				}
 				if rule.MissingApps > 0 {
-					return r.Message("%d existing apps do not have it yet: goship project domain apply %s --environment %s", rule.MissingApps, updated.Domain, env)
+					verb := "do"
+					if rule.MissingApps == 1 {
+						verb = "does"
+					}
+					return r.Message("%s %s not have it yet: goship project domain apply %s --environment %s", appCount(rule.MissingApps, "existing "), verb, updated.Domain, env)
 				}
 			}
 			return nil
@@ -200,11 +212,7 @@ func newProjectDomainCmd(app *App) *cobra.Command {
 				}
 			} else {
 				r := app.Renderer()
-				noun := "apps"
-				if len(res.Attached) == 1 {
-					noun = "app"
-				}
-				if err := r.Message("Attached to %d %s.", len(res.Attached), noun); err != nil {
+				if err := r.Message("Attached to %s.", appCount(len(res.Attached), "")); err != nil {
 					return err
 				}
 				for _, f := range res.Failed {
@@ -214,7 +222,7 @@ func newProjectDomainCmd(app *App) *cobra.Command {
 				}
 			}
 			if len(res.Failed) > 0 {
-				return fmt.Errorf("%d apps could not be attached", len(res.Failed))
+				return fmt.Errorf("%s could not be attached", appCount(len(res.Failed), ""))
 			}
 			return nil
 		}),

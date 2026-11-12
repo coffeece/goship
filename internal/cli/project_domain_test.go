@@ -86,6 +86,27 @@ func TestProjectDomainSetPrintsTheRecordAndTheMissingApps(t *testing.T) {
 	}
 }
 
+func TestProjectDomainSingularWording(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(domainsJSON)) //nolint:errcheck
+		case http.MethodPut:
+			w.Write([]byte(`{"id":"d1","domain":"example.com","environments":[{"environment":"staging","example_host":"<app>.example.com","record_name":"*.example.com","record_value":"","dns":"unknown","missing_apps":1}]}`)) //nolint:errcheck
+		default:
+			w.Write([]byte(`{"attached":[],"failed":[{"app":"c","reason":"no"}]}`)) //nolint:errcheck
+		}
+	})
+	out, _ := run(t, "", "project", "domain", "set", "example.com", "--environment", "staging")
+	if !strings.Contains(out, "1 existing app does not have it yet: ") {
+		t.Errorf("set output:\n%s", out)
+	}
+	_, err := run(t, "", "project", "domain", "apply", "example.com", "--environment", "staging")
+	if err == nil || err.Error() != "1 app could not be attached" {
+		t.Errorf("err = %v", err)
+	}
+}
+
 func TestProjectDomainSetWithoutSubdomainSendsNone(t *testing.T) {
 	var body map[string]any
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
