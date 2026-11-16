@@ -296,24 +296,97 @@ not a terminal gets one line per step, without colour or redraws.
 
 ## AI agents
 
-`goship mcp` serves everything above as [MCP](https://modelcontextprotocol.io)
-tools over stdio, using the login this machine already has. Claude Code users
-get the server, a deploy skill and `/goship:deploy` in one install:
+An AI agent can operate GoShip for you: ask it to "deploy this to GoShip" and it
+creates the app, sets the variables, deploys, reads the logs and returns the
+URL. It does so through [MCP](https://modelcontextprotocol.io) tools, one for
+each thing this CLI does (`goship_list_apps`, `goship_deploy`, `goship_logs`,
+`goship_create_database`…), and it acts with your permissions.
+
+| You use | How | Needs this CLI | Deploys a directory |
+|---|---|---|---|
+| Claude Code | the [plugin](#claude-code-plugin) | yes | yes |
+| Cursor or another MCP client | [`goship mcp`](#other-mcp-clients) | yes | yes |
+| claude.ai, Claude Desktop, mobile | the [hosted server](#hosted-mcp-server-claudeai-connector) | no | no, prebuilt images only |
+
+The full guide, in Portuguese, is at <https://docs.goship.sh/agentes-ia/>:
+[every tool](https://docs.goship.sh/agentes-ia/ferramentas/),
+[day-to-day use](https://docs.goship.sh/agentes-ia/usando/) and
+[troubleshooting](https://docs.goship.sh/agentes-ia/problemas/).
+
+### Claude Code plugin
+
+The plugin runs the `goship` on your machine, so [install](#install) the CLI
+and log in first:
+
+```sh
+goship login
+goship whoami
+```
+
+Then, inside Claude Code:
 
 ```
 /plugin install goship --marketplace coffeece/goship
 ```
 
-Any other MCP client runs `goship mcp` as a stdio server:
+Restart Claude Code. `/mcp` should list the `goship` server as connected, and
+asking "who am I on GoShip?" should answer with your user and organizations.
+
+To deploy, open Claude Code in the project and run:
+
+```
+/goship:deploy
+```
+
+The agent reads the project and reports what it found (platform, port, health
+check, secrets), makes only the changes GoShip needs, writes `goship.yaml` and
+deploys. Name an environment to pick one (`/goship:deploy to staging`); with
+none named the deploy goes to the organization's default. It asks before
+choosing a paid plan.
+
+What the plugin installs:
+
+- the `goship` MCP server, which runs `goship mcp` with this machine's login;
+- the `goship-deploy` skill, the steps the agent follows from a directory to a
+  running URL (asking it to "ship this to GoShip" triggers it too);
+- the `/goship:deploy [path]` command, a shortcut to that skill.
+
+The tools come from the CLI and the skill from the plugin, so each updates on
+its own. Restart Claude Code after either:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/coffeece/goship/main/install.sh | sh   # new tools
+claude plugin marketplace update coffeece && claude plugin update goship@coffeece   # new skill
+```
+
+`claude plugin uninstall goship@coffeece` removes the plugin; the CLI and your
+login stay.
+
+### Other MCP clients
+
+Any MCP client runs `goship mcp` as a stdio server, using the login this
+machine already has (or `GOSHIP_TOKEN`):
 
 ```json
 { "mcpServers": { "goship": { "command": "goship", "args": ["mcp"] } } }
 ```
 
-Tools are named after the commands (`goship_list_apps`, `goship_deploy`,
-`goship_logs`, `goship_create_database_server`…). Deletes are marked
-destructive and ask the agent to confirm with you first; `login`,
-`cloud connect` and `shell` stay in the terminal.
+Cursor reads that from `~/.cursor/mcp.json` or a project's `.cursor/mcp.json`;
+Claude Desktop from Settings > Developer > Edit Config. Claude Code without the
+plugin: `claude mcp add goship -- goship mcp`. If a graphical client cannot find
+`goship`, give the full path that `which goship` prints. These clients get the
+tools but not the deploy skill or `/goship:deploy`.
+
+### How the tools behave
+
+Every tool is marked as a read, a write or destructive. The destructive ones
+ask the agent to confirm with you first: every `goship_delete_*`,
+`goship_revoke_api_token`, `goship_remove_project_domain`,
+`goship_resize_cluster` (its apps are down for a few minutes) and
+`goship_resize_database_server` and `goship_enable_database_server_pitr` (both
+restart the database server). `login`, `cloud connect` and `shell` stay in the
+terminal: they need a browser or a TTY. `goship_logs` never follows and returns
+at most 1000 lines a call; `goship_run` is capped at 10 minutes.
 
 Every tool that acts on an app, database or volume takes `org`, `project` and
 `environment`. Left out, the local server uses what it has selected —
@@ -329,6 +402,12 @@ should be given `environment` explicitly. `goship_create_cluster` takes SSH keys
 and kubeconfigs as contents; connect those from the terminal instead
 (`goship cluster create --host … --ssh-key <path>`, `--kubeconfig <path>`).
 
+If the server does not connect, check that `goship version` works in the shell
+the client was started from. "not logged in" means `goship login` has not been
+run on this machine; "no organization selected" or "no project selected" means
+you have several: run `goship org use <slug>` and `goship project use <slug>`,
+or name them in the request. A failed tool call ends with a `code: <code>` line.
+
 ### Hosted MCP server (claude.ai connector)
 
 For clients that cannot run a local process, GoShip hosts the same tools at:
@@ -338,7 +417,7 @@ https://mcp.goship.sh/mcp
 ```
 
 It speaks Streamable HTTP and signs you in with your GoShip account over
-OAuth, so there is no token to copy.
+OAuth, so there is no token to copy and nothing to install.
 
 - **claude.ai** (also Claude Desktop and mobile): Customize > Connectors > Add
   custom connector, paste the URL, then sign in with GoShip when asked.
@@ -349,11 +428,13 @@ With no machine to read config from, there is no selected organization,
 project or environment: tools use the only organization and project you have,
 or ask for `org` and `project`, and the environment is the one you pass as
 `environment`, else the organization's default.
-Deploying a directory reads files on your machine, so `goship_deploy` only
-works with the local `goship mcp`; everything else works the same.
+Deploying a directory reads files on your machine, so there `goship_deploy`
+only takes a prebuilt `image`; use the plugin or the local `goship mcp` to
+deploy a directory. Everything else works the same.
 
 GoShip runs that server; it builds its tools with the `mcpserver` package,
-the same tools `goship mcp` serves.
+the same tools `goship mcp` serves. A new CLI release reaches it shortly after,
+not at the same moment.
 
 ## Configuration
 
