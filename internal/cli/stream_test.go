@@ -304,3 +304,23 @@ func TestReleasesLogSaysWhenThereIsNothingToPrint(t *testing.T) {
 		t.Errorf("unknown version: err = %v", err)
 	}
 }
+
+// A build can write escape sequences; they must not reach the terminal of
+// whoever reads the stored log later.
+func TestReleasesLogStripsTerminalEscapes(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/deploys") {
+			w.Write([]byte(`[{"id":"evt-8","version":8}]`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(`{"id":"evt-8","version":8,"log":"\u001b[32mok\u001b[0m\n\u001b]0;owned\u0007title\nbell\u0007 end","log_available":true}`)) //nolint:errcheck
+	})
+
+	out, err := run(t, "", "releases", "log", "-a", "blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "ok\ntitle\nbell end" {
+		t.Errorf("stdout = %q", out)
+	}
+}

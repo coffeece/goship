@@ -207,10 +207,26 @@ func newReleaseLogCmd(app *App) *cobra.Command {
 		if detail.LogTruncated {
 			fmt.Fprintln(cmd.ErrOrStderr(), "This log was long, so its middle was left out. The beginning and the end are complete.")
 		}
-		_, err = io.WriteString(cmd.OutOrStdout(), detail.Log)
+		_, err = io.WriteString(cmd.OutOrStdout(), printableLog(detail.Log))
 		return err
 	})
 	return cmd
+}
+
+// printableLog is a stored log as it is safe to print: a build writes what it
+// likes, and whoever reads the log later may not be who ran the build, so
+// escape sequences and control characters never reach their terminal.
+func printableLog(log string) string {
+	lines := strings.SplitAfter(log, "\n")
+	var b strings.Builder
+	for _, line := range lines {
+		text := strings.TrimSuffix(line, "\n")
+		b.WriteString(printable(text))
+		if len(text) != len(line) {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }
 
 func releaseName(d portal.Deploy) string {
