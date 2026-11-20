@@ -67,6 +67,25 @@ type ListReleasesArgs struct {
 	Limit int `json:"limit,omitempty" jsonschema:"how many, newest first; default 20"`
 }
 
+type ReleaseLogArgs struct {
+	AppArg
+	Version string `json:"version,omitempty" jsonschema:"release to read, e.g. v12; empty for the newest release, which after a failed deploy is that deploy"`
+	Lines   int    `json:"lines,omitempty" jsonschema:"how many lines from the end of the log; default 200, at most 2000"`
+}
+
+type ReleaseLog struct {
+	App     string `json:"app"`
+	Version string `json:"version,omitempty"`
+	Failed  bool   `json:"failed"`
+	Error   string `json:"error,omitempty"`
+	// Log is the end of what the release wrote; Truncated says earlier lines
+	// were left out, by this tool or because the stored log was cut.
+	Log       string `json:"log"`
+	Truncated bool   `json:"truncated"`
+	// Note explains an empty log.
+	Note string `json:"note,omitempty"`
+}
+
 type RollbackArgs struct {
 	AppArg
 	Version string `json:"version" jsonschema:"release to run again, e.g. v12 (goship_list_releases shows them)"`
@@ -140,6 +159,35 @@ func (r *registry) releases(withDeploy bool) {
 			}
 			rel, err := c.Deploys(ctx, t.Org, t.Project, t.Environment, in.App, limit)
 			return ReleaseList{Releases: rel}, err
+		})
+	tool(r, "goship_get_release_log", "Read what a deploy or rollback wrote while it built and started: the newest release of the app, or a version. Use it to find out why a deploy failed after the fact. Returns the end of the log.", read,
+		func(ctx context.Context, c *portal.Client, t deploy.Target, in ReleaseLogArgs) (*ReleaseLog, error) {
+			deploys, err := c.Deploys(ctx, t.Org, t.Project, t.Environment, in.App, 100)
+			if err != nil {
+				return nil, err
+			}
+			d, ok := portal.FindDeploy(deploys, in.Version)
+			if !ok {
+				return nil, fmt.Errorf("%s has no such release in its last 100; goship_list_releases shows them", in.App)
+			}
+			detail, err := c.DeployDetail(ctx, t.Org, t.Project, t.Environment, in.App, d.ID)
+			if err != nil {
+				return nil, err
+			}
+			out := &ReleaseLog{App: in.App, Failed: detail.Error != "", Error: detail.Error}
+			if detail.Version > 0 {
+				out.Version = fmt.Sprintf("v%d", detail.Version)
+			}
+			switch {
+			case detail.LogRestricted:
+				out.Note = "Release logs are shown to people who can deploy the app; this account can only view it."
+			case !detail.LogAvailable:
+				out.Note = "No log was kept for this release: it was made before GoShip started keeping release logs."
+			default:
+				out.Log, out.Truncated = lastLines(detail.Log, in.Lines)
+				out.Truncated = out.Truncated || detail.LogTruncated
+			}
+			return out, nil
 		})
 	tool(r, "goship_rollback", "Release a previous version of an app again.", write,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in RollbackArgs) (*RollbackResult, error) {
@@ -248,3 +296,22 @@ func (e *releaseFailed) Error() string {
 }
 
 func (e *releaseFailed) Unwrap() error { return e.op }
+
+// lastLines keeps the last n lines of a log (200 when n is not set, at most
+// 2000) and reports whether anything was left out.
+func lastLines(log string, n int) (string, bool) {
+	if n <= 0 {
+		n = 200
+	}
+	if n > 2000 {
+		n = 2000
+	}
+	lines := strings.SplitAfter(log, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) <= n {
+		return log, false
+	}
+	return strings.Join(lines[len(lines)-n:], ""), true
+}

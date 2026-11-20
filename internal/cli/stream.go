@@ -152,7 +152,79 @@ func newReleasesCmd(app *App) *cobra.Command {
 		}
 		return app.Renderer().Render(deploys)
 	})
+	cmd.AddCommand(newReleaseLogCmd(app))
 	return cmd
+}
+
+// releaseLogHistory is how far back `releases log` looks for a version.
+const releaseLogHistory = 100
+
+func newReleaseLogCmd(app *App) *cobra.Command {
+	var appName string
+	cmd := &cobra.Command{
+		Use:   "log [version] --app <app>",
+		Short: "Print what a release wrote while it built and started",
+		Long: "Prints the stored output of a deploy or rollback: the newest release of the app, or the version given,\n" +
+			"e.g. `goship releases log v12 -a api`. A deploy that failed before becoming a version is the newest\n" +
+			"release until the next one, so `goship releases log -a api` right after a failed deploy shows why it failed.",
+		Args: cobra.MaximumNArgs(1),
+	}
+	cmd.Flags().StringVarP(&appName, "app", "a", "", "app name (required)")
+	_ = cmd.MarkFlagRequired("app")
+
+	cmd.RunE = targetRunE(app, func(cmd *cobra.Command, t Target, args []string) error {
+		which := ""
+		if len(args) == 1 {
+			which = args[0]
+		}
+		deploys, err := app.Portal().Deploys(cmd.Context(), t.Org, t.Project, t.Environment, appName, releaseLogHistory)
+		if err != nil {
+			return err
+		}
+		d, ok := portal.FindDeploy(deploys, which)
+		if !ok {
+			if which == "" {
+				return fmt.Errorf("%s has no releases yet", appName)
+			}
+			return fmt.Errorf("%s has no release %s in its last %d — `goship releases -a %s` lists them", appName, which, releaseLogHistory, appName)
+		}
+		detail, err := app.Portal().DeployDetail(cmd.Context(), t.Org, t.Project, t.Environment, appName, d.ID)
+		if err != nil {
+			return err
+		}
+		if app.Global.Output == render.JSON {
+			return app.Renderer().Render(detail)
+		}
+		switch {
+		case detail.LogRestricted:
+			return fmt.Errorf("release logs of %s are shown to people who can deploy it; ask a project admin for the developer role", appName)
+		case !detail.LogAvailable:
+			return fmt.Errorf("no log was kept for %s of %s: it was released before GoShip started keeping release logs", releaseName(detail.Deploy), appName)
+		}
+		// The log goes to stdout alone, so it can be piped; what it belongs
+		// to goes to stderr.
+		fmt.Fprintf(cmd.ErrOrStderr(), "%s of %s · %s\n", releaseName(detail.Deploy), appName, releaseOutcome(detail.Deploy))
+		if detail.LogTruncated {
+			fmt.Fprintln(cmd.ErrOrStderr(), "This log was long, so its middle was left out. The beginning and the end are complete.")
+		}
+		_, err = io.WriteString(cmd.OutOrStdout(), detail.Log)
+		return err
+	})
+	return cmd
+}
+
+func releaseName(d portal.Deploy) string {
+	if d.Version > 0 {
+		return fmt.Sprintf("v%d", d.Version)
+	}
+	return "the deploy that did not become a version"
+}
+
+func releaseOutcome(d portal.Deploy) string {
+	if d.Error != "" {
+		return "failed: " + d.Error
+	}
+	return "succeeded"
 }
 
 func newRollbackCmd(app *App) *cobra.Command {
