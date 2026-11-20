@@ -237,7 +237,7 @@ Binding injects `DATABASE_URL`, `DATABASE_HOST/PORT/NAME/USER/PASSWORD`,
 
 The deploy returns the version and the public URL. If the connection drops,
 the release keeps running on GoShip: `goship_list_releases` shows how it
-ended. On failure, the result carries the last lines of the build log; fix
+ended and `goship_get_release_log` reads what it wrote. On failure, the result carries the last lines of the build log; fix
 the cause and deploy again rather than retrying blindly.
 
 ## 6. Verify

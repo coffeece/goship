@@ -897,7 +897,7 @@ func TestDeployFailureShowsTheFailingStepAndWhereToLookNext(t *testing.T) {
 	if !strings.Contains(out, "✗ Build") || !strings.Contains(out, "    #5 ./main.go:12:2: undefined: foo") {
 		t.Errorf("output:\n%s", out)
 	}
-	if !strings.Contains(err.Error(), "deploy of quake failed: exit code: 1") || !strings.Contains(err.Error(), "goship deploy --verbose") {
+	if !strings.Contains(err.Error(), "deploy of quake failed: exit code: 1") || !strings.Contains(err.Error(), "goship releases log -a quake") {
 		t.Errorf("error = %v", err)
 	}
 }

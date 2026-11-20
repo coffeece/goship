@@ -103,7 +103,7 @@ func newDeployCmd(app *App) *cobra.Command {
 				}
 				err = explainStreamError(err, "deploy of "+shown, true)
 				if ran && !app.Global.Verbose {
-					err = fmt.Errorf("%w\nFull log: goship deploy --verbose  \u00b7  history: goship releases -a %s", err, shown)
+					err = fmt.Errorf("%w\nFull log: goship releases log -a %s", err, shown)
 				}
 				return err
 			}

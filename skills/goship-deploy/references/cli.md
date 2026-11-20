@@ -17,6 +17,7 @@
 | `goship_get_env` / `goship_set_env` / `goship_unset_env` | `goship env list\|set\|unset -a <app> [--no-restart]` |
 | `goship_deploy` | `goship deploy [dir] [-a app] [--platform p] [--dockerfile f] [--image ref] [--plan p] [--env-file .env] [-m msg]` |
 | `goship_list_releases` / `goship_rollback` | `goship releases -a <app>` / `goship rollback <version> -a <app>` |
+| `goship_get_release_log` | `goship releases log [version] -a <app>` |
 | `goship_logs` | `goship logs -a <app> [-l N] [--source web]` |
 | `goship_run` | `goship run -a <app> [--once] [--isolated] -- <cmd>` |
 | `goship_list_databases` / `goship_get_database` / `goship_database_stats` | `goship dbs` / `goship db info <name>` / `goship db info <name>` (prints the stats too) |

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -161,6 +162,52 @@ func (c *Client) Deploys(ctx context.Context, org, project, env, app string, lim
 		path += "?limit=" + strconv.Itoa(limit)
 	}
 	return out, c.get(ctx, path, &out)
+}
+
+// DeployDetail is one release with what it wrote while it ran. The log is
+// kept from the day GoShip started storing it; older releases have none, and
+// LogRestricted says the caller may see the release but not its log.
+type DeployDetail struct {
+	Deploy
+	Current       bool   `json:"current"`
+	Log           string `json:"log"`
+	LogAvailable  bool   `json:"log_available"`
+	LogTruncated  bool   `json:"log_truncated"`
+	LogRestricted bool   `json:"log_restricted"`
+}
+
+// DeployDetail reads one release by the id the release history gives it.
+func (c *Client) DeployDetail(ctx context.Context, org, project, env, app, id string) (*DeployDetail, error) {
+	var out DeployDetail
+	if err := c.get(ctx, appPath(org, project, env, app)+"/deploys/"+url.PathEscape(id), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// FindDeploy picks a release out of an app's history: the newest when which
+// is empty, else the one with that version ("v12" or "12") or id.
+func FindDeploy(deploys []Deploy, which string) (Deploy, bool) {
+	if which == "" {
+		if len(deploys) == 0 {
+			return Deploy{}, false
+		}
+		return deploys[0], true
+	}
+	if n, err := strconv.Atoi(strings.TrimPrefix(which, "v")); err == nil && n > 0 {
+		for _, d := range deploys {
+			if d.Version == n {
+				return d, true
+			}
+		}
+		return Deploy{}, false
+	}
+	for _, d := range deploys {
+		if d.ID == which {
+			return d, true
+		}
+	}
+	return Deploy{}, false
 }
 
 // DeployRequest is a source deploy. Archive is a gzipped tarball of the code.

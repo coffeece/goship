@@ -237,3 +237,90 @@ func TestRefusedRollbackDoesNotPointAnywhere(t *testing.T) {
 		t.Errorf("error = %v", err)
 	}
 }
+
+// `releases log` finds the release in the history and prints what it wrote:
+// the log alone on stdout, what it belongs to on stderr.
+func TestReleasesLogPrintsTheStoredLog(t *testing.T) {
+	var detailPath string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/deploys") {
+			w.Write([]byte(`[{"id":"evt-9","version":0,"error":"build failed"},{"id":"evt-8","version":8},{"id":"evt-7","version":7}]`)) //nolint:errcheck
+			return
+		}
+		detailPath = r.URL.Path
+		w.Write([]byte(`{"id":"evt-8","version":8,"log":"---> building\n---> done\n","log_available":true,"log_truncated":true}`)) //nolint:errcheck
+	})
+
+	out, err := run(t, "", "releases", "log", "v8", "-a", "blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detailPath != "/api/v1/orgs/acme/projects/atlas/environments/production/apps/blog/deploys/evt-8" {
+		t.Errorf("read %q", detailPath)
+	}
+	// Standard output carries the log and nothing else, so it can be piped.
+	if out != "---> building\n---> done\n" {
+		t.Errorf("stdout = %q", out)
+	}
+}
+
+// With no version it reads the newest release, which right after a failed
+// deploy is that deploy.
+func TestReleasesLogDefaultsToTheNewestRelease(t *testing.T) {
+	var detailPath string
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/deploys") {
+			w.Write([]byte(`[{"id":"evt-9","version":0,"error":"build failed"},{"id":"evt-8","version":8}]`)) //nolint:errcheck
+			return
+		}
+		detailPath = r.URL.Path
+		w.Write([]byte(`{"id":"evt-9","error":"build failed","log":"main.go:12: undefined: foo\n","log_available":true}`)) //nolint:errcheck
+	})
+
+	out, err := run(t, "", "releases", "log", "-a", "blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(detailPath, "/deploys/evt-9") || !strings.Contains(out, "undefined: foo") {
+		t.Errorf("read %q, output %q", detailPath, out)
+	}
+}
+
+// A release without a kept log, and a version that is not in the history,
+// each say what is wrong.
+func TestReleasesLogSaysWhenThereIsNothingToPrint(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/deploys") {
+			w.Write([]byte(`[{"id":"evt-8","version":8}]`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(`{"id":"evt-8","version":8,"log_available":false}`)) //nolint:errcheck
+	})
+
+	if _, err := run(t, "", "releases", "log", "8", "-a", "blog"); err == nil || !strings.Contains(err.Error(), "no log was kept for v8 of blog") {
+		t.Errorf("no log: err = %v", err)
+	}
+	if _, err := run(t, "", "releases", "log", "v99", "-a", "blog"); err == nil || !strings.Contains(err.Error(), "no release v99") {
+		t.Errorf("unknown version: err = %v", err)
+	}
+}
+
+// A build can write escape sequences; they must not reach the terminal of
+// whoever reads the stored log later.
+func TestReleasesLogStripsTerminalEscapes(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/deploys") {
+			w.Write([]byte(`[{"id":"evt-8","version":8}]`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(`{"id":"evt-8","version":8,"log":"\u001b[32mok\u001b[0m\n\u001b]0;owned\u0007title\nbell\u0007 end","log_available":true}`)) //nolint:errcheck
+	})
+
+	out, err := run(t, "", "releases", "log", "-a", "blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "ok\ntitle\nbell end" {
+		t.Errorf("stdout = %q", out)
+	}
+}
