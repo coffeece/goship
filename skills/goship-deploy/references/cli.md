@@ -33,6 +33,8 @@
 | `goship_list_database_extensions` / `goship_enable_database_extension` / `goship_disable_database_extension` | `goship db extensions <name>` / `goship db extension-add <name> <ext>` / `goship db extension-rm <name> <ext>` |
 | `goship_list_domains` / `goship_register_domain` / `goship_verify_domain` / `goship_delete_domain` | `goship domains` / `goship domain register\|verify\|rm` |
 | `goship_add_app_domain` / `goship_remove_app_domain` | `goship domain add\|rm <domain> -a <app>` |
+| `goship_list_webhooks` / `goship_create_webhook` / `goship_delete_webhook` | `goship webhooks` / `goship webhook add <url> --event e [--event e]...` (the signing secret is shown once) / `goship webhook rm <id>` |
+| `goship_ping_webhook` / `goship_list_webhook_deliveries` | `goship webhook ping <id>` / `goship webhook deliveries <id> [-n 20]` |
 | `goship_list_project_domains` / `goship_add_project_domain` / `goship_remove_project_domain` | `goship project domain list\|add\|rm [<domain>]` |
 | `goship_set_project_domain_environment` / `goship_unset_project_domain_environment` | `goship project domain set <domain> --environment e [--subdomain s]` / `goship project domain unset <domain> --environment e` |
 | `goship_apply_project_domain` | `goship project domain apply <domain> --environment e` |
