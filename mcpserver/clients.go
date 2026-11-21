@@ -31,7 +31,7 @@ func (t tokenClients) Client(ctx context.Context) (*portal.Client, error) {
 		// requireToken refuses unauthenticated requests before any tool runs.
 		return nil, errors.New("not signed in: reconnect the GoShip connector")
 	}
-	return portal.New(t.api, token, portal.WithVersion(t.version)), nil
+	return portal.New(t.api, token, portal.WithVersion(t.version), portal.AsMCP()), nil
 }
 
 func (t tokenClients) Org(ctx context.Context, override string) (string, error) {

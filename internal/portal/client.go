@@ -17,6 +17,7 @@ type Client struct {
 	base    string
 	token   string
 	version string
+	mcp     bool
 	http    *http.Client
 	trace   io.Writer
 }
@@ -28,6 +29,10 @@ func WithTrace(w io.Writer) Option { return func(c *Client) { c.trace = w } }
 
 // WithVersion reports the CLI's version to the API on every request.
 func WithVersion(v string) Option { return func(c *Client) { c.version = v } }
+
+// AsMCP names the client to the API as the MCP server instead of the CLI, so
+// the API can tell an agent's calls from a person's at a terminal.
+func AsMCP() Option { return func(c *Client) { c.mcp = true } }
 
 func New(base, token string, opts ...Option) *Client {
 	c := &Client{
@@ -171,7 +176,11 @@ func (c *Client) decorate(req *http.Request) {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	if c.version != "" {
-		req.Header.Set("User-Agent", "goship/"+c.version)
+		name := "goship"
+		if c.mcp {
+			name = "goship-mcp"
+		}
+		req.Header.Set("User-Agent", name+"/"+c.version)
 		req.Header.Set("X-Goship-Version", c.version)
 	}
 }
