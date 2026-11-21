@@ -208,3 +208,27 @@ func TestDashboardURL(t *testing.T) {
 		}
 	}
 }
+
+// The MCP server names itself apart from the CLI, with the same version
+// header, so the API can tell an agent's calls from a person's.
+func TestAsMCPNamesTheClient(t *testing.T) {
+	var ua, version string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ua, version = r.Header.Get("User-Agent"), r.Header.Get("X-Goship-Version")
+		w.Write([]byte(`{}`)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	if _, err := New(srv.URL, "tok", WithVersion("1.2.3"), AsMCP()).Me(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if ua != "goship-mcp/1.2.3" || version != "1.2.3" {
+		t.Errorf("as MCP: User-Agent %q, version %q", ua, version)
+	}
+	if _, err := New(srv.URL, "tok", WithVersion("1.2.3")).Me(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if ua != "goship/1.2.3" {
+		t.Errorf("as the CLI: User-Agent %q", ua)
+	}
+}

@@ -32,6 +32,7 @@ func newMCPCmd(app *App) *cobra.Command {
 			}
 			ctx, cancel := interruptible(cmd.Context())
 			defer cancel()
+			app.servingMCP = true
 			return mcptools.New(localClients{app}, app.Version, mcptools.Options{Deploy: true}).Run(ctx, t)
 		},
 	}

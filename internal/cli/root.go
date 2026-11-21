@@ -50,6 +50,8 @@ type App struct {
 	ProjectProject string
 	// ProjectEnvironment is the environment named by that same file.
 	ProjectEnvironment string
+	// servingMCP is set by "goship mcp": its calls are an agent's, and say so.
+	servingMCP bool
 
 	// orgs is GET /orgs, asked at most once per command: Org and the default
 	// environment both read it. guessNoted says the command already said it
@@ -367,6 +369,9 @@ func (a *App) portalWithToken(token string) *portal.Client {
 	opts := []portal.Option{portal.WithVersion(a.Version)}
 	if a.Global.Verbose {
 		opts = append(opts, portal.WithTrace(os.Stderr))
+	}
+	if a.servingMCP {
+		opts = append(opts, portal.AsMCP())
 	}
 	return portal.New(a.Config.Endpoint(), token, opts...)
 }
