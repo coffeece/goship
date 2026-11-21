@@ -429,6 +429,8 @@ func NewRoot(version string) *cobra.Command {
 		newDBCmd(app),
 		newDomainsCmd(app),
 		newDomainCmd(app),
+		newWebhooksCmd(app),
+		newWebhookCmd(app),
 		newVolumesCmd(app),
 		newVolumeCmd(app),
 		newEnvironmentsCmd(app),

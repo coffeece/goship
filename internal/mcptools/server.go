@@ -74,6 +74,7 @@ func Register(s *mcp.Server, c Clients, o Options) {
 	r.plans()
 	r.cloud()
 	r.tokens()
+	r.webhooks()
 }
 
 type registry struct {
