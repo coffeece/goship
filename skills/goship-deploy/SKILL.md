@@ -12,9 +12,44 @@ anything.
 
 Use the `goship_*` MCP tools when they are available; otherwise run the
 `goship` CLI with the same arguments (`references/cli.md` maps one to the
-other). Both need a login: `goship_whoami` or `goship whoami` must succeed. If
-not, ask the user to run `goship login` in a terminal (it opens a browser) and
-wait; never ask for a password.
+other). Both run the `goship` binary on this machine and need a login, so set
+those up first.
+
+## 0. Set up the CLI and the login
+
+Do this yourself; do not send the user away to install anything.
+
+1. **Is the CLI there?** If you have `goship_*` tools, it is. Otherwise run
+   `goship version`. On "command not found", tell the user in one line that
+   the GoShip CLI is missing and you are installing it, then run:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/coffeece/goship/main/install.sh | sh
+   ```
+
+   It verifies the download's checksum and needs no sudo: the binary goes to
+   `/usr/local/bin` when writable, else `~/.local/bin`. Read the last lines:
+   "Installed <dir>/goship" is where it went, and "Add it to your PATH" means
+   that directory is not on the PATH. In that case call it by its full path
+   (`~/.local/bin/goship`) for the rest of the session and tell the user the
+   `export PATH=...` line it printed. Run `goship version` (by that path if
+   needed) to confirm; if the script failed, show its last line and stop.
+   Windows has no script: point the user
+   at <https://github.com/coffeece/goship/releases/latest> and stop.
+2. **Is there a login?** `goship_whoami` or `goship whoami` must succeed. If
+   not, run `goship login` yourself, in the background: it opens the user's
+   browser and prints the address to approve, then exits when they approve.
+   Read its output, show the user the address in case the browser did not
+   open, and wait for it to exit (give up after five minutes). Then run
+   `goship whoami` again. On a machine with no
+   browser, or if it times out, ask the user to run `goship login` in a
+   terminal (in Claude Code: `! goship login`) and wait. Never ask for a
+   password or a token.
+3. **Tools after a fresh install.** The `goship` MCP server could not start
+   before the CLI existed, so this session has no `goship_*` tools: carry on
+   with the CLI, which does everything the tools do. In your final report,
+   tell the user that `/mcp` → `goship` → reconnect (or restarting Claude
+   Code) brings the tools in for next time.
 
 ## 1. Which environment
 
