@@ -306,7 +306,7 @@ each thing this CLI does (`goship_list_apps`, `goship_deploy`, `goship_logs`,
 
 | You use | How | Needs this CLI | Deploys a directory |
 |---|---|---|---|
-| Claude Code | the [plugin](#claude-code-plugin) | yes | yes |
+| Claude Code | the [plugin](#claude-code-plugin) | yes, the plugin installs it | yes |
 | Cursor or another MCP client | [`goship mcp`](#other-mcp-clients) | yes | yes |
 | claude.ai, Claude Desktop, mobile | the [hosted server](#hosted-mcp-server-claudeai-connector) | no | no, prebuilt images only |
 
@@ -317,28 +317,26 @@ The full guide, in Portuguese, is at <https://docs.goship.sh/agentes-ia/>:
 
 ### Claude Code plugin
 
-The plugin runs the `goship` on your machine, so [install](#install) the CLI
-and log in first:
-
-```sh
-goship login
-goship whoami
-```
-
-Then, inside Claude Code:
+Inside Claude Code:
 
 ```
 /plugin install goship --marketplace coffeece/goship
 ```
 
-Restart Claude Code. `/mcp` should list the `goship` server as connected, and
-asking "who am I on GoShip?" should answer with your user and organizations.
-
-To deploy, open Claude Code in the project and run:
+Restart Claude Code, open it in the project and run:
 
 ```
 /goship:deploy
 ```
+
+The plugin runs the `goship` on your machine. If the CLI is not installed, the
+agent installs it with the [install script](#install) the first time (no
+sudo), and if you are not logged in it runs `goship login`, which opens your
+browser to approve. That first deploy goes through the CLI; reconnect the
+`goship` server in `/mcp` (or restart Claude Code) afterwards and the tools
+are there from then on. With the CLI already installed and logged in, `/mcp`
+lists the `goship` server as connected right away, and asking "who am I on
+GoShip?" answers with your user and organizations.
 
 The agent reads the project and reports what it found (platform, port, health
 check, secrets), makes only the changes GoShip needs, writes `goship.yaml` and
