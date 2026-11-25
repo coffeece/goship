@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -713,19 +712,27 @@ func TestRestoreJSONHasNoPasswordAndDoesNotWait(t *testing.T) {
 }
 
 func TestRestoreCtrlCPrintsTheHint(t *testing.T) {
-	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("running", ""))}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The first poll of the new database is where the command waits: end the
+	// command's context there, as Ctrl-C does.
+	a := &restoreAPI{status: []func(http.ResponseWriter){func(w http.ResponseWriter) {
+		cancel()
+		body(restoreStatus("running", ""))(w)
+	}}}
 	serveRestore(t, a, restoreAccepted)
-	restorePollInterval = 200 * time.Millisecond
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		syscall.Kill(syscall.Getpid(), syscall.SIGINT) //nolint:errcheck
-	}()
-	out, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	var out strings.Builder
+	root := NewRoot("test")
+	root.SetArgs([]string{"db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy"})
+	root.SetOut(&out)
+	root.SetErr(&strings.Builder{})
+	root.SetIn(strings.NewReader(""))
+	err := root.ExecuteContext(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v", err)
 	}
-	if !strings.Contains(out, "Still restoring. Check with `goship db backups orders-copy`.") {
-		t.Errorf("output = %s", out)
+	if !strings.Contains(out.String(), "Still restoring. Check with `goship db backups orders-copy`.") {
+		t.Errorf("output = %s", out.String())
 	}
 }
 
