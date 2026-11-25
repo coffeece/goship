@@ -56,6 +56,16 @@ reconnects an API-key account in place, keeping its clusters), `goship shell`,
 `goship environment use <slug>` (saved per organization and project; the local
 MCP server reads it too).
 
+Database backups are CLI only for now (no MCP tools): `goship db backups
+[<name>] [--removed]` lists the daily backups (kept 7 days; `--removed` lists
+databases removed in the last 7 days), `goship db backup-download [<name>]
+<backup-id> [--removed <id>] [--file <path>|-] [--force]` writes a `pg_dump`
+custom-format archive (restore with `pg_restore --no-owner -d <connection
+string> <file>`; refuses to overwrite without `--force`), and `goship db
+restore [<name>] --backup <id> --name <new> [--removed <id>] [--plan p]
+[--to-environment e] [--no-wait] [--timeout 15m]` creates a new, billed
+database and never touches the original. Only GoShip's PostgreSQL has them.
+
 Scope. Tools that act on an app, a database or a volume (also plans,
 releases, logs, env and `goship_add_app_domain`) act in one environment and
 take `org`, `project` and `environment`; the CLI takes `--org`, `--project`
