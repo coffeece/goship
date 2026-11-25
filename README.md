@@ -189,7 +189,7 @@ belong to the organization too: they take no project.
 | `goship run -a api -- <cmd>` | run a command in the app's containers |
 | `goship shell -a api` | shell into a unit |
 | `goship env list\|set\|unset -a api` | environment variables |
-| `goship db create [--server <server>] [--size-limit <size>]\|size-limit\|info\|users\|user-add\|extensions\|extension-add\|extension-rm\|bind\|unbind\|rm` | managed PostgreSQL; `--server` places it on your own server (no plan needed) or, as `--server goship`, on GoShip's PostgreSQL (plan needed), and `size-limit` caps its size; `extension-add` turns on PostGIS, pg_trgm and friends |
+| `goship db create [--server <server>] [--size-limit <size>]\|size-limit\|info\|users\|user-add\|extensions\|extension-add\|extension-rm\|backups\|backup-download\|restore\|bind\|unbind\|rm` | managed PostgreSQL; `--server` places it on your own server (no plan needed) or, as `--server goship`, on GoShip's PostgreSQL (plan needed), and `size-limit` caps its size; `extension-add` turns on PostGIS, pg_trgm and friends; `backups`, `backup-download` and `restore` are described under Backups |
 | `goship db server list\|create\|tiers\|rename\|disk-limit\|retry\|delete` | PostgreSQL servers in your own Google Cloud project, shared by the organization's projects and unbilled by GoShip; `rename` changes the name GoShip shows, not the Cloud SQL instance; `disk-limit` caps disk growth (`create --disk-limit`); `delete --force` forgets one GoShip can no longer reach |
 | `goship domain add\|rm\|register\|verify` | custom domains and TLS |
 | `goship webhooks [-A]` / `goship webhook add\|events\|ping\|deliveries\|rm` | URLs told about deploys and app events, for the owner and admins: `add <url> --event deploy.failed` (or `--event all`) prints the signing secret once; `ping <id>` sends a test event and `deliveries <id>` shows how each one went (MCP: `goship_list_webhooks`, `goship_create_webhook`, `goship_ping_webhook`, `goship_list_webhook_deliveries`, `goship_delete_webhook`) |
@@ -208,6 +208,8 @@ belong to the organization too: they take no project.
 | `goship mcp` | serve all of the above to an AI agent over MCP (see below) |
 
 Run `goship <command> --help` for flags.
+
+Backups: a database on GoShip's PostgreSQL is backed up once a day and the backups are kept 7 days (a database on your own server answers with a pointer to point-in-time recovery). `goship db backups <name>` lists them, or `--removed` lists the databases removed in the last 7 days. `goship db restore <name> --backup <id> --name <new>` always creates a new database, billed like any other, and never touches the original; it waits until the restore ends unless you pass `--no-wait`. `goship db backup-download <name> <id>` saves a `pg_dump` custom-format file (`--file -` writes to stdout; it will not overwrite a file without `--force`) that you restore with `pg_restore --no-owner -d <connection string> <file>`. There are no MCP tools for backups yet, so agents use the CLI.
 
 ## Upgrading to 0.16.0
 

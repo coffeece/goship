@@ -324,6 +324,15 @@ rotate).
   server finishes; list again), `goship_disable_database_extension` turns it
   off while no table uses it. `vector` (pgvector) is always on. Enable them
   before running migrations that depend on them.
+- Database backups (CLI only, no MCP tools yet): GoShip's PostgreSQL takes one
+  backup a day and keeps 7 days; a database on the customer's own server
+  answers with a pointer to point-in-time recovery. `goship db backups <name>`
+  lists them (`--removed` lists databases removed in the last 7 days),
+  `goship db restore <name> --backup <id> --name <new>` restores into a NEW
+  database (the original is untouched; the new one is billed like any other;
+  waits unless `--no-wait`), and `goship db backup-download <name> <id>` saves
+  a `pg_dump` custom-format file (`--file -` for stdout, `--force` to
+  overwrite) restored with `pg_restore --no-owner -d <connection string> <file>`.
 - Environments: a new organization has development (the default), staging
   and production; staging is disabled until enabled, and a disabled
   environment refuses new apps, databases and volumes with a 409 that says so.
