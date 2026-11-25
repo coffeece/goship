@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
+	"time"
 )
 
 // Every call is a method, a path (query included) and maybe a body; a typo in
@@ -80,6 +82,30 @@ func TestEndpoints(t *testing.T) {
 			return c.UnsetEnv(ctx, "acme", "atlas", "staging", "api", []string{"A"}, false)
 		}},
 
+		{"database backups", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/databases/shop/backups", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseBackups(ctx, "acme", "atlas", "staging", "shop")
+			return err
+		}},
+		{"database backup download", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/databases/shop/backups/b%201/download", "", func(ctx context.Context, c *Client) error {
+			_, err := c.DatabaseBackupDownload(ctx, "acme", "atlas", "staging", "shop", "b 1")
+			return err
+		}},
+		{"restore database backup", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/databases/shop/backups/b1/restore", `{"name":"shop-copy","plan":"db-small"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.RestoreDatabaseBackup(ctx, "acme", "atlas", "staging", "shop", "b1", RestoreRequest{Name: "shop-copy", Plan: "db-small"})
+			return err
+		}},
+		{"removed databases", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/removed-databases", "", func(ctx context.Context, c *Client) error {
+			_, err := c.RemovedDatabases(ctx, "acme", "atlas", "staging")
+			return err
+		}},
+		{"removed database backup download", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/removed-databases/r%201/backups/b1/download", "", func(ctx context.Context, c *Client) error {
+			_, err := c.RemovedDatabaseBackupDownload(ctx, "acme", "atlas", "staging", "r 1", "b1")
+			return err
+		}},
+		{"restore removed database backup", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/removed-databases/r1/backups/b1/restore", `{"name":"shop-copy","environment":"prod"}`, func(ctx context.Context, c *Client) error {
+			_, err := c.RestoreRemovedDatabaseBackup(ctx, "acme", "atlas", "staging", "r1", "b1", RestoreRequest{Name: "shop-copy", Environment: "prod"})
+			return err
+		}},
 		{"databases", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/databases", "", func(ctx context.Context, c *Client) error {
 			_, err := c.Databases(ctx, "acme", "atlas", "staging")
 			return err
@@ -419,4 +445,42 @@ func sameJSON(t *testing.T, got, want string) bool {
 	gb, _ := json.Marshal(g)
 	wb, _ := json.Marshal(w)
 	return string(gb) == string(wb)
+}
+
+func TestBackupRows(t *testing.T) {
+	done := time.Date(2026, 11, 20, 3, 4, 5, 0, time.UTC)
+	b := DatabaseBackups{Backups: []DatabaseBackup{
+		{ID: "0123456789abcdef", Day: "2026-11-20", FinishedAt: &done, SizeBytes: 13002342, Status: "succeeded", Kind: "scheduled"},
+		{ID: "failed-id-long", Day: "2026-11-19", SizeBytes: 500, Status: "failed"},
+		{ID: "pending-id-long", Day: "2026-11-21", Status: "pending"},
+		{ID: "pause-id-long", Day: "2026-11-18", FinishedAt: &done, SizeBytes: 2048, Status: "succeeded", Kind: "pause"},
+		{ID: "abc", Day: "2026-11-17", Status: "running"},
+	}}
+	want := []BackupRow{
+		{"01234567", "2026-11-20", "2026-11-20 03:04", "12.4 MB", "completed"},
+		{"failed-i", "2026-11-19", "-", "-", "failed"},
+		{"pending-", "2026-11-21", "-", "-", "scheduled"},
+		{"pause-id", "2026-11-18", "2026-11-20 03:04", "2.0 KB", "completed (on pause)"},
+		{"abc", "2026-11-17", "-", "-", "running"},
+	}
+	if got := b.Rows(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Rows() = %+v\nwant %+v", got, want)
+	}
+	r := RemovedDatabase{Backups: b.Backups}
+	if got := r.Rows(); !reflect.DeepEqual(got, want) {
+		t.Errorf("RemovedDatabase.Rows() differs from DatabaseBackups.Rows()")
+	}
+}
+
+func TestRemovedDatabasesUnwrapsTheEnvelope(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"removed_databases":[{"id":"r1","name":"shop","plan":"db-small","backups":[{"id":"b1","status":"succeeded"}]}]}`)) //nolint:errcheck
+	})
+	got, err := c.RemovedDatabases(context.Background(), "acme", "atlas", "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "r1" || got[0].Name != "shop" || len(got[0].Backups) != 1 || got[0].Backups[0].ID != "b1" {
+		t.Errorf("RemovedDatabases() = %+v", got)
+	}
 }
