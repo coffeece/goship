@@ -137,9 +137,10 @@ func (c *Client) DatabaseBackups(ctx context.Context, org, project, env, name st
 	return &out, c.get(ctx, dbPath(org, project, env, name)+"/backups", &out)
 }
 
+// The link is requested with POST so the audit log sees it and nothing caches it.
 func (c *Client) DatabaseBackupDownload(ctx context.Context, org, project, env, name, backupID string) (*BackupDownload, error) {
 	var out BackupDownload
-	return &out, c.get(ctx, dbPath(org, project, env, name)+"/backups/"+esc(backupID)+"/download", &out)
+	return &out, c.post(ctx, dbPath(org, project, env, name)+"/backups/"+esc(backupID)+"/download", nil, &out)
 }
 
 func (c *Client) RestoreDatabaseBackup(ctx context.Context, org, project, env, name, backupID string, req RestoreRequest) (*RestoreResult, error) {
@@ -158,7 +159,7 @@ func (c *Client) RemovedDatabases(ctx context.Context, org, project, env string)
 
 func (c *Client) RemovedDatabaseBackupDownload(ctx context.Context, org, project, env, removedID, backupID string) (*BackupDownload, error) {
 	var out BackupDownload
-	return &out, c.get(ctx, removedPath(org, project, env, removedID)+"/backups/"+esc(backupID)+"/download", &out)
+	return &out, c.post(ctx, removedPath(org, project, env, removedID)+"/backups/"+esc(backupID)+"/download", nil, &out)
 }
 
 func (c *Client) RestoreRemovedDatabaseBackup(ctx context.Context, org, project, env, removedID, backupID string, req RestoreRequest) (*RestoreResult, error) {

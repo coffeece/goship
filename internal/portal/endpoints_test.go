@@ -86,7 +86,7 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.DatabaseBackups(ctx, "acme", "atlas", "staging", "shop")
 			return err
 		}},
-		{"database backup download", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/databases/shop/backups/b%201/download", "", func(ctx context.Context, c *Client) error {
+		{"database backup download", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/databases/shop/backups/b%201/download", "", func(ctx context.Context, c *Client) error {
 			_, err := c.DatabaseBackupDownload(ctx, "acme", "atlas", "staging", "shop", "b 1")
 			return err
 		}},
@@ -98,7 +98,7 @@ func TestEndpoints(t *testing.T) {
 			_, err := c.RemovedDatabases(ctx, "acme", "atlas", "staging")
 			return err
 		}},
-		{"removed database backup download", "GET", "/api/v1/orgs/acme/projects/atlas/environments/staging/removed-databases/r%201/backups/b1/download", "", func(ctx context.Context, c *Client) error {
+		{"removed database backup download", "POST", "/api/v1/orgs/acme/projects/atlas/environments/staging/removed-databases/r%201/backups/b1/download", "", func(ctx context.Context, c *Client) error {
 			_, err := c.RemovedDatabaseBackupDownload(ctx, "acme", "atlas", "staging", "r 1", "b1")
 			return err
 		}},

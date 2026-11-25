@@ -70,6 +70,28 @@ func TestSignedLinkRefusesRedirectToPlainHTTP(t *testing.T) {
 	}
 }
 
+func TestSignedLinkRedirectCarriesNoReferer(t *testing.T) {
+	var second http.Header
+	target := tlsStorage(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/final" {
+			second = r.Header.Clone()
+			w.Write([]byte("ok")) //nolint:errcheck
+			return
+		}
+		http.Redirect(w, r, "/final", http.StatusFound)
+	})
+	var buf bytes.Buffer
+	if _, err := FetchSignedLink(context.Background(), target.URL+"/b?sig=secret", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if second == nil {
+		t.Fatal("the redirect was not followed")
+	}
+	if got := second.Get("Referer"); got != "" {
+		t.Errorf("Referer on the redirected request = %q", got)
+	}
+}
+
 func TestSignedLinkForbiddenNamesNeitherLinkNorBody(t *testing.T) {
 	srv := tlsStorage(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

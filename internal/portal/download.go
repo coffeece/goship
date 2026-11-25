@@ -36,6 +36,8 @@ func newStorageClient(tlsConfig *tls.Config) *http.Client {
 			if req.URL.Scheme != "https" {
 				return errPlainHTTP
 			}
+			// The previous URL carries the signature; do not hand it on.
+			req.Header.Del("Referer")
 			if len(via) > maxStorageRedirects {
 				return errTooManyRedirect
 			}

@@ -127,6 +127,16 @@ func resolveBackupID(list []portal.DatabaseBackup, given string) (portal.Databas
 	return portal.DatabaseBackup{}, fmt.Errorf("%q matches %d backups, give more characters", given, len(found))
 }
 
+// requireCompleted refuses a backup that is not a finished one, naming its
+// status with the word the table uses. what is the verb: "downloaded", "restored".
+func requireCompleted(b portal.DatabaseBackup, what string) error {
+	if b.Status == "succeeded" {
+		return nil
+	}
+	word := portal.DatabaseBackups{Backups: []portal.DatabaseBackup{b}}.Rows()[0].Status
+	return fmt.Errorf("backup %s is %s: only completed backups can be %s", b.ID[:min(8, len(b.ID))], word, what)
+}
+
 // findRemoved is the removed database with that id, among those of the target.
 func findRemoved(ctx context.Context, c *portal.Client, t Target, id string) (*portal.RemovedDatabase, error) {
 	all, err := c.RemovedDatabases(ctx, t.Org, t.Project, t.Environment)
@@ -200,9 +210,8 @@ func newDBBackupDownloadCmd(app *App) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if b.Status != "succeeded" {
-			word := portal.DatabaseBackups{Backups: []portal.DatabaseBackup{b}}.Rows()[0].Status
-			return fmt.Errorf("backup %s is %s: only completed backups can be downloaded", b.ID[:min(8, len(b.ID))], word)
+		if err := requireCompleted(b, "downloaded"); err != nil {
+			return err
 		}
 
 		toStdout := file == "-"
@@ -344,6 +353,9 @@ func newDBRestoreCmd(app *App) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := requireCompleted(b, "restored"); err != nil {
+			return err
+		}
 
 		req := portal.RestoreRequest{Name: name, Plan: plan, Environment: toEnv}
 		var res *portal.RestoreResult
@@ -370,11 +382,12 @@ func newDBRestoreCmd(app *App) *cobra.Command {
 		}
 
 		// Commands that act on the new database, pasteable from anywhere.
+		// The environment is named only when the user named one on the command line.
 		flag := ""
-		if toEnv != "" {
-			flag = " --environment " + toEnv
+		if hintEnv := cmp.Or(toEnv, app.Global.Environment); hintEnv != "" {
+			flag = " --environment " + hintEnv
 		}
-		infoLine := fmt.Sprintf("`goship db info %s%s` shows the connection details.", name, flag)
+		infoLine := fmt.Sprintf("`goship db info %s%s` shows its state; `goship db bind %s --app <app>%s` connects an app.", name, flag, name, flag)
 		r := app.Renderer()
 		if noWait {
 			if err := r.Message("Restore started."); err != nil {
@@ -403,6 +416,10 @@ func newDBRestoreCmd(app *App) *cobra.Command {
 		case errors.Is(err, errRestoreFailed):
 			hint := fmt.Sprintf("Delete it with `goship db rm %s%s` and restore into a new database.", name, flag)
 			return fmt.Errorf("%w\n%s", err, hint)
+		}
+		// The API gave up on us; the restore is still running on the server.
+		if merr := stillRestoring(); merr != nil {
+			return merr
 		}
 		return err
 	})

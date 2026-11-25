@@ -67,8 +67,8 @@ func dirNames(t *testing.T, dir string) []string {
 
 func TestDBBackupsShowsTheTable(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != dbPrefix+"/backups" {
-			t.Errorf("path = %q", r.URL.Path)
+		if r.Method != http.MethodGet || r.URL.Path != dbPrefix+"/backups" {
+			t.Errorf("%s %q", r.Method, r.URL.Path)
 		}
 		w.Write([]byte(backupsJSON)) //nolint:errcheck
 	})
@@ -121,8 +121,8 @@ const removedJSON = `{"removed_databases":[{"id":"rem-1111-2222","name":"old-db"
 
 func TestDBBackupsRemoved(t *testing.T) {
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/removed-databases") {
-			t.Errorf("path = %q", r.URL.Path)
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/removed-databases") {
+			t.Errorf("%s %q", r.Method, r.URL.Path)
 		}
 		w.Write([]byte(removedJSON)) //nolint:errcheck
 	})
@@ -191,6 +191,15 @@ func storageAPI(t *testing.T, dump func(w http.ResponseWriter, r *http.Request))
 	t.Cleanup(portal.SetStorageTLSForTest(storage.Client().Transport.(*http.Transport).TLSClientConfig))
 	link = storage.URL + "/private/dump?sig=s3cret-signature"
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		want := http.MethodGet
+		if strings.HasSuffix(r.URL.Path, "/download") {
+			want = http.MethodPost // so the audit log sees it and nothing caches it
+		}
+		if r.Method != want {
+			t.Errorf("%s %s: the API routes %s only", r.Method, r.URL.Path, want)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		switch r.URL.Path {
 		case dbPrefix + "/backups":
 			w.Write([]byte(backupsJSON)) //nolint:errcheck
@@ -364,22 +373,44 @@ func TestBackupDownloadRemoved(t *testing.T) {
 }
 
 func TestBackupDownloadDefaultNameStaysInTheCurrentDirectory(t *testing.T) {
-	storageAPI(t, serveDump)
-	dir := inTempDir(t)
+	link := storageAPI(t, serveDump)
 	// A database name with path parts must not move the file.
 	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/download") {
-			w.Write([]byte(`{"url":"https://127.0.0.1:1/x","expires_at":"2026-11-25T12:00:00Z"}`)) //nolint:errcheck
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			w.Write([]byte(`{"url":"` + link + `","expires_at":"2026-11-25T12:00:00Z"}`)) //nolint:errcheck
 			return
 		}
 		w.Write([]byte(backupsJSON)) //nolint:errcheck
 	})
-	_, _, _ = runBoth(t, "db", "backup-download", "../../evil", "cccccccc")
-	if _, err := os.Stat(filepath.Join(dir, "..", "evil-2026-11-24.dump")); err == nil {
-		t.Error("a file was written outside the current directory")
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "a", "b")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if got := defaultDumpName("../../evil", "2026-11-24"); got != "evil-2026-11-24.dump" {
-		t.Errorf("name = %q", got)
+	wd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(wd) }) //nolint:errcheck
+
+	if _, _, err := runBoth(t, "db", "backup-download", "../../evil", "cccccccc"); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "evil-2026-11-24.dump")); err != nil || string(b) != "PGDMP-data" {
+		t.Errorf("file = %q, %v", b, err)
+	}
+	if names := dirNames(t, dir); len(names) != 1 || names[0] != "evil-2026-11-24.dump" {
+		t.Errorf("directory holds %v", names)
+	}
+	if names := dirNames(t, filepath.Dir(dir)); len(names) != 1 || names[0] != "b" {
+		t.Errorf("parent holds %v", names)
+	}
+	if names := dirNames(t, parent); len(names) != 1 || names[0] != "a" {
+		t.Errorf("grandparent holds %v", names)
 	}
 }
 
@@ -572,6 +603,20 @@ func TestRestoreUnknownBackupIsRefused(t *testing.T) {
 	}
 }
 
+func TestRestoreOnlyCompletedBackups(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	_, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", backupB, "--name", "orders-copy")
+	if err == nil || !strings.Contains(err.Error(), "scheduled") || !strings.Contains(err.Error(), "only completed backups can be restored") {
+		t.Errorf("err = %v", err)
+	}
+	for _, p := range a.polls {
+		if strings.HasPrefix(p, "POST") {
+			t.Errorf("a restore was requested: %v", a.polls)
+		}
+	}
+}
+
 func TestRestoreReportsBilling(t *testing.T) {
 	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
 	billed := strings.Replace(restoreAccepted, `"placement":"goship"`, `"placement":"goship","billing_starts_at":"2099-01-05T00:00:00Z"`, 1)
@@ -668,6 +713,55 @@ func TestRestoreAForbiddenPollStops(t *testing.T) {
 	}
 	if len(a.polls) != 2 {
 		t.Errorf("calls = %v", a.polls)
+	}
+}
+
+func TestRestoreAPIErrorWhileWaitingStillPrintsTheHint(t *testing.T) {
+	for name, status := range map[string]func(http.ResponseWriter){"forbidden": code(403), "transient": code(502)} {
+		a := &restoreAPI{status: []func(http.ResponseWriter){status}}
+		serveRestore(t, a, restoreAccepted)
+		out, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+		if err == nil {
+			t.Fatalf("%s: want an error", name)
+		}
+		if !strings.Contains(out, "Still restoring. Check with `goship db backups orders-copy`.") {
+			t.Errorf("%s: output = %s", name, out)
+		}
+	}
+}
+
+func TestRestoreHintsFollowTheEnvironmentFlags(t *testing.T) {
+	// the global flag, when only it is given
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, _, err := runBoth(t, "--environment", "production", "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "`goship db info orders-copy --environment production` shows its state; `goship db bind orders-copy --app <app> --environment production` connects an app."
+	if !strings.Contains(out, want) {
+		t.Errorf("output lacks %q:\n%s", want, out)
+	}
+	// --to-environment wins over the global flag
+	a = &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, _, err = runBoth(t, "--environment", "production", "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy", "--to-environment", "staging", "--no-wait")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "`goship db info orders-copy --environment staging`") || strings.Contains(out, "--environment production") {
+		t.Errorf("output = %s", out)
+	}
+	// neither flag: no suffix, even though GOSHIP_ENVIRONMENT names one
+	a = &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, _, err = runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "`goship db info orders-copy` shows its state; `goship db bind orders-copy --app <app>` connects an app."
+	if !strings.Contains(out, want) {
+		t.Errorf("output lacks %q:\n%s", want, out)
 	}
 }
 
