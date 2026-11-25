@@ -274,7 +274,7 @@ func newDBCmd(app *App) *cobra.Command {
 		}),
 	}
 
-	cmd.AddCommand(create, sizeLimitCmd, list, info, users, userAdd, extensions, extensionAdd, extensionRm, bind, unbind, remove, newDBServerCmd(app))
+	cmd.AddCommand(create, sizeLimitCmd, list, info, users, userAdd, extensions, extensionAdd, extensionRm, bind, unbind, remove, newDBServerCmd(app), newDBBackupsCmd(app), newDBBackupDownloadCmd(app))
 	return cmd
 }
 

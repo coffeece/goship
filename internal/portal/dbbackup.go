@@ -96,7 +96,7 @@ func backupRows(backups []DatabaseBackup) []BackupRow {
 			taken = b.FinishedAt.UTC().Format("2006-01-02 15:04")
 		}
 		if b.Status == "succeeded" {
-			size = formatBackupSize(b.SizeBytes)
+			size = FormatSize(b.SizeBytes)
 		}
 		rows = append(rows, BackupRow{ID: id, Date: b.Day, TakenAt: taken, Size: size, Status: backupStatus(b)})
 	}
@@ -118,7 +118,8 @@ func backupStatus(b DatabaseBackup) string {
 	return b.Status
 }
 
-func formatBackupSize(n int64) string {
+// FormatSize words a byte count the way the backup table does.
+func FormatSize(n int64) string {
 	switch {
 	case n < 1<<10:
 		return fmt.Sprintf("%d B", n)
