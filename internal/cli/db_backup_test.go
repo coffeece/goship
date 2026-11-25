@@ -2,12 +2,16 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/coffeece/goship/internal/portal"
 )
@@ -429,5 +433,319 @@ func TestDownloadToFileRemovesTheTempFileOnCancel(t *testing.T) {
 	}
 	if names := dirNames(t, dir); len(names) != 0 {
 		t.Errorf("directory holds %v", names)
+	}
+}
+
+// ---- restore ----
+
+const (
+	restorePrefix = "/api/v1/orgs/acme/projects/atlas/environments/production/databases/orders-db/backups/" + backupA + "/restore"
+	newDBBackups  = "/api/v1/orgs/acme/projects/atlas/environments/production/databases/orders-copy/backups"
+	secretPW      = "s3cr3t-p4ssw0rd"
+)
+
+const restoreAccepted = `{"database":{"id":"d1","name":"orders-copy","plan":"small","db_name":"orders_copy","db_user":"u","db_password":"` + secretPW + `","status":"provisioning","placement":"goship"},
+ "restore":{"id":"r1","backup_id":"` + backupA + `","status":"pending"}}`
+
+func restoreStatus(status, errText string) string {
+	return `{"available":true,"backups":[],"restore":{"id":"r1","backup_id":"` + backupA + `","status":"` + status + `","error":"` + errText + `"}}`
+}
+
+// restoreAPI answers the listing, the restore request and then the polls with
+// the given statuses (the last one repeats). It records the request body and
+// the poll paths.
+type restoreAPI struct {
+	body   map[string]any
+	polls  []string
+	status []func(w http.ResponseWriter)
+}
+
+func serveRestore(t *testing.T, a *restoreAPI, accepted string) {
+	t.Helper()
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == dbPrefix+"/backups":
+			w.Write([]byte(backupsJSON)) //nolint:errcheck
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/removed-databases"):
+			w.Write([]byte(removedJSON)) //nolint:errcheck
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/restore"):
+			a.body = map[string]any{}
+			json.NewDecoder(r.Body).Decode(&a.body) //nolint:errcheck
+			a.polls = append(a.polls, "POST "+r.URL.Path)
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(accepted)) //nolint:errcheck
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/backups"):
+			a.polls = append(a.polls, r.URL.Path)
+			i := min(len(a.polls)-2, len(a.status)-1)
+			a.status[i](w)
+		case strings.HasSuffix(r.URL.Path, "/projects") || strings.HasSuffix(r.URL.Path, "/environments"):
+			w.Write([]byte(`[]`)) // the lookups that explain a refusal //nolint:errcheck
+		default:
+			t.Errorf("unexpected call %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	old := restorePollInterval
+	restorePollInterval = time.Millisecond
+	t.Cleanup(func() { restorePollInterval = old })
+}
+
+func body(s string) func(w http.ResponseWriter) {
+	return func(w http.ResponseWriter) { w.Write([]byte(s)) } //nolint:errcheck
+}
+
+func code(c int) func(w http.ResponseWriter) {
+	return func(w http.ResponseWriter) {
+		w.WriteHeader(c)
+		w.Write([]byte(`{"error":{"code":"x","message":"nope"}}`)) //nolint:errcheck
+	}
+}
+
+func TestRestoreSendsTheRequestAndWaits(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("running", "")), body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, errOut, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy", "--plan", "small")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.body["name"] != "orders-copy" || a.body["plan"] != "small" {
+		t.Errorf("body = %v", a.body)
+	}
+	if _, ok := a.body["environment"]; ok {
+		t.Errorf("environment sent without --to-environment: %v", a.body)
+	}
+	for _, want := range []string{"Database orders-copy requested on plan small, restoring backup aaaaaaaa of orders-db.", "Restore finished.", "goship db info orders-copy"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	for _, s := range []string{out, errOut} {
+		if strings.Contains(s, secretPW) || strings.Contains(s, "db_password") {
+			t.Errorf("password leaked:\n%s", s)
+		}
+	}
+	if len(a.polls) != 3 || a.polls[1] != newDBBackups {
+		t.Errorf("calls = %v", a.polls)
+	}
+}
+
+func TestRestoreFromARemovedDatabase(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, _, err := runBoth(t, "db", "restore", "--removed", "rem-1111-2222", "--backup", "aaaaaaaa", "--name", "orders-copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "POST /api/v1/orgs/acme/projects/atlas/environments/production/removed-databases/rem-1111-2222/backups/" + backupA + "/restore"; a.polls[0] != want {
+		t.Errorf("first call = %q, want %q", a.polls[0], want)
+	}
+	if !strings.Contains(out, "restoring backup aaaaaaaa of old-db.") {
+		t.Errorf("output = %s", out)
+	}
+}
+
+func TestRestoreNeedsItsFlagsAndExactlyOneSource(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	for _, args := range [][]string{
+		{"db", "restore", "orders-db", "--name", "x"},
+		{"db", "restore", "orders-db", "--backup", "aaaaaaaa"},
+		{"db", "restore", "--backup", "aaaaaaaa", "--name", "x"},
+		{"db", "restore", "orders-db", "--removed", "rem-1111-2222", "--backup", "aaaaaaaa", "--name", "x"},
+	} {
+		if _, _, err := runBoth(t, args...); err == nil {
+			t.Errorf("%v: want an error", args)
+		}
+	}
+	if len(a.polls) != 0 {
+		t.Errorf("API called: %v", a.polls)
+	}
+}
+
+func TestRestoreUnknownBackupIsRefused(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	if _, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "zzzz", "--name", "x"); err == nil {
+		t.Fatal("want an error")
+	}
+	if len(a.polls) != 0 {
+		t.Errorf("restore requested: %v", a.polls)
+	}
+}
+
+func TestRestoreReportsBilling(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	billed := strings.Replace(restoreAccepted, `"placement":"goship"`, `"placement":"goship","billing_starts_at":"2099-01-05T00:00:00Z"`, 1)
+	serveRestore(t, a, billed)
+	out, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Billing starts when the trial ends on 4 Jan 2099.") {
+		t.Errorf("output = %s", out)
+	}
+}
+
+func TestRestoreToAnotherEnvironmentPollsThere(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	_, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy", "--to-environment", "staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.body["environment"] != "staging" {
+		t.Errorf("body = %v", a.body)
+	}
+	if want := "/api/v1/orgs/acme/projects/atlas/environments/staging/databases/orders-copy/backups"; a.polls[1] != want {
+		t.Errorf("poll = %q, want %q", a.polls[1], want)
+	}
+}
+
+func TestRestoreFailedExitsWithTheReason(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("failed", "pg_restore exited 1"))}}
+	serveRestore(t, a, restoreAccepted)
+	out, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy", "--to-environment", "staging")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	for _, want := range []string{"pg_restore exited 1", "orders-copy", "Delete it with `goship db rm orders-copy --environment staging` and restore into a new database."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+	if strings.Contains(out+err.Error(), secretPW) {
+		t.Error("password leaked")
+	}
+}
+
+func TestRestoreFailedHintHasNoEnvironmentFlagByDefault(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("failed", "boom"))}}
+	serveRestore(t, a, restoreAccepted)
+	_, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if err == nil || !strings.Contains(err.Error(), "Delete it with `goship db rm orders-copy` and restore into a new database.") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestRestoreTimeoutExitsZeroWithTheHint(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("running", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy", "--timeout", "50ms")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Still restoring. Check with `goship db backups orders-copy`.") {
+		t.Errorf("output = %s", out)
+	}
+}
+
+func TestRestoreRidesOutThreeTransientFailures(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){code(502), code(503), code(500), body(restoreStatus("succeeded", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, errOut, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Restore finished.") || !strings.Contains(errOut, "retrying") {
+		t.Errorf("out = %s\nerr = %s", out, errOut)
+	}
+}
+
+func TestRestoreFourTransientFailuresStop(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){code(502)}}
+	serveRestore(t, a, restoreAccepted)
+	_, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+}
+
+func TestRestoreAForbiddenPollStops(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){code(403)}}
+	serveRestore(t, a, restoreAccepted)
+	_, errOut, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if err == nil || strings.Contains(errOut, "retrying") {
+		t.Errorf("err = %v, stderr = %s", err, errOut)
+	}
+	if len(a.polls) != 2 {
+		t.Errorf("calls = %v", a.polls)
+	}
+}
+
+func TestRestoreNoWait(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("running", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy", "--no-wait")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Restore started.") || !strings.Contains(out, "orders-copy") || strings.Contains(out, secretPW) {
+		t.Errorf("output = %s", out)
+	}
+	if len(a.polls) != 1 {
+		t.Errorf("calls = %v", a.polls)
+	}
+}
+
+func TestRestoreJSONHasNoPasswordAndDoesNotWait(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("running", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	out, errOut, err := runBoth(t, "-o", "json", "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out+errOut, secretPW) || strings.Contains(out+errOut, "db_password") {
+		t.Errorf("password in output:\n%s\n%s", out, errOut)
+	}
+	var got struct {
+		Database map[string]any `json:"database"`
+		Restore  map[string]any `json:"restore"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if got.Database["name"] != "orders-copy" || got.Restore["status"] != "pending" {
+		t.Errorf("got %v", got)
+	}
+	if len(a.polls) != 1 {
+		t.Errorf("calls = %v", a.polls)
+	}
+}
+
+func TestRestoreCtrlCPrintsTheHint(t *testing.T) {
+	a := &restoreAPI{status: []func(http.ResponseWriter){body(restoreStatus("running", ""))}}
+	serveRestore(t, a, restoreAccepted)
+	restorePollInterval = 200 * time.Millisecond
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		syscall.Kill(syscall.Getpid(), syscall.SIGINT) //nolint:errcheck
+	}()
+	out, _, err := runBoth(t, "db", "restore", "orders-db", "--backup", "aaaaaaaa-1", "--name", "orders-copy")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v", err)
+	}
+	if !strings.Contains(out, "Still restoring. Check with `goship db backups orders-copy`.") {
+		t.Errorf("output = %s", out)
+	}
+}
+
+func TestDBBackupsShowsTheRestoreLine(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(strings.Replace(backupsJSON, `"backups":[`, `"restore":{"id":"r1","backup_id":"x","status":"failed","error":"disk full"},"backups":[`, 1))) //nolint:errcheck
+	})
+	out, err := run(t, "", "db", "backups", "orders-db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Restore into this database: failed") || !strings.Contains(out, "disk full") {
+		t.Errorf("output = %s", out)
+	}
+	if strings.Index(out, "Restore into") > strings.Index(out, "aaaaaaaa") {
+		t.Errorf("line is not above the table:\n%s", out)
+	}
+	// JSON stays the API structure.
+	out, err = run(t, "", "-o", "json", "db", "backups", "orders-db")
+	if err != nil || strings.Contains(out, "Restore into") {
+		t.Errorf("json = %s, %v", out, err)
 	}
 }
