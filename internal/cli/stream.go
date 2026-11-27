@@ -195,16 +195,17 @@ func newReleaseLogCmd(app *App) *cobra.Command {
 		if app.Global.Output == render.JSON {
 			return app.Renderer().Render(detail)
 		}
+		// The log goes to stdout alone, so it can be piped; what it belongs
+		// to goes to stderr. Timings are not log content, so they show even
+		// when the log does not.
+		fmt.Fprintf(cmd.ErrOrStderr(), "%s of %s · %s\n", releaseName(detail.Deploy), appName, releaseOutcome(detail.Deploy))
+		printPhases(cmd.ErrOrStderr(), detail.Phases)
 		switch {
 		case detail.LogRestricted:
 			return fmt.Errorf("release logs of %s are shown to people who can deploy it; ask a project admin for the developer role", appName)
 		case !detail.LogAvailable:
 			return fmt.Errorf("no log was kept for %s of %s: it was released before GoShip started keeping release logs", releaseName(detail.Deploy), appName)
 		}
-		// The log goes to stdout alone, so it can be piped; what it belongs
-		// to goes to stderr.
-		fmt.Fprintf(cmd.ErrOrStderr(), "%s of %s · %s\n", releaseName(detail.Deploy), appName, releaseOutcome(detail.Deploy))
-		printPhases(cmd.ErrOrStderr(), detail.Phases)
 		if detail.LogTruncated {
 			fmt.Fprintln(cmd.ErrOrStderr(), "This log was long, so its middle was left out. The beginning and the end are complete.")
 		}
@@ -225,7 +226,7 @@ var phaseRows = []struct {
 	{"build.script.toolchain", "Go toolchain", 2},
 	{"build.script.modules", "Dependencies", 2},
 	{"build.script.compile", "Compile and link", 2},
-	{"build.script.hooks", "Build hooks", 2},
+	{"build.script.hooks", "Hooks and other", 2},
 	{"build.export", "Image export", 1},
 	{"build.push", "Image push", 1},
 	{"build.other", "Other", 1},
@@ -259,7 +260,7 @@ func printPhases(w io.Writer, phases map[string]float64) {
 
 // phaseDuration reads 100 as "1m 40s" and 11.7 as "11.7s".
 func phaseDuration(secs float64) string {
-	if secs < 60 {
+	if secs < 59.95 {
 		return fmt.Sprintf("%.1fs", secs)
 	}
 	total := int(secs + 0.5)

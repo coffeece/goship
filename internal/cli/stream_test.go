@@ -378,3 +378,47 @@ func TestReleasesLogOmitsTimingsWithoutPhases(t *testing.T) {
 		t.Errorf("stderr = %q", errOut.String())
 	}
 }
+
+// Timings are not log content: a release whose log is restricted or was never
+// kept still shows them, and the command still fails.
+func TestReleasesLogShowsTimingsWhenTheLogIsNotAvailable(t *testing.T) {
+	for name, body := range map[string]string{
+		"restricted": `{"id":"evt-8","version":8,"log_restricted":true,"phases":{"build":20,"build.script.hooks":2,"release":3}}`,
+		"not kept":   `{"id":"evt-8","version":8,"log_available":false,"phases":{"build":20,"build.script.hooks":2,"release":3}}`,
+		"no timings": `{"id":"evt-8","version":8,"log_restricted":true}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/deploys") {
+					w.Write([]byte(`[{"id":"evt-8","version":8}]`)) //nolint:errcheck
+					return
+				}
+				w.Write([]byte(body)) //nolint:errcheck
+			})
+			var out, errOut strings.Builder
+			root := NewRoot("test")
+			root.SetArgs([]string{"releases", "log", "-a", "blog"})
+			root.SetOut(&out)
+			root.SetErr(&errOut)
+			err := root.Execute()
+			if err == nil {
+				t.Fatal("want the log error")
+			}
+			if out.String() != "" {
+				t.Errorf("stdout = %q", out.String())
+			}
+			has := strings.Contains(errOut.String(), "Timings") && strings.Contains(errOut.String(), "Hooks and other")
+			if name == "no timings" && has || name != "no timings" && !has {
+				t.Errorf("stderr = %q", errOut.String())
+			}
+		})
+	}
+}
+
+func TestPhaseDuration(t *testing.T) {
+	for in, want := range map[float64]string{0: "0.0s", 59.9: "59.9s", 59.96: "1m 0s", 60: "1m 0s", 119.6: "2m 0s"} {
+		if got := phaseDuration(in); got != want {
+			t.Errorf("phaseDuration(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
