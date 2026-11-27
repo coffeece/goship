@@ -204,6 +204,7 @@ func newReleaseLogCmd(app *App) *cobra.Command {
 		// The log goes to stdout alone, so it can be piped; what it belongs
 		// to goes to stderr.
 		fmt.Fprintf(cmd.ErrOrStderr(), "%s of %s · %s\n", releaseName(detail.Deploy), appName, releaseOutcome(detail.Deploy))
+		printPhases(cmd.ErrOrStderr(), detail.Phases)
 		if detail.LogTruncated {
 			fmt.Fprintln(cmd.ErrOrStderr(), "This log was long, so its middle was left out. The beginning and the end are complete.")
 		}
@@ -211,6 +212,58 @@ func newReleaseLogCmd(app *App) *cobra.Command {
 		return err
 	})
 	return cmd
+}
+
+// phaseRows is the display order of a release's phases; depth indents a
+// phase under its parent.
+var phaseRows = []struct {
+	key, label string
+	depth      int
+}{
+	{"build", "Build", 0},
+	{"build.script", "Build script", 1},
+	{"build.script.toolchain", "Go toolchain", 2},
+	{"build.script.modules", "Dependencies", 2},
+	{"build.script.compile", "Compile and link", 2},
+	{"build.script.hooks", "Build hooks", 2},
+	{"build.export", "Image export", 1},
+	{"build.push", "Image push", 1},
+	{"build.other", "Other", 1},
+	{"release", "Release", 0},
+	{"route", "Route", 0},
+}
+
+// printPhases writes the Timings block: one row per phase the release
+// recorded, and nothing when it recorded none.
+func printPhases(w io.Writer, phases map[string]float64) {
+	type row struct{ label, dur string }
+	var rows []row
+	width := 0
+	for _, p := range phaseRows {
+		secs, ok := phases[p.key]
+		if !ok {
+			continue
+		}
+		label := strings.Repeat("  ", p.depth) + p.label
+		rows = append(rows, row{label, phaseDuration(secs)})
+		width = max(width, len(label))
+	}
+	if len(rows) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "Timings")
+	for _, r := range rows {
+		fmt.Fprintf(w, "  %-*s  %s\n", width, r.label, r.dur)
+	}
+}
+
+// phaseDuration reads 100 as "1m 40s" and 11.7 as "11.7s".
+func phaseDuration(secs float64) string {
+	if secs < 60 {
+		return fmt.Sprintf("%.1fs", secs)
+	}
+	total := int(secs + 0.5)
+	return fmt.Sprintf("%dm %ds", total/60, total%60)
 }
 
 // printableLog is a stored log as it is safe to print: a build writes what it

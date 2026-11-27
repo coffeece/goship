@@ -174,6 +174,10 @@ type DeployDetail struct {
 	LogAvailable  bool   `json:"log_available"`
 	LogTruncated  bool   `json:"log_truncated"`
 	LogRestricted bool   `json:"log_restricted"`
+	// Phases is how long each part of the release took, in seconds, by key
+	// ("build", "build.script.compile", "release", "route", ...). A phase that
+	// was not observed is absent; older releases have none.
+	Phases map[string]float64 `json:"phases,omitempty"`
 }
 
 // DeployDetail reads one release by the id the release history gives it.

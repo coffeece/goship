@@ -84,6 +84,9 @@ type ReleaseLog struct {
 	Truncated bool   `json:"truncated"`
 	// Note explains an empty log.
 	Note string `json:"note,omitempty"`
+	// Phases is the seconds each part of the release took, by key such as
+	// build, build.script.compile, release, route.
+	Phases map[string]float64 `json:"phases,omitempty"`
 }
 
 type RollbackArgs struct {
@@ -160,7 +163,7 @@ func (r *registry) releases(withDeploy bool) {
 			rel, err := c.Deploys(ctx, t.Org, t.Project, t.Environment, in.App, limit)
 			return ReleaseList{Releases: rel}, err
 		})
-	tool(r, "goship_get_release_log", "Read what a deploy or rollback wrote while it built and started: the newest release of the app, or a version. Use it to find out why a deploy failed after the fact. Returns the end of the log.", read,
+	tool(r, "goship_get_release_log", "Read what a deploy or rollback wrote while it built and started: the newest release of the app, or a version. Use it to find out why a deploy failed after the fact. Returns the end of the log and, when known, phases: seconds spent per part of the release (build, build.script.compile, build.export, release, route, ...).", read,
 		func(ctx context.Context, c *portal.Client, t deploy.Target, in ReleaseLogArgs) (*ReleaseLog, error) {
 			deploys, err := c.Deploys(ctx, t.Org, t.Project, t.Environment, in.App, 100)
 			if err != nil {
@@ -174,7 +177,7 @@ func (r *registry) releases(withDeploy bool) {
 			if err != nil {
 				return nil, err
 			}
-			out := &ReleaseLog{App: in.App, Failed: detail.Error != "", Error: detail.Error}
+			out := &ReleaseLog{App: in.App, Failed: detail.Error != "", Error: detail.Error, Phases: detail.Phases}
 			if detail.Version > 0 {
 				out.Version = fmt.Sprintf("v%d", detail.Version)
 			}

@@ -324,3 +324,57 @@ func TestReleasesLogStripsTerminalEscapes(t *testing.T) {
 		t.Errorf("stdout = %q", out)
 	}
 }
+
+func TestReleasesLogShowsPhaseTimingsOnStderr(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/deploys") {
+			w.Write([]byte(`[{"id":"evt-8","version":8}]`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(`{"id":"evt-8","version":8,"log":"ok\n","log_available":true,"phases":{"build":141.2,"build.script":124.8,"build.script.compile":100,"build.export":11.7,"release":38,"route":1.2}}`)) //nolint:errcheck
+	})
+
+	var out, errOut strings.Builder
+	root := NewRoot("test")
+	root.SetArgs([]string{"releases", "log", "-a", "blog"})
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "ok\n" {
+		t.Errorf("stdout = %q", out.String())
+	}
+	want := "Timings\n" +
+		"  Build                 2m 21s\n" +
+		"    Build script        2m 5s\n" +
+		"      Compile and link  1m 40s\n" +
+		"    Image export        11.7s\n" +
+		"  Release               38.0s\n" +
+		"  Route                 1.2s\n"
+	if !strings.Contains(errOut.String(), want) {
+		t.Errorf("stderr = %q, want it to contain %q", errOut.String(), want)
+	}
+}
+
+func TestReleasesLogOmitsTimingsWithoutPhases(t *testing.T) {
+	stubAPIWithOrg(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/deploys") {
+			w.Write([]byte(`[{"id":"evt-8","version":8}]`)) //nolint:errcheck
+			return
+		}
+		w.Write([]byte(`{"id":"evt-8","version":8,"log":"ok\n","log_available":true,"phases":{}}`)) //nolint:errcheck
+	})
+
+	var errOut strings.Builder
+	root := NewRoot("test")
+	root.SetArgs([]string{"releases", "log", "-a", "blog"})
+	root.SetOut(&strings.Builder{})
+	root.SetErr(&errOut)
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errOut.String(), "Timings") {
+		t.Errorf("stderr = %q", errOut.String())
+	}
+}

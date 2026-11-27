@@ -218,3 +218,16 @@ func TestDeployImagePostsJSON(t *testing.T) {
 		t.Errorf("events = %+v", got)
 	}
 }
+
+func TestDeployDetailDecodesPhases(t *testing.T) {
+	c := streamServer(t, blogPath+"/deploys/evt-8", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"id":"evt-8","version":8,"phases":{"build":141.2,"build.script.compile":100,"route":1.2}}`)) //nolint:errcheck
+	})
+	d, err := c.DeployDetail(context.Background(), "acme", "atlas", "staging", "blog", "evt-8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Phases["build"] != 141.2 || d.Phases["build.script.compile"] != 100 || d.Phases["route"] != 1.2 || len(d.Phases) != 3 {
+		t.Errorf("phases = %v", d.Phases)
+	}
+}
