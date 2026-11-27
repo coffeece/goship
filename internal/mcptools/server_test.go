@@ -715,3 +715,36 @@ func TestHostedDeployIgnoresThePath(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseLogCarriesPhasesWhenKnown(t *testing.T) {
+	for _, tc := range []struct {
+		name, detail string
+		want         bool
+	}{
+		{"with", `{"id":"evt-8","version":8,"log":"ok\n","log_available":true,"phases":{"build":141.2,"build.script.compile":100}}`, true},
+		{"without", `{"id":"evt-8","version":8,"log":"ok\n","log_available":true}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url := api(t, func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/deploys") {
+					w.Write([]byte(`[{"id":"evt-8","version":8}]`)) //nolint:errcheck
+					return
+				}
+				w.Write([]byte(tc.detail)) //nolint:errcheck
+			})
+			cs := session(t, fakeClients{url: url, token: "tok", org: "acme", project: "atlas"}, Options{})
+			res := call(t, cs, "goship_get_release_log", map[string]any{"app": "blog"})
+			if res.IsError {
+				t.Fatal(text(res))
+			}
+			var got map[string]any
+			if err := json.Unmarshal([]byte(text(res)), &got); err != nil {
+				t.Fatalf("%v: %q", err, text(res))
+			}
+			phases, has := got["phases"].(map[string]any)
+			if has != tc.want || (has && (phases["build"] != 141.2 || phases["build.script.compile"] != float64(100))) {
+				t.Errorf("phases = %v, want present=%v", got["phases"], tc.want)
+			}
+		})
+	}
+}
